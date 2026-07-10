@@ -16,6 +16,10 @@ export function FileUploadPortalDemo() {
 
   const allChecked = Object.values(checks).every(Boolean);
 
+  function startPreflight() {
+    if (selectedFileName) setStep(1);
+  }
+
   return (
     <DemoWindow
       title="File upload portal"
@@ -49,13 +53,18 @@ export function FileUploadPortalDemo() {
               <option>Coroplast sign</option>
             </DemoSelect>
           </div>
-          <DemoButton onClick={() => setStep(1)}>Upload →</DemoButton>
+          {!selectedFileName ? (
+            <p className="text-xs text-muted">Choose a production file to begin preflight.</p>
+          ) : null}
+          <DemoButton onClick={startPreflight} disabled={!selectedFileName}>
+            Upload →
+          </DemoButton>
           </>
         )}
         {step === 1 && (
           <>
           <p className="font-mono text-[11px] uppercase tracking-[0.1em] text-muted">
-            Preflight checklist
+            Preflight for {selectedFileName}
           </p>
           {(["format", "size", "bleed"] as const).map((key) => (
             <label
@@ -83,7 +92,7 @@ export function FileUploadPortalDemo() {
           <DemoPlaceholder
             variant="proof"
             label="Proof preview"
-            hint="Banner 4×8 · auto-generated from upload"
+            hint={`${selectedFileName} · local demo preflight`}
             tall
           />
           <DemoButton onClick={() => setStep(3)}>Send for approval →</DemoButton>
@@ -96,7 +105,7 @@ export function FileUploadPortalDemo() {
               Awaiting decision
             </p>
             <p className="mt-1 text-sm text-ink">
-              Proof sent to customer · production holds until approve or revise
+              Proof ready for review · local demo state only
             </p>
           </div>
           <div className="flex flex-wrap gap-2">

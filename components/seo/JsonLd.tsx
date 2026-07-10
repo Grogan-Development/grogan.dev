@@ -1,5 +1,3 @@
-import type { ReactNode } from "react";
-
 type JsonLdProps = {
   data: Record<string, unknown>;
 };

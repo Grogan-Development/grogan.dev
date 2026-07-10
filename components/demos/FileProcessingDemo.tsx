@@ -14,7 +14,12 @@ export function FileProcessingDemo() {
   const [processing, setProcessing] = useState(false);
   const [selectedFileName, setSelectedFileName] = useState("");
 
+  function startValidation() {
+    if (selectedFileName) setStep(1);
+  }
+
   function runProcess() {
+    if (!selectedFileName) return;
     setProcessing(true);
     setTimeout(() => {
       setProcessing(false);
@@ -61,14 +66,19 @@ export function FileProcessingDemo() {
               <p className="mt-1.5 text-xs text-ink">{selectedFileName} selected locally</p>
             ) : null}
           </div>
-          <DemoButton onClick={() => setStep(1)}>Upload file →</DemoButton>
+          {!selectedFileName ? (
+            <p className="text-xs text-muted">Choose an artwork file to begin validation.</p>
+          ) : null}
+          <DemoButton onClick={startValidation} disabled={!selectedFileName}>
+            Upload file →
+          </DemoButton>
           </>
         )}
         {step === 1 && (
           <>
           <div className="space-y-2 border border-line bg-surface-alt/50 p-3 text-sm">
             <p className="font-mono text-[11px] uppercase tracking-[0.1em] text-muted">
-              Validation
+              Validation for {selectedFileName}
             </p>
             <ul className="space-y-1.5">
               <li className="flex items-center gap-2">
@@ -96,7 +106,7 @@ export function FileProcessingDemo() {
             <DemoPlaceholder
               variant="file"
               label="Original"
-              hint="As uploaded"
+              hint={`${selectedFileName} · selected locally`}
               className="min-h-28"
             />
             <div className="flex flex-col items-center justify-center gap-2 border border-accent bg-accent/5 px-3 py-6 text-center">

@@ -55,27 +55,101 @@ describe("interactive demos", () => {
     expect(input.closest("form")).toBeNull();
   });
 
+  it("requires a production file before starting preflight", () => {
+    render(<FileUploadPortalDemo />);
+
+    const start = screen.getByRole("button", { name: /Upload/ });
+    expect(start).toBeDisabled();
+    expect(screen.getByText("Choose a production file to begin preflight.")).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("Production file (local only)"), {
+      target: { files: [new File(["art"], "banner-art.pdf")] },
+    });
+    expect(start).toBeEnabled();
+
+    fireEvent.click(start);
+    expect(screen.getByText("Preflight for banner-art.pdf")).toBeInTheDocument();
+  });
+
+  it("requires artwork before starting file processing", () => {
+    render(<FileProcessingDemo />);
+
+    const start = screen.getByRole("button", { name: /Upload file/ });
+    expect(start).toBeDisabled();
+    expect(screen.getByText("Choose an artwork file to begin validation.")).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("Artwork file (local only)"), {
+      target: { files: [new File(["art"], "vehicle-wrap.ai")] },
+    });
+    expect(start).toBeEnabled();
+
+    fireEvent.click(start);
+    expect(screen.getByText("Validation for vehicle-wrap.ai")).toBeInTheDocument();
+  });
+
+  it("requires site photos before creating the quote-demo lead", () => {
+    render(<ContractorQuoteDemo />);
+
+    const submit = screen.getByRole("button", { name: /Submit request/ });
+    expect(submit).toBeDisabled();
+    expect(screen.getByText("Choose at least one site photo to continue.")).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("Site photos (local only)"), {
+      target: { files: [new File(["photo"], "kitchen-before.jpg")] },
+    });
+    expect(screen.getByText("1 photo selected locally")).toBeInTheDocument();
+    expect(submit).toBeEnabled();
+
+    fireEvent.click(submit);
+    expect(screen.getByText("Kitchen remodel · 1 photo selected locally")).toBeInTheDocument();
+  });
+
+  it("counts multiple selected contractor site photos", () => {
+    render(<ContractorQuoteDemo />);
+
+    const input = screen.getByLabelText("Site photos (local only)");
+    expect(input).toHaveAttribute("multiple");
+
+    fireEvent.change(input, {
+      target: {
+        files: [
+          new File(["before"], "kitchen-before.jpg"),
+          new File(["after"], "kitchen-after.jpg"),
+        ],
+      },
+    });
+
+    expect(screen.getByText("2 photos selected locally")).toBeInTheDocument();
+  });
+
   it.each([
     {
       name: "quote site photos",
       Demo: ContractorQuoteDemo,
       label: "Site photos (local only)",
       fileName: "kitchen-before.jpg",
+      selectionText: "1 photo selected locally",
     },
     {
       name: "field job photos",
       Demo: MobileChecklistDemo,
       label: "Job photo (local only)",
       fileName: "front-door-after.jpg",
+      selectionText: "front-door-after.jpg selected locally",
     },
-  ])("keeps $name in the browser without a network request", ({ Demo, label, fileName }) => {
+  ])("keeps $name in the browser without a network request", ({
+    Demo,
+    label,
+    fileName,
+    selectionText,
+  }) => {
     const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response());
     render(<Demo />);
 
     const input = screen.getByLabelText(label);
     fireEvent.change(input, { target: { files: [new File(["photo"], fileName)] } });
 
-    expect(screen.getByText(`${fileName} selected locally`)).toBeInTheDocument();
+    expect(screen.getByText(selectionText)).toBeInTheDocument();
     expect(input.closest("form")).toBeNull();
     expect(fetchSpy).not.toHaveBeenCalled();
     fetchSpy.mockRestore();
@@ -99,6 +173,9 @@ describe("interactive demos", () => {
     expect(liveRegion).toHaveAttribute("aria-live", "polite");
     expect(liveRegion).toHaveAttribute("aria-atomic", "true");
 
+    fireEvent.change(screen.getByLabelText("Site photos (local only)"), {
+      target: { files: [new File(["photo"], "kitchen-before.jpg")] },
+    });
     fireEvent.click(screen.getByRole("button", { name: /Submit request/ }));
 
     expect(screen.getByTestId("demo-panel")).toBe(liveRegion);
@@ -113,6 +190,9 @@ describe("interactive demos", () => {
   it("moves focus to the changed panel", () => {
     render(<ContractorQuoteDemo />);
 
+    fireEvent.change(screen.getByLabelText("Site photos (local only)"), {
+      target: { files: [new File(["photo"], "kitchen-before.jpg")] },
+    });
     fireEvent.click(screen.getByRole("button", { name: /Submit request/ }));
 
     expect(screen.getByTestId("demo-panel")).toHaveFocus();
@@ -121,6 +201,9 @@ describe("interactive demos", () => {
   it("marks file automation as busy while processing", () => {
     render(<FileProcessingDemo />);
 
+    fireEvent.change(screen.getByLabelText("Artwork file (local only)"), {
+      target: { files: [new File(["art"], "vehicle-wrap.ai")] },
+    });
     fireEvent.click(screen.getByRole("button", { name: /Upload file/ }));
     fireEvent.click(screen.getByRole("button", { name: /Run automation/ }));
 

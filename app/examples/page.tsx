@@ -48,6 +48,7 @@ export default function ExamplesPage() {
             </div>
             <Link
               href={`/examples/${featuredExample.slug}`}
+              aria-label={`View example: ${featuredExample.title}`}
               className="interactive-link mt-6 inline-flex min-h-[var(--tap-min)] items-center font-sans text-[length:var(--text-small)] text-accent underline-offset-4 hover:underline"
             >
               Open the interactive demo
@@ -61,6 +62,7 @@ export default function ExamplesPage() {
             <li key={example.slug} className="border-t border-line py-5 first:sm:border-t-0 sm:nth-[2]:border-t-0">
               <Link
                 href={`/examples/${example.slug}`}
+                aria-label={`View example: ${example.title}`}
                 className="group block min-h-[var(--tap-min)] focus-visible:outline-offset-4"
               >
                 <ExamplePreview

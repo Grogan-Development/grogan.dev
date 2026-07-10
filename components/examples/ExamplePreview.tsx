@@ -34,8 +34,8 @@ export function ExamplePreview({ kind, title, className = "" }: ExamplePreviewPr
 
 function PreviewFrame({ kind, title, className, children }: PreviewFrameProps) {
   return (
-    <section
-      aria-label={`${title} preview`}
+    <div
+      aria-hidden="true"
       data-preview-kind={kind}
       className={`overflow-hidden border border-line bg-surface-alt ${className}`}
     >
@@ -48,7 +48,7 @@ function PreviewFrame({ kind, title, className, children }: PreviewFrameProps) {
         </p>
       </div>
       <div className="aspect-[16/10] bg-paper p-3">{children}</div>
-    </section>
+    </div>
   );
 }
 

@@ -12,7 +12,13 @@ export function ContractorQuoteDemo() {
   const [step, setStep] = useState(0);
   const [assigned, setAssigned] = useState(false);
   const [status, setStatus] = useState("New");
-  const [selectedPhotoName, setSelectedPhotoName] = useState("");
+  const [selectedPhotoNames, setSelectedPhotoNames] = useState<string[]>([]);
+  const photoCount = selectedPhotoNames.length;
+  const photoSelectionLabel = `${photoCount} ${photoCount === 1 ? "photo" : "photos"} selected locally`;
+
+  function submitRequest() {
+    if (photoCount > 0) setStep(1);
+  }
 
   return (
     <DemoWindow
@@ -36,18 +42,26 @@ export function ContractorQuoteDemo() {
             <DemoInput
               id="quote-site-photos"
               type="file"
+              multiple
               accept=".jpg,.jpeg,.heic,.pdf"
               aria-describedby="quote-site-photos-help"
-              onChange={(event) => setSelectedPhotoName(event.target.files?.[0]?.name ?? "")}
+              onChange={(event) =>
+                setSelectedPhotoNames(Array.from(event.target.files ?? [], (file) => file.name))
+              }
             />
             <p id="quote-site-photos-help" className="mt-1.5 text-xs text-muted">
               JPG, HEIC, or PDF · this demo never uploads files.
             </p>
-            {selectedPhotoName ? (
-              <p className="mt-1.5 text-xs text-ink">{selectedPhotoName} selected locally</p>
+            {photoCount > 0 ? (
+              <p className="mt-1.5 text-xs text-ink">{photoSelectionLabel}</p>
             ) : null}
           </div>
-          <DemoButton onClick={() => setStep(1)}>Submit request →</DemoButton>
+          {photoCount === 0 ? (
+            <p className="text-xs text-muted">Choose at least one site photo to continue.</p>
+          ) : null}
+          <DemoButton onClick={submitRequest} disabled={photoCount === 0}>
+            Submit request →
+          </DemoButton>
           </>
         )}
         {step === 1 && (
@@ -57,9 +71,9 @@ export function ContractorQuoteDemo() {
               Lead #1042
             </p>
             <p className="mt-1 text-sm font-medium text-ink">
-              Kitchen remodel · 3 photos attached
+              Kitchen remodel · {photoSelectionLabel}
             </p>
-            <DemoMeta>Source: Website form · Created just now</DemoMeta>
+            <DemoMeta>Local demo lead · Created just now</DemoMeta>
           </div>
           <DemoButton onClick={() => setStep(2)}>Open lead →</DemoButton>
           </>

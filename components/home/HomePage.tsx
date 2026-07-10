@@ -249,6 +249,7 @@ export function HomePage() {
             <Reveal key={example.slug} delayMs={Math.min(index, 4) * 50}>
               <Link
                 href={`/examples/${example.slug}`}
+                aria-label={`View example: ${example.title}`}
                 className="group block focus-visible:outline-offset-4"
               >
                 <ExamplePreview

@@ -24,21 +24,26 @@ Object.defineProperty(globalThis, "IntersectionObserver", {
 });
 
 describe("ExamplePreview", () => {
-  it.each(examples)("renders a differentiated semantic preview for $title", (example) => {
-    render(<ExamplePreview kind={example.previewKind} title={example.title} />);
+  it.each(examples)("renders the $title preview as decorative card artwork", (example) => {
+    const { container } = render(<ExamplePreview kind={example.previewKind} title={example.title} />);
 
-    const preview = screen.getByRole("region", { name: `${example.title} preview` });
+    const preview = container.querySelector("[data-preview-kind]");
+    if (!preview) {
+      throw new Error("Expected a static example preview frame");
+    }
     expect(preview).toHaveAttribute("data-preview-kind", example.previewKind);
+    expect(preview).toHaveAttribute("aria-hidden", "true");
     expect(preview).toHaveTextContent(example.title);
     expect(preview.querySelectorAll("button, input, select, textarea")).toHaveLength(0);
+    expect(screen.queryByRole("region", { name: `${example.title} preview` })).not.toBeInTheDocument();
   });
 
   it.each(["future-operations-view", "toString"])(
     "uses a safe static fallback for unrecognized kind %s",
     (kind) => {
-      render(<ExamplePreview kind={kind} title="Future operations" />);
+      const { container } = render(<ExamplePreview kind={kind} title="Future operations" />);
 
-      expect(screen.getByRole("region", { name: "Future operations preview" })).toHaveAttribute(
+      expect(container.querySelector("[data-preview-kind]")).toHaveAttribute(
         "data-preview-kind",
         "fallback",
       );
@@ -53,5 +58,18 @@ describe("ExamplePreview", () => {
     rerender(<ExamplesPage />);
 
     expect(container.querySelectorAll("[data-preview-kind]")).toHaveLength(examples.length);
+  });
+
+  it.each([
+    ["home showroom", HomePage],
+    ["examples hub", ExamplesPage],
+  ] as const)("gives each %s card link a concise accessible name", (_pageName, Page) => {
+    render(<Page />);
+
+    for (const example of examples) {
+      expect(
+        screen.getByRole("link", { name: `View example: ${example.title}` }),
+      ).toBeInTheDocument();
+    }
   });
 });
