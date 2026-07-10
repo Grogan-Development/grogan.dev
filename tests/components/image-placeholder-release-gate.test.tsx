@@ -1,4 +1,5 @@
 import type { ComponentProps } from "react";
+import Image from "next/image";
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { ImagePlaceholder } from "@/components/ui/ImagePlaceholder";
@@ -13,6 +14,17 @@ describe("ImagePlaceholder photography release gate", () => {
     const { container } = render(<ImagePlaceholder {...imageProps(SITE_IMAGES.hero)} />);
 
     expect(container.querySelector("img")).not.toBeInTheDocument();
+    expect(screen.getByText("Photography pending approval")).toBeInTheDocument();
+  });
+
+  it("does not render a child-image bypass for an unreleased manifest entry", () => {
+    render(
+      <ImagePlaceholder {...imageProps(SITE_IMAGES.hero)}>
+        <Image src="/photography/bypass-attempt.jpg" alt="Bypass attempt" width={1} height={1} />
+      </ImagePlaceholder>,
+    );
+
+    expect(screen.queryByRole("img", { name: "Bypass attempt" })).not.toBeInTheDocument();
     expect(screen.getByText("Photography pending approval")).toBeInTheDocument();
   });
 

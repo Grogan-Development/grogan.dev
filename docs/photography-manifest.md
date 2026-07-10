@@ -18,10 +18,10 @@ Store release evidence with the business records, not in the public repository. 
 
 | Manifest record | Target path after release | Delivery specification |
 | --- | --- | --- |
-| `hero` | `public/photography/hero-tri-cities-operations.jpg` | Real Tri-Cities operations photography; 2400 × 1600 px minimum (3:2); approved crop must tolerate the responsive hero frame. Decorative alt remains empty. |
-| `founder` | `public/photography/founder-operations.jpg` | Founder portrait; 1600 × 2133 px minimum (3:4); use the descriptive manifest alt only after release. |
-| `industry-*` (six records) | `public/photography/industries/<industry-slug>.jpg` | One rights-cleared contextual photograph per industry; 1600 × 1200 px minimum (4:3); these tiles are already labelled, so their alt remains empty. |
-| `og` | `public/photography/og-default.jpg` | Approved real-photography social derivative, exactly 1200 × 630 px (1.91:1), with its own source/license/release evidence. Do not add `openGraph.images` or a large Twitter card until this record is released. |
+| `hero` | `public/photography/hero-tri-cities-operations.webp` or `.jpg` | Real Tri-Cities operations photography; 2000 × 1333 px (3:2), WebP or JPEG, generally 150–350 KB. The approved crop must tolerate the responsive hero frame. Decorative alt remains empty. |
+| `founder` | `public/photography/founder-operations.webp` or `.jpg` | Founder portrait; 1500 × 2000 px (3:4), WebP or JPEG, generally 150–350 KB. Use the descriptive manifest alt only after release. |
+| `industry-*` (six records) | `public/photography/industries/<industry-slug>.webp` or `.jpg` | One rights-cleared contextual photograph per industry; 1600 × 1200 px (4:3), WebP or JPEG, generally 150–350 KB. These tiles are already labelled, so their alt remains empty. |
+| `og` | `public/photography/og-default.webp` or `.jpg` | Branded/typeset card built on approved real photography, exactly 1200 × 630 px (1.91:1), WebP or JPEG, no more than 300 KB, with its own source/license/release evidence. Do not add `openGraph.images` or a large Twitter card until this record is released. |
 
 ## Activation checklist
 

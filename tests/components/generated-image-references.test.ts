@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { readFile } from "node:fs/promises";
+import { readFile, readdir } from "node:fs/promises";
 import { describe, expect, it } from "vitest";
 
 const imageConsumers = [
@@ -10,6 +10,21 @@ const imageConsumers = [
   "app/layout.tsx",
   "lib/images.ts",
 ];
+
+const sourceDirectories = ["app", "components", "lib", "content"];
+
+async function relevantSourcePaths() {
+  const paths = await Promise.all(
+    sourceDirectories.map(async (directory) => {
+      const entries = await readdir(directory, { recursive: true });
+      return entries
+        .filter((entry) => /\.(?:ts|tsx|css)$/.test(entry))
+        .map((entry) => `${directory}/${entry}`);
+    }),
+  );
+
+  return paths.flat();
+}
 
 const generatedImagePaths = [
   "hero-atmosphere.png",
@@ -31,8 +46,9 @@ const generatedImageArtifacts = [
 ];
 
 describe("released photography references", () => {
-  it("does not leave generated PNGs in UI or social metadata", async () => {
-    const sources = await Promise.all(imageConsumers.map((path) => readFile(path, "utf8")));
+  it("does not leave generated PNGs anywhere in app source", async () => {
+    const sourcePaths = await relevantSourcePaths();
+    const sources = await Promise.all(sourcePaths.map((path) => readFile(path, "utf8")));
 
     for (const source of sources) {
       for (const generatedPath of generatedImagePaths) {

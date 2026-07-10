@@ -33,7 +33,8 @@ type ImagePlaceholderProps = {
  * Asset slot with locked aspect ratios for hero collage, industry tiles,
  * about photo, demo thumbs, and OG templates.
  * When given a manifest image, it renders photography only after source,
- * rights, and release checks pass. Children remain available as UI overlays.
+ * rights, and release checks pass. Children are available only once the
+ * manifest image is released, so they cannot bypass an unreleased asset slot.
  */
 export function ImagePlaceholder({
   aspect = "industry",
@@ -77,7 +78,7 @@ export function ImagePlaceholder({
                 <span className="font-sans text-[length:var(--text-small)] text-ink/70">{resolvedLabel}</span>
               </div>
             )}
-            {children}
+            {releasedImage ? children : null}
           </>
         ) : (
           children ?? (
