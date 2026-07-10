@@ -1,10 +1,28 @@
-import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode, SelectHTMLAttributes, TextareaHTMLAttributes } from "react";
+import type {
+  ButtonHTMLAttributes,
+  InputHTMLAttributes,
+  LabelHTMLAttributes,
+  ReactNode,
+  SelectHTMLAttributes,
+  TextareaHTMLAttributes,
+} from "react";
 
 const field =
-  "w-full border border-line bg-surface px-3 py-2 text-sm text-ink placeholder:text-muted focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent";
+  "w-full min-h-[var(--tap-min)] border border-line bg-surface px-3 py-2 text-sm text-ink placeholder:text-muted focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent";
 
 const btnBase =
-  "inline-flex min-h-9 items-center justify-center border px-3 py-1.5 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50";
+  "inline-flex min-h-[var(--tap-min)] items-center justify-center border px-3 py-1.5 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50";
+
+export function DemoLabel({ className = "", children, ...props }: LabelHTMLAttributes<HTMLLabelElement>) {
+  return (
+    <label
+      className={`mb-1.5 block font-mono text-[11px] uppercase tracking-[0.1em] text-muted ${className}`}
+      {...props}
+    >
+      {children}
+    </label>
+  );
+}
 
 export function DemoInput(props: InputHTMLAttributes<HTMLInputElement>) {
   const { className = "", ...rest } = props;

@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { DemoPhone } from "./DemoPhone";
 import { DemoPlaceholder } from "./DemoPlaceholder";
-import { DemoTextarea } from "./demoUi";
+import { DemoLabel, DemoTextarea } from "./demoUi";
 
 const TASKS = [
   "Verify site access",
@@ -25,7 +25,7 @@ export function MobileChecklistDemo() {
       <div className="space-y-3">
         <div>
           <p className="text-sm font-medium text-ink">Job #441 — Front door install</p>
-          <p className="mt-0.5 font-mono text-[11px] tabular-nums text-muted">
+          <p aria-live="polite" aria-atomic="true" className="mt-0.5 font-mono text-[11px] tabular-nums text-muted">
             {done}/{TASKS.length} complete
           </p>
           <div className="mt-2 h-1 w-full bg-line">
@@ -40,7 +40,7 @@ export function MobileChecklistDemo() {
           {TASKS.map((task, i) => (
             <li key={task}>
               <label
-                className={`flex min-h-9 items-center gap-2.5 border px-2.5 py-2 text-sm ${
+                className={`flex min-h-[var(--tap-min)] items-center gap-2.5 border px-2.5 py-2 text-sm ${
                   checked[i]
                     ? "border-accent/30 bg-accent/5 text-muted line-through"
                     : "border-line bg-surface text-ink"
@@ -62,13 +62,17 @@ export function MobileChecklistDemo() {
           ))}
         </ul>
 
-        <DemoTextarea
-          placeholder="Field notes..."
-          value={notes}
-          onChange={(e) => setNotes(e.target.value)}
-          rows={2}
-          className="text-sm"
-        />
+        <div>
+          <DemoLabel htmlFor="field-notes">Field notes</DemoLabel>
+          <DemoTextarea
+            id="field-notes"
+            placeholder="Add notes for the office"
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            rows={2}
+            className="text-sm"
+          />
+        </div>
 
         <DemoPlaceholder
           variant="photo"

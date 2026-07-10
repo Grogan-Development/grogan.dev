@@ -14,7 +14,7 @@ export function DemoStepper({ steps, current, onSelect }: DemoStepperProps) {
         const interactive = Boolean(onSelect);
 
         const className = [
-          "demo-stepper-btn inline-flex min-h-9 items-center gap-1.5 border px-2.5 py-1.5 font-mono text-[length:var(--text-label)] uppercase tracking-[0.08em] transition-colors",
+          "demo-stepper-btn inline-flex min-h-[var(--tap-min)] items-center gap-1.5 border px-2.5 py-1.5 font-mono text-[length:var(--text-label)] uppercase tracking-[0.08em] transition-colors",
           isActive
             ? "border-accent bg-accent/10 text-accent"
             : isComplete

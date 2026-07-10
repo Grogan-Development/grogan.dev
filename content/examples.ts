@@ -16,6 +16,7 @@ export const examples: ExamplePage[] = [
       "Customer gets update",
     ],
     proves: "End-to-end lead-to-quote workflow with assignment, status tracking, and automated follow-up.",
+    previewKind: "quote-job-pipeline",
   },
   {
     slug: "production-file-upload-portal",
@@ -31,6 +32,7 @@ export const examples: ExamplePage[] = [
       "Production package prepared",
     ],
     proves: "Structured file intake with validation, proof generation, and production handoff.",
+    previewKind: "file-intake-preflight",
   },
   {
     slug: "proof-approval-system",
@@ -46,6 +48,7 @@ export const examples: ExamplePage[] = [
       "Job status updated",
     ],
     proves: "Clear proof approval workflow with audit trail and status updates.",
+    previewKind: "proof-approval",
   },
   {
     slug: "lead-follow-up-dashboard",
@@ -61,6 +64,7 @@ export const examples: ExamplePage[] = [
       "Simple report",
     ],
     proves: "Centralized lead management so nothing falls through the cracks.",
+    previewKind: "lead-follow-up-dashboard",
   },
   {
     slug: "mobile-field-checklist-app",
@@ -76,6 +80,7 @@ export const examples: ExamplePage[] = [
       "Office sees status",
     ],
     proves: "Field-to-office sync for crews working outside the office.",
+    previewKind: "mobile-field-checklist",
   },
   {
     slug: "ai-job-request-summarizer",
@@ -91,6 +96,7 @@ export const examples: ExamplePage[] = [
       "Follow-up assigned",
     ],
     proves: "Paste a messy request. Get structured job details ready to quote.",
+    previewKind: "ai-request-extraction",
   },
   {
     slug: "production-file-processing-automation",
@@ -106,6 +112,7 @@ export const examples: ExamplePage[] = [
       "Export to production format",
     ],
     proves: "Real production automation — not a portfolio trick, but proof of build capability from years solving operational workflow problems inside production businesses.",
+    previewKind: "file-processing-pipeline",
   },
 ];
 

@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Section } from "@/components/layout/Section";
-import { UiThumbnail } from "@/components/layout/UiThumbnail";
+import { ExamplePreview } from "@/components/examples/ExamplePreview";
 import { examples } from "@/content/examples";
 import { Button } from "@/components/layout/Button";
 import { PRIMARY_CTA } from "@/lib/site";
@@ -29,7 +29,11 @@ export default function ExamplesPage() {
           aria-label="Featured showcase"
           className="grid overflow-hidden border border-control bg-surface lg:grid-cols-[minmax(0,1.3fr)_minmax(18rem,0.7fr)]"
         >
-          <UiThumbnail title={featuredExample.title} className="border-0 border-b border-line lg:border-b-0 lg:border-r" />
+          <ExamplePreview
+            kind={featuredExample.previewKind}
+            title={featuredExample.title}
+            className="border-0 border-b border-line lg:border-b-0 lg:border-r"
+          />
           <div className="flex flex-col justify-between p-6 sm:p-8">
             <div>
               <p className="font-mono text-[length:var(--text-label)] uppercase tracking-wider text-accent">
@@ -59,7 +63,11 @@ export default function ExamplesPage() {
                 href={`/examples/${example.slug}`}
                 className="group block min-h-[var(--tap-min)] focus-visible:outline-offset-4"
               >
-                <UiThumbnail title={example.title} className="border-control group-hover:border-ink" />
+                <ExamplePreview
+                  kind={example.previewKind}
+                  title={example.title}
+                  className="border-control group-hover:border-ink"
+                />
                 <div className="mt-4 flex gap-3">
                   <span className="pt-1 font-mono text-[length:var(--text-label)] tabular-nums text-accent">
                     {String(index + 2).padStart(2, "0")}

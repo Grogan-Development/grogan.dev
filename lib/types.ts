@@ -28,12 +28,22 @@ export type IndustryPage = {
   relatedExamples?: string[];
 };
 
+export type ExamplePreviewKind =
+  | "quote-job-pipeline"
+  | "file-intake-preflight"
+  | "proof-approval"
+  | "lead-follow-up-dashboard"
+  | "mobile-field-checklist"
+  | "ai-request-extraction"
+  | "file-processing-pipeline";
+
 export type ExamplePage = {
   slug: string;
   title: string;
   description: string;
   flow: string[];
   proves: string;
+  previewKind: ExamplePreviewKind;
 };
 
 export type ResourceArticle = {

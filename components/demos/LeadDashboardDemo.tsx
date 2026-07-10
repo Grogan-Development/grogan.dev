@@ -41,7 +41,7 @@ export function LeadDashboardDemo() {
             <p className="font-mono text-[11px] uppercase tracking-[0.12em] text-muted">
               Queue clear
             </p>
-            <p className="mt-1 text-sm text-ink">All follow-ups marked done for this shell.</p>
+            <p className="mt-1 text-sm text-ink">All follow-ups marked done for this demo.</p>
             <DemoButton
               className="mt-4"
               variant="secondary"
@@ -86,7 +86,7 @@ export function LeadDashboardDemo() {
                     <td className="px-2.5 py-2 text-right">
                       <DemoButton
                         variant="ghost"
-                        className="min-h-0 px-1 py-0 text-xs"
+                        className="px-1 py-0 text-xs"
                         onClick={() => complete(lead.id)}
                       >
                         Done

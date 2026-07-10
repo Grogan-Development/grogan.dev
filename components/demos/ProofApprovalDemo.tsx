@@ -5,7 +5,7 @@ import { DemoWindow } from "./DemoWindow";
 import { DemoStepper } from "./DemoStepper";
 import { DemoPanel } from "./DemoPanel";
 import { DemoPlaceholder } from "./DemoPlaceholder";
-import { DemoButton, DemoMeta, DemoTextarea } from "./demoUi";
+import { DemoButton, DemoLabel, DemoMeta, DemoTextarea } from "./demoUi";
 
 const STEPS = ["Review", "Decide", "Logged"] as const;
 
@@ -32,12 +32,16 @@ export function ProofApprovalDemo() {
 
         {status === "pending" && (
           <div className="space-y-3">
-            <DemoTextarea
-              placeholder="Revision notes (optional)"
-              value={note}
-              onChange={(e) => setNote(e.target.value)}
-              rows={2}
-            />
+            <div>
+              <DemoLabel htmlFor="proof-revision-notes">Revision notes</DemoLabel>
+              <DemoTextarea
+                id="proof-revision-notes"
+                placeholder="Optional notes for the production team"
+                value={note}
+                onChange={(e) => setNote(e.target.value)}
+                rows={2}
+              />
+            </div>
             <div className="flex flex-wrap gap-2">
               <DemoButton onClick={() => setStatus("approved")}>Approve proof</DemoButton>
               <DemoButton variant="secondary" onClick={() => setStatus("revision")}>

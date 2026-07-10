@@ -5,6 +5,7 @@ import { Section } from "@/components/layout/Section";
 import { Card } from "@/components/layout/Card";
 import { Reveal } from "@/components/ui/Reveal";
 import { ImagePlaceholder } from "@/components/ui/ImagePlaceholder";
+import { ExamplePreview } from "@/components/examples/ExamplePreview";
 import { PRIMARY_CTA, SECONDARY_CTA } from "@/lib/site";
 import { getIndustryImage, SITE_IMAGES } from "@/lib/images";
 import {
@@ -136,31 +137,6 @@ function HeroCollage() {
   );
 }
 
-function DemoThumb({ title }: { title: string }) {
-  return (
-    <div className="relative aspect-[16/10] overflow-hidden border border-line bg-surface-alt interactive-card transition-[border-color] group-hover:border-ink">
-      <div className="absolute inset-0 bg-paper">
-        <div className="absolute inset-x-0 top-0 z-10 flex items-center gap-1.5 border-b border-line bg-surface px-2.5 py-1.5">
-          <span className="size-1.5 rounded-full bg-line" />
-          <span className="size-1.5 rounded-full bg-line" />
-          <span className="size-1.5 rounded-full bg-accent/50" />
-          <span className="ml-1 truncate font-mono text-[length:var(--text-label)] uppercase tracking-wider text-muted">
-            {title}
-          </span>
-        </div>
-        <div className="absolute inset-0 grid grid-cols-3 gap-1.5 p-2.5 pt-9">
-          <div className="col-span-2 space-y-1.5">
-            <div className="h-2 w-1/2 bg-surface-alt" />
-            <div className="h-8 border border-line bg-surface" />
-            <div className="h-8 border border-line bg-surface" />
-          </div>
-          <div className="min-h-[4rem] border border-accent/30 bg-accent/5" />
-        </div>
-      </div>
-    </div>
-  );
-}
-
 export function HomePage() {
   return (
     <>
@@ -275,7 +251,11 @@ export function HomePage() {
                 href={`/examples/${example.slug}`}
                 className="group block focus-visible:outline-offset-4"
               >
-                <DemoThumb title={example.title} />
+                <ExamplePreview
+                  kind={example.previewKind}
+                  title={example.title}
+                  className="interactive-card transition-[border-color] group-hover:border-ink"
+                />
                 <h3 className="interactive-link mt-3 font-display text-[length:var(--text-h3)] text-ink group-hover:text-accent">
                   {example.title}
                 </h3>

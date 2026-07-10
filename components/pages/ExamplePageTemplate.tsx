@@ -26,7 +26,7 @@ export function ExamplePageTemplate({ example, demo }: ExamplePageTemplateProps)
         <FlowStepper steps={example.flow} />
       </Section>
 
-      <Section label="Interactive demo" title="Try the shell" className="bg-surface">
+      <Section label="Interactive demo" title="Try the demo" className="bg-surface">
         {/* Device frame lives here so demo-chrome can wrap shell internals without fighting layout */}
         <DemoFrame title={example.title}>{demo}</DemoFrame>
       </Section>

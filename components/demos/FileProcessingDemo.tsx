@@ -5,13 +5,14 @@ import { DemoWindow } from "./DemoWindow";
 import { DemoStepper } from "./DemoStepper";
 import { DemoPanel } from "./DemoPanel";
 import { DemoPlaceholder } from "./DemoPlaceholder";
-import { DemoButton, DemoMeta } from "./demoUi";
+import { DemoButton, DemoInput, DemoLabel, DemoMeta } from "./demoUi";
 
 const STEPS = ["Upload", "Validate", "Process", "Export"] as const;
 
 export function FileProcessingDemo() {
   const [step, setStep] = useState(0);
   const [processing, setProcessing] = useState(false);
+  const [selectedFileName, setSelectedFileName] = useState("");
 
   function runProcess() {
     setProcessing(true);
@@ -27,8 +28,9 @@ export function FileProcessingDemo() {
       subtitle="production automation · cutline pipeline"
       toolbar={<DemoStepper steps={STEPS} current={step} />}
     >
-      {step === 0 && (
-        <DemoPanel panelKey="upload">
+      <DemoPanel panelKey={step} busy={step === 1 && processing}>
+        {step === 0 && (
+          <>
           <div className="grid grid-cols-2 gap-3">
             <DemoPlaceholder
               variant="file"
@@ -43,11 +45,27 @@ export function FileProcessingDemo() {
               className="min-h-28"
             />
           </div>
+          <div>
+            <DemoLabel htmlFor="processing-artwork">Artwork file (local only)</DemoLabel>
+            <DemoInput
+              id="processing-artwork"
+              type="file"
+              accept=".pdf,.ai,.eps"
+              aria-describedby="processing-artwork-help"
+              onChange={(event) => setSelectedFileName(event.target.files?.[0]?.name ?? "")}
+            />
+            <p id="processing-artwork-help" className="mt-1.5 text-xs text-muted">
+              This demo keeps selected files in your browser and never sends them anywhere.
+            </p>
+            {selectedFileName ? (
+              <p className="mt-1.5 text-xs text-ink">{selectedFileName} selected locally</p>
+            ) : null}
+          </div>
           <DemoButton onClick={() => setStep(1)}>Upload file →</DemoButton>
-        </DemoPanel>
-      )}
-      {step === 1 && (
-        <DemoPanel panelKey="validate">
+          </>
+        )}
+        {step === 1 && (
+          <>
           <div className="space-y-2 border border-line bg-surface-alt/50 p-3 text-sm">
             <p className="font-mono text-[11px] uppercase tracking-[0.1em] text-muted">
               Validation
@@ -70,10 +88,10 @@ export function FileProcessingDemo() {
           <DemoButton onClick={runProcess} disabled={processing}>
             {processing ? "Processing..." : "Run automation →"}
           </DemoButton>
-        </DemoPanel>
-      )}
-      {step === 2 && (
-        <DemoPanel panelKey="process">
+          </>
+        )}
+        {step === 2 && (
+          <>
           <div className="grid grid-cols-2 gap-3">
             <DemoPlaceholder
               variant="file"
@@ -90,10 +108,9 @@ export function FileProcessingDemo() {
           </div>
           <DemoMeta>Manual review: Approve export or adjust cutline offset</DemoMeta>
           <DemoButton onClick={() => setStep(3)}>Approve & export →</DemoButton>
-        </DemoPanel>
-      )}
-      {step === 3 && (
-        <DemoPanel panelKey="export">
+          </>
+        )}
+        {step === 3 && (
           <div className="border border-line bg-surface-alt/50 p-3">
             <p className="font-mono text-[11px] uppercase tracking-[0.1em] text-muted">
               Package ready
@@ -111,8 +128,8 @@ export function FileProcessingDemo() {
               </li>
             </ul>
           </div>
-        </DemoPanel>
-      )}
+        )}
+      </DemoPanel>
     </DemoWindow>
   );
 }

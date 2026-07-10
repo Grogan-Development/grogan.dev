@@ -4,7 +4,7 @@ import { useState } from "react";
 import { DemoWindow } from "./DemoWindow";
 import { DemoStepper } from "./DemoStepper";
 import { DemoPanel } from "./DemoPanel";
-import { DemoButton, DemoMeta, DemoTextarea } from "./demoUi";
+import { DemoButton, DemoLabel, DemoMeta, DemoTextarea } from "./demoUi";
 
 const SAMPLE =
   "Hi we need a wrap for our fleet van chevy 2500 white. Logo on both sides and back. Have eps file can send. Need by end of month thanks - jim";
@@ -27,17 +27,18 @@ export function AiSummarizerDemo() {
       toolbar={<DemoStepper steps={STEPS} current={step} />}
     >
       <DemoPanel panelKey={summarized ? "out" : "in"}>
-        <p className="font-mono text-[11px] uppercase tracking-[0.1em] text-muted">
-          Raw request
-        </p>
-        <DemoTextarea
-          value={input}
-          onChange={(e) => {
-            setInput(e.target.value);
-            setSummarized(false);
-          }}
-          rows={4}
-        />
+        <div>
+          <DemoLabel htmlFor="customer-request">Customer request</DemoLabel>
+          <DemoTextarea
+            id="customer-request"
+            value={input}
+            onChange={(e) => {
+              setInput(e.target.value);
+              setSummarized(false);
+            }}
+            rows={4}
+          />
+        </div>
         <DemoButton onClick={summarize}>Summarize request</DemoButton>
 
         {summarized ? (

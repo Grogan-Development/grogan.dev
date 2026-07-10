@@ -5,7 +5,7 @@ import { DemoWindow } from "./DemoWindow";
 import { DemoStepper } from "./DemoStepper";
 import { DemoPanel } from "./DemoPanel";
 import { DemoPlaceholder } from "./DemoPlaceholder";
-import { DemoButton, DemoInput, DemoMeta, DemoSelect } from "./demoUi";
+import { DemoButton, DemoInput, DemoLabel, DemoMeta, DemoSelect } from "./demoUi";
 
 const STEPS = ["Request", "Lead", "Assign", "Status"] as const;
 
@@ -17,13 +17,20 @@ export function ContractorQuoteDemo() {
   return (
     <DemoWindow
       title="Quote & job tracker"
-      subtitle="ops.gdg · live shell"
+      subtitle="ops.gdg · demo workspace"
       toolbar={<DemoStepper steps={STEPS} current={step} onSelect={setStep} />}
     >
-      {step === 0 && (
-        <DemoPanel panelKey="request">
-          <DemoInput placeholder="Customer name" />
-          <DemoInput placeholder="Project description" />
+      <DemoPanel panelKey={step}>
+        {step === 0 && (
+          <>
+          <div>
+            <DemoLabel htmlFor="quote-customer-name">Customer name</DemoLabel>
+            <DemoInput id="quote-customer-name" placeholder="Name or business" />
+          </div>
+          <div>
+            <DemoLabel htmlFor="quote-project-description">Project description</DemoLabel>
+            <DemoInput id="quote-project-description" placeholder="What needs to be quoted?" />
+          </div>
           <DemoPlaceholder
             variant="photo"
             label="Photo upload"
@@ -31,10 +38,10 @@ export function ContractorQuoteDemo() {
             tall
           />
           <DemoButton onClick={() => setStep(1)}>Submit request →</DemoButton>
-        </DemoPanel>
-      )}
-      {step === 1 && (
-        <DemoPanel panelKey="lead">
+          </>
+        )}
+        {step === 1 && (
+          <>
           <div className="border border-line bg-surface-alt/50 p-3">
             <p className="font-mono text-[11px] uppercase tracking-[0.1em] text-muted">
               Lead #1042
@@ -45,22 +52,24 @@ export function ContractorQuoteDemo() {
             <DemoMeta>Source: Website form · Created just now</DemoMeta>
           </div>
           <DemoButton onClick={() => setStep(2)}>Open lead →</DemoButton>
-        </DemoPanel>
-      )}
-      {step === 2 && (
-        <DemoPanel panelKey="assign">
-          <p className="text-sm text-ink">Assign to</p>
-          <DemoSelect onChange={() => setAssigned(true)} defaultValue="Owner">
+          </>
+        )}
+        {step === 2 && (
+          <>
+          <div>
+            <DemoLabel htmlFor="quote-assignee">Assign to</DemoLabel>
+            <DemoSelect id="quote-assignee" onChange={() => setAssigned(true)} defaultValue="Owner">
             <option>Owner</option>
             <option>Estimator</option>
-          </DemoSelect>
+            </DemoSelect>
+          </div>
           {assigned && (
             <DemoButton onClick={() => setStep(3)}>Assign & view board →</DemoButton>
           )}
-        </DemoPanel>
-      )}
-      {step === 3 && (
-        <DemoPanel panelKey="status">
+          </>
+        )}
+        {step === 3 && (
+          <>
           <div className="grid grid-cols-3 gap-2">
             {(["New", "Quoting", "Follow-up"] as const).map((col) => (
               <div
@@ -78,14 +87,18 @@ export function ContractorQuoteDemo() {
               </div>
             ))}
           </div>
-          <DemoSelect value={status} onChange={(e) => setStatus(e.target.value)}>
-            <option>New</option>
-            <option>Quoting</option>
-            <option>Follow-up scheduled</option>
-          </DemoSelect>
+          <div>
+            <DemoLabel htmlFor="quote-status">Quote status</DemoLabel>
+            <DemoSelect id="quote-status" value={status} onChange={(e) => setStatus(e.target.value)}>
+              <option>New</option>
+              <option>Quoting</option>
+              <option>Follow-up scheduled</option>
+            </DemoSelect>
+          </div>
           <DemoMeta>Follow-up reminder: tomorrow 9am</DemoMeta>
-        </DemoPanel>
-      )}
+          </>
+        )}
+      </DemoPanel>
     </DemoWindow>
   );
 }
