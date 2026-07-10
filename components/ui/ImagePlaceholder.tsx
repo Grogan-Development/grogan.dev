@@ -1,4 +1,6 @@
+import Image from "next/image";
 import type { ReactNode } from "react";
+import { isReleasedImage, type SiteImage } from "@/lib/images";
 
 export type ImagePlaceholderAspect = "hero" | "industry" | "about" | "demo" | "og";
 
@@ -21,13 +23,17 @@ type ImagePlaceholderProps = {
   caption?: string;
   className?: string;
   children?: ReactNode;
+  image?: SiteImage;
+  sizes?: string;
+  priority?: boolean;
+  imageClassName?: string;
 };
 
 /**
  * Asset slot with locked aspect ratios for hero collage, industry tiles,
  * about photo, demo thumbs, and OG templates.
- * Pass next/image (or any media) as children; omit children for the empty slot.
- * Real photography can replace generated art without changing layout.
+ * When given a manifest image, it renders photography only after source,
+ * rights, and release checks pass. Children remain available as UI overlays.
  */
 export function ImagePlaceholder({
   aspect = "industry",
@@ -35,25 +41,58 @@ export function ImagePlaceholder({
   caption,
   className = "",
   children,
+  image,
+  sizes = "100vw",
+  priority = false,
+  imageClassName = "",
 }: ImagePlaceholderProps) {
+  const releasedImage = image && isReleasedImage(image) ? image : null;
+  const resolvedAspect = image?.aspect ?? aspect;
+  const resolvedLabel = image && !releasedImage ? "Photography pending approval" : label;
+  const resolvedCaption = image ? (releasedImage ? image.caption || caption : undefined) : caption;
+
   return (
     <figure className={`overflow-hidden border border-line bg-surface-alt ${className}`.trim()}>
       <div
-        className={`relative flex w-full items-center justify-center ${ASPECT_CLASS[aspect]}`}
-        data-aspect={aspect}
+        className={`relative flex w-full items-center justify-center ${ASPECT_CLASS[resolvedAspect]}`}
+        data-aspect={resolvedAspect}
       >
-        {children ?? (
+        {image ? (
+          <>
+            {releasedImage ? (
+              <Image
+                src={releasedImage.src}
+                alt={releasedImage.alt}
+                fill
+                priority={priority}
+                sizes={sizes}
+                className={`object-cover ${imageClassName}`.trim()}
+                style={{ objectPosition: releasedImage.objectPosition }}
+              />
+            ) : (
+              <div className="flex flex-col items-center gap-1 px-4 text-center" data-image-status="awaiting-approval">
+                <span className="font-mono text-[length:var(--text-label)] uppercase tracking-[0.12em] text-muted">
+                  Asset slot
+                </span>
+                <span className="font-sans text-[length:var(--text-small)] text-ink/70">{resolvedLabel}</span>
+              </div>
+            )}
+            {children}
+          </>
+        ) : (
+          children ?? (
           <div className="flex flex-col items-center gap-1 px-4 text-center">
             <span className="font-mono text-[length:var(--text-label)] uppercase tracking-[0.12em] text-muted">
               Asset slot
             </span>
-            <span className="font-sans text-[length:var(--text-small)] text-ink/70">{label}</span>
+            <span className="font-sans text-[length:var(--text-small)] text-ink/70">{resolvedLabel}</span>
           </div>
+          )
         )}
       </div>
-      {caption ? (
+      {resolvedCaption ? (
         <figcaption className="border-t border-line px-3 py-2 font-mono text-[length:var(--text-label)] uppercase tracking-[0.08em] text-muted">
-          {caption}
+          {resolvedCaption}
         </figcaption>
       ) : null}
     </figure>

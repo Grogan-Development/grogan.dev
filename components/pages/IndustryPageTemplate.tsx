@@ -1,4 +1,3 @@
-import Image from "next/image";
 import Link from "next/link";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Card } from "@/components/layout/Card";
@@ -9,18 +8,9 @@ import { IndustryMark } from "@/components/icons/IndustryMarks";
 import { getExample } from "@/content/examples";
 import { getPriorityAIndustryLine } from "@/content/pricing";
 import { getService } from "@/content/services";
-import { industryImageSrc } from "@/lib/images";
+import { getIndustryImage } from "@/lib/images";
 import type { IndustryPage } from "@/lib/types";
 import { PRIMARY_CTA } from "@/lib/site";
-
-const industryCaptions: Record<string, string> = {
-  "contractors-home-services": "Job site",
-  "manufacturing-fabrication": "Shop floor",
-  "sign-print-wrap-cnc-shops": "Wrap bay",
-  "wineries-events-hospitality": "Vineyard",
-  "professional-offices": "Office desk",
-  "local-service-businesses": "Service van",
-};
 
 type IndustryPageTemplateProps = {
   industry: IndustryPage;
@@ -28,7 +18,6 @@ type IndustryPageTemplateProps = {
 
 export function IndustryPageTemplate({ industry }: IndustryPageTemplateProps) {
   const priorityALine = getPriorityAIndustryLine(industry.slug);
-  const caption = industryCaptions[industry.slug] ?? "Operations";
 
   return (
     <>
@@ -154,18 +143,9 @@ export function IndustryPageTemplate({ industry }: IndustryPageTemplateProps) {
 
             <aside className="space-y-4 lg:sticky lg:top-24">
               <ImagePlaceholder
-                aspect="industry"
-                label={`${industry.title} photography`}
-                caption={caption}
-              >
-                <Image
-                  src={industryImageSrc(industry.slug)}
-                  alt=""
-                  fill
-                  sizes="(max-width: 1024px) 100vw, 20rem"
-                  className="object-cover object-center"
-                />
-              </ImagePlaceholder>
+                image={getIndustryImage(industry.slug)}
+                sizes="(max-width: 1024px) 100vw, 20rem"
+              />
               <Card className="space-y-4 p-6">
                 <p className="font-mono text-[length:var(--text-label)] uppercase tracking-wider text-muted">
                   Next step

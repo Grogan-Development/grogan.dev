@@ -1,0 +1,34 @@
+import type { ComponentProps } from "react";
+import { render, screen } from "@testing-library/react";
+import { describe, expect, it } from "vitest";
+import { ImagePlaceholder } from "@/components/ui/ImagePlaceholder";
+import { SITE_IMAGES, type SiteImage } from "@/lib/images";
+
+function imageProps(image: SiteImage): ComponentProps<typeof ImagePlaceholder> {
+  return { image } as unknown as ComponentProps<typeof ImagePlaceholder>;
+}
+
+describe("ImagePlaceholder photography release gate", () => {
+  it("renders an honest placeholder rather than unreleased photography", () => {
+    const { container } = render(<ImagePlaceholder {...imageProps(SITE_IMAGES.hero)} />);
+
+    expect(container.querySelector("img")).not.toBeInTheDocument();
+    expect(screen.getByText("Photography pending approval")).toBeInTheDocument();
+  });
+
+  it("renders a released, rights-cleared image with its configured crop", () => {
+    const releasedImage: SiteImage = {
+      ...SITE_IMAGES.hero,
+      src: "/photography/released-hero.jpg",
+      source: "Grogan Development Group",
+      license: "Owner release on file",
+      releaseStatus: "released",
+      objectPosition: "42% 58%",
+    };
+    const { container } = render(<ImagePlaceholder {...imageProps(releasedImage)} sizes="100vw" />);
+
+    const image = container.querySelector("img");
+    expect(image).toHaveAttribute("alt", "");
+    expect(image).toHaveStyle({ objectPosition: "42% 58%" });
+  });
+});

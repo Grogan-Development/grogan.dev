@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import Image from "next/image";
 import Link from "next/link";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Section } from "@/components/layout/Section";
@@ -29,18 +28,9 @@ export default function AboutPage() {
             {whyGdgCopy}
           </p>
           <ImagePlaceholder
-            aspect="about"
-            label="Founder / ops photo"
-            caption="Workshop and production context"
-          >
-            <Image
-              src={SITE_IMAGES.about}
-              alt=""
-              fill
-              sizes="(max-width: 1024px) 100vw, 32vw"
-              className="object-cover object-center"
-            />
-          </ImagePlaceholder>
+            image={SITE_IMAGES.founder}
+            sizes="(max-width: 1024px) 100vw, 32vw"
+          />
         </div>
       </Section>
       <Section label="Differentiation" title="How GDG is different" className="bg-surface">

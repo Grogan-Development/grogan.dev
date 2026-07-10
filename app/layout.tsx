@@ -4,7 +4,7 @@ import { SiteHeader } from "@/components/layout/SiteHeader";
 import { SiteFooter } from "@/components/layout/SiteFooter";
 import { SkipToContent } from "@/components/layout/SkipToContent";
 import { LocalBusinessJsonLd } from "@/components/seo/JsonLd";
-import { SITE_IMAGES } from "@/lib/images";
+import { isReleasedImage, SITE_IMAGES } from "@/lib/images";
 import { SITE } from "@/lib/site";
 import "./globals.css";
 
@@ -27,6 +27,15 @@ const plexMono = IBM_Plex_Mono({
   display: "swap",
 });
 
+const releasedSocialImage = isReleasedImage(SITE_IMAGES.og)
+  ? {
+      url: SITE_IMAGES.og.src,
+      width: 1200,
+      height: 630,
+      alt: SITE.shortName,
+    }
+  : null;
+
 export const metadata: Metadata = {
   title: {
     default: `${SITE.shortName} | ${SITE.tagline}`,
@@ -36,11 +45,16 @@ export const metadata: Metadata = {
     "Grogan Development Group builds custom software, automation, dashboards, portals, and mobile apps for Tri-Cities businesses that have outgrown spreadsheets.",
   metadataBase: new URL(SITE.url),
   openGraph: {
-    images: [{ url: SITE_IMAGES.og, width: 1536, height: 1024, alt: SITE.shortName }],
+    type: "website",
+    url: SITE.url,
+    title: `${SITE.shortName} | ${SITE.tagline}`,
+    description:
+      "Grogan Development Group builds custom software, automation, dashboards, portals, and mobile apps for Tri-Cities businesses that have outgrown spreadsheets.",
+    ...(releasedSocialImage ? { images: [releasedSocialImage] } : {}),
   },
   twitter: {
-    card: "summary_large_image",
-    images: [SITE_IMAGES.og],
+    card: releasedSocialImage ? "summary_large_image" : "summary",
+    ...(releasedSocialImage ? { images: [releasedSocialImage.url] } : {}),
   },
 };
 

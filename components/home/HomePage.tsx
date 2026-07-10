@@ -1,4 +1,3 @@
-import Image from "next/image";
 import Link from "next/link";
 import { Container } from "@/components/layout/Container";
 import { Button } from "@/components/layout/Button";
@@ -7,7 +6,7 @@ import { Card } from "@/components/layout/Card";
 import { Reveal } from "@/components/ui/Reveal";
 import { ImagePlaceholder } from "@/components/ui/ImagePlaceholder";
 import { PRIMARY_CTA, SECONDARY_CTA } from "@/lib/site";
-import { industryImageSrc, SITE_IMAGES } from "@/lib/images";
+import { getIndustryImage, SITE_IMAGES } from "@/lib/images";
 import {
   painPoints,
   systemsBuilt,
@@ -18,26 +17,9 @@ import {
 import { industries } from "@/content/industries";
 import { examples } from "@/content/examples";
 
-const industryCaptions: Record<string, string> = {
-  "contractors-home-services": "Job site",
-  "manufacturing-fabrication": "Shop floor",
-  "sign-print-wrap-cnc-shops": "Wrap bay",
-  "wineries-events-hospitality": "Vineyard",
-  "professional-offices": "Office desk",
-  "local-service-businesses": "Service van",
-};
-
 function HeroCollage() {
   return (
     <div className="absolute inset-0 overflow-hidden" aria-hidden="true">
-      <Image
-        src={SITE_IMAGES.hero}
-        alt=""
-        fill
-        priority
-        sizes="(max-width: 1024px) 100vw, 55vw"
-        className="object-cover object-center"
-      />
       {/* Soft wash so CSS UI collage stays readable as product proof */}
       <div className="absolute inset-0 bg-[linear-gradient(160deg,oklch(0.97_0.01_85_/_0.72),oklch(0.94_0.01_85_/_0.55)_45%,oklch(0.92_0.015_85_/_0.68))]" />
       <div
@@ -204,7 +186,12 @@ export function HomePage() {
             </div>
           </Reveal>
           <Reveal delayMs={80} className="min-w-0">
-            <ImagePlaceholder aspect="hero" label="Product collage" className="border-line">
+            <ImagePlaceholder
+              image={SITE_IMAGES.hero}
+              priority
+              sizes="(max-width: 1024px) 100vw, 55vw"
+              className="border-line"
+            >
               <HeroCollage />
             </ImagePlaceholder>
           </Reveal>
@@ -252,7 +239,6 @@ export function HomePage() {
       <Section label="Industries" title="Built around the way your business actually works">
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {industries.map((industry, index) => {
-            const caption = industryCaptions[industry.slug] ?? "Operations";
             const blurb =
               industryHomeBlurbs[industry.slug] ?? industry.description;
             return (
@@ -262,19 +248,10 @@ export function HomePage() {
                   className="group block focus-visible:outline-offset-4"
                 >
                   <ImagePlaceholder
-                    aspect="industry"
-                    label={industry.title}
-                    caption={caption}
+                    image={getIndustryImage(industry.slug)}
+                    sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
                     className="interactive-card transition-[border-color] group-hover:border-ink"
-                  >
-                    <Image
-                      src={industryImageSrc(industry.slug)}
-                      alt=""
-                      fill
-                      sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
-                      className="object-cover object-center"
-                    />
-                  </ImagePlaceholder>
+                  />
                   <h3 className="interactive-link mt-3 font-display text-[length:var(--text-h3)] text-ink group-hover:text-accent">
                     {industry.title}
                   </h3>
@@ -380,19 +357,9 @@ export function HomePage() {
           </Reveal>
           <Reveal delayMs={80}>
             <ImagePlaceholder
-              aspect="about"
-              label="Founder / ops photo"
-              caption="Photo — founder / ops"
-              className="sm:aspect-auto"
-            >
-              <Image
-                src={SITE_IMAGES.about}
-                alt=""
-                fill
-                sizes="(max-width: 1024px) 100vw, 40vw"
-                className="object-cover object-center"
-              />
-            </ImagePlaceholder>
+              image={SITE_IMAGES.founder}
+              sizes="(max-width: 1024px) 100vw, 40vw"
+            />
           </Reveal>
         </div>
       </Section>

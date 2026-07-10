@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import Image from "next/image";
 import Link from "next/link";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Section } from "@/components/layout/Section";
@@ -7,16 +6,7 @@ import { Button } from "@/components/layout/Button";
 import { ImagePlaceholder } from "@/components/ui/ImagePlaceholder";
 import { industries } from "@/content/industries";
 import { industryHomeBlurbs } from "@/content/home";
-import { industryImageSrc } from "@/lib/images";
-
-const industryCaptions: Record<string, string> = {
-  "contractors-home-services": "Job site",
-  "manufacturing-fabrication": "Shop floor",
-  "sign-print-wrap-cnc-shops": "Wrap bay",
-  "wineries-events-hospitality": "Vineyard",
-  "professional-offices": "Office desk",
-  "local-service-businesses": "Service van",
-};
+import { getIndustryImage } from "@/lib/images";
 
 export const metadata: Metadata = {
   title: "Industries",
@@ -35,7 +25,6 @@ export default function IndustriesPage() {
       <Section>
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {industries.map((industry) => {
-            const caption = industryCaptions[industry.slug] ?? "Operations";
             const blurb =
               industryHomeBlurbs[industry.slug] ?? industry.description;
             return (
@@ -45,19 +34,11 @@ export default function IndustriesPage() {
                 className="group block focus-visible:outline-offset-4"
               >
                 <ImagePlaceholder
-                  aspect="industry"
-                  label={industry.title}
-                  caption={caption}
+                  image={getIndustryImage(industry.slug)}
+                  sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
                   className="transition-transform duration-500 group-hover:scale-[1.01]"
-                >
-                  <Image
-                    src={industryImageSrc(industry.slug)}
-                    alt=""
-                    fill
-                    sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
-                    className="object-cover object-center transition-[filter] duration-500 group-hover:brightness-[1.03]"
-                  />
-                </ImagePlaceholder>
+                  imageClassName="transition-[filter] duration-500 group-hover:brightness-[1.03]"
+                />
                 <h3 className="mt-3 font-display text-[length:var(--text-h3)] text-ink group-hover:text-accent">
                   {industry.title}
                 </h3>
