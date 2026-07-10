@@ -1,0 +1,61 @@
+import type { ReactNode } from "react";
+
+export type ImagePlaceholderAspect = "hero" | "industry" | "about" | "demo" | "og";
+
+const ASPECT_CLASS: Record<ImagePlaceholderAspect, string> = {
+  /** Hero collage plane — dominant visual, fills the right column */
+  hero: "aspect-[5/4] sm:aspect-[4/3] lg:aspect-[3/2]",
+  /** Industry tile photography */
+  industry: "aspect-[4/3]",
+  /** About / founder ops photo */
+  about: "aspect-[3/4]",
+  /** Demo UI thumbnail */
+  demo: "aspect-[16/10]",
+  /** Open Graph / social share slot */
+  og: "aspect-[1.91/1]",
+};
+
+type ImagePlaceholderProps = {
+  aspect?: ImagePlaceholderAspect;
+  label?: string;
+  caption?: string;
+  className?: string;
+  children?: ReactNode;
+};
+
+/**
+ * Asset slot with locked aspect ratios for hero collage, industry tiles,
+ * about photo, demo thumbs, and OG templates.
+ * Pass next/image (or any media) as children; omit children for the empty slot.
+ * Real photography can replace generated art without changing layout.
+ */
+export function ImagePlaceholder({
+  aspect = "industry",
+  label = "Image",
+  caption,
+  className = "",
+  children,
+}: ImagePlaceholderProps) {
+  return (
+    <figure className={`overflow-hidden border border-line bg-surface-alt ${className}`.trim()}>
+      <div
+        className={`relative flex w-full items-center justify-center ${ASPECT_CLASS[aspect]}`}
+        data-aspect={aspect}
+      >
+        {children ?? (
+          <div className="flex flex-col items-center gap-1 px-4 text-center">
+            <span className="font-mono text-[length:var(--text-label)] uppercase tracking-[0.12em] text-muted">
+              Asset slot
+            </span>
+            <span className="font-sans text-[length:var(--text-small)] text-ink/70">{label}</span>
+          </div>
+        )}
+      </div>
+      {caption ? (
+        <figcaption className="border-t border-line px-3 py-2 font-mono text-[length:var(--text-label)] uppercase tracking-[0.08em] text-muted">
+          {caption}
+        </figcaption>
+      ) : null}
+    </figure>
+  );
+}

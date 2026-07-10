@@ -1,26 +1,274 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  /* Industrial Operator Studio — light mode only */
+  --ink: oklch(0.22 0.02 250);
+  --paper: oklch(0.97 0.01 85);
+  --surface: oklch(0.99 0.005 85);
+  --line: oklch(0.86 0.01 85);
+  --muted: oklch(0.48 0.02 250);
+  --accent: oklch(0.45 0.09 230);
+  --accent-2: oklch(0.55 0.08 70);
+  --danger: oklch(0.55 0.15 25);
+
+  /* Compatibility aliases used by existing utilities */
+  --background: var(--paper);
+  --foreground: var(--ink);
+  --border: var(--line);
+  --surface-alt: oklch(0.94 0.01 85);
+
+  /* Fraunces · Geist · IBM Plex Mono */
+  --font-display: var(--font-fraunces), ui-serif, Georgia, serif;
+  --font-sans: var(--font-geist), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-plex-mono), ui-monospace, monospace;
+
+  /* Type scale — Fraunces: display/H1–H3; Geist: body; Plex: labels/prices */
+  --text-display: clamp(2.75rem, 2.2rem + 2.2vw, 3.5rem);
+  --text-h1: clamp(2rem, 1.7rem + 1.2vw, 2.75rem);
+  --text-h2: clamp(1.5rem, 1.35rem + 0.6vw, 1.875rem);
+  --text-h3: clamp(1.125rem, 1.05rem + 0.3vw, 1.25rem);
+  --text-body: 1.0625rem;
+  --text-small: 0.875rem;
+  --text-label: 0.625rem;
+  --tap-min: 2.75rem; /* 44px */
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-border: var(--border);
+  --color-muted: var(--muted);
+  --color-surface: var(--surface);
+  --color-surface-alt: var(--surface-alt);
+  --color-ink: var(--ink);
+  --color-paper: var(--paper);
+  --color-line: var(--line);
+  --color-accent: var(--accent);
+  --color-accent-2: var(--accent-2);
+  --color-danger: var(--danger);
+  --font-sans: var(--font-sans);
+  --font-serif: var(--font-display);
+  --font-mono: var(--font-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+html {
+  scroll-behavior: smooth;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
   }
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  position: relative;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-size: var(--text-body);
+  line-height: 1.6;
+}
+
+/* Very subtle paper grain — light mode only, does not fight type */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  pointer-events: none;
+  opacity: 0.035;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-repeat: repeat;
+  background-size: 180px 180px;
+}
+
+h1,
+h2,
+h3 {
+  font-family: var(--font-display);
+  font-weight: 550;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+  color: var(--ink);
+}
+
+h1 {
+  font-size: var(--text-h1);
+}
+
+h2 {
+  font-size: var(--text-h2);
+}
+
+h3 {
+  font-size: var(--text-h3);
+}
+
+@layer base {
+  a {
+    color: inherit;
+  }
+}
+
+:focus {
+  outline: none;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.skip-to-content {
+  position: absolute;
+  left: 1rem;
+  top: 0;
+  z-index: 100;
+  transform: translateY(-120%);
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--ink);
+  padding: 0.75rem 1rem;
+  font-size: var(--text-small);
+  font-weight: 500;
+  min-height: var(--tap-min);
+  transition: transform 0.15s ease;
+}
+
+.skip-to-content:focus,
+.skip-to-content:focus-visible {
+  transform: translateY(0.75rem);
+}
+
+.font-display {
+  font-family: var(--font-display);
+  font-weight: 550;
+  letter-spacing: -0.02em;
+}
+
+.font-mono {
+  font-family: var(--font-mono);
+}
+
+/* Motion system 1: section reveal (fade + slide-up, once) */
+.reveal {
+  opacity: 0;
+  transform: translateY(0.75rem);
+  transition:
+    opacity 0.55s ease,
+    transform 0.55s ease;
+  will-change: opacity, transform;
+}
+
+.reveal.reveal-visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* Motion system 2: demo step panel crossfade */
+.demo-crossfade {
+  position: relative;
+}
+
+.demo-crossfade-panel,
+.demo-panel {
+  animation: demo-crossfade-in 0.28s ease both;
+}
+
+@keyframes demo-crossfade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* Restrained interactive hover — accent / border only, no scale */
+.interactive-card {
+  transition:
+    border-color 0.2s ease,
+    color 0.2s ease;
+}
+
+.interactive-card:hover {
+  border-color: var(--ink);
+}
+
+.interactive-link {
+  transition: color 0.2s ease;
+}
+
+.interactive-link:hover {
+  color: var(--accent);
+}
+
+.price-display {
+  font-family: var(--font-mono);
+  font-size: var(--text-h2);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+  color: var(--ink);
+}
+
+.price-inline {
+  font-family: var(--font-mono);
+  font-size: var(--text-small);
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+}
+
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  border: 1px solid var(--line);
+  text-align: left;
+  font-size: var(--text-small);
+}
+
+.data-table th,
+.data-table td {
+  border: 1px solid var(--line);
+  padding: 0.5rem 0.75rem;
+  vertical-align: top;
+}
+
+.data-table thead {
+  background: var(--surface-alt);
+}
+
+.data-table th {
+  font-weight: 500;
+  color: var(--ink);
+}
+
+.data-table td.price-cell {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .reveal {
+    opacity: 1;
+    transform: none;
+    transition: none;
+    will-change: auto;
+  }
+
+  .demo-crossfade-panel,
+  .demo-panel {
+    animation: none;
+  }
+
+  .interactive-card,
+  .interactive-link {
+    transition: none;
+  }
+
+  .demo-stepper-btn {
+    transition: none;
+  }
 }
