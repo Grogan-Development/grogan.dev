@@ -12,6 +12,10 @@
 
 # testing
 /coverage
+/playwright-report/
+/test-results/
+.design-audit/
+--selector
 
 # next.js
 /.next/
