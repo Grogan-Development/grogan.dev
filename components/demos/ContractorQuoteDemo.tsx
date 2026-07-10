@@ -4,7 +4,6 @@ import { useState } from "react";
 import { DemoWindow } from "./DemoWindow";
 import { DemoStepper } from "./DemoStepper";
 import { DemoPanel } from "./DemoPanel";
-import { DemoPlaceholder } from "./DemoPlaceholder";
 import { DemoButton, DemoInput, DemoLabel, DemoMeta, DemoSelect } from "./demoUi";
 
 const STEPS = ["Request", "Lead", "Assign", "Status"] as const;
@@ -13,6 +12,7 @@ export function ContractorQuoteDemo() {
   const [step, setStep] = useState(0);
   const [assigned, setAssigned] = useState(false);
   const [status, setStatus] = useState("New");
+  const [selectedPhotoName, setSelectedPhotoName] = useState("");
 
   return (
     <DemoWindow
@@ -31,12 +31,22 @@ export function ContractorQuoteDemo() {
             <DemoLabel htmlFor="quote-project-description">Project description</DemoLabel>
             <DemoInput id="quote-project-description" placeholder="What needs to be quoted?" />
           </div>
-          <DemoPlaceholder
-            variant="photo"
-            label="Photo upload"
-            hint="Drop site photos or tap to attach — JPG, HEIC, or PDF"
-            tall
-          />
+          <div>
+            <DemoLabel htmlFor="quote-site-photos">Site photos (local only)</DemoLabel>
+            <DemoInput
+              id="quote-site-photos"
+              type="file"
+              accept=".jpg,.jpeg,.heic,.pdf"
+              aria-describedby="quote-site-photos-help"
+              onChange={(event) => setSelectedPhotoName(event.target.files?.[0]?.name ?? "")}
+            />
+            <p id="quote-site-photos-help" className="mt-1.5 text-xs text-muted">
+              JPG, HEIC, or PDF · this demo never uploads files.
+            </p>
+            {selectedPhotoName ? (
+              <p className="mt-1.5 text-xs text-ink">{selectedPhotoName} selected locally</p>
+            ) : null}
+          </div>
           <DemoButton onClick={() => setStep(1)}>Submit request →</DemoButton>
           </>
         )}

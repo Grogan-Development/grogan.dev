@@ -1,5 +1,5 @@
 import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { ContractorQuoteDemo } from "@/components/demos/ContractorQuoteDemo";
 import { FileProcessingDemo } from "@/components/demos/FileProcessingDemo";
 import { FileUploadPortalDemo } from "@/components/demos/FileUploadPortalDemo";
@@ -12,6 +12,7 @@ import { examples } from "@/content/examples";
 describe("interactive demos", () => {
   it.each([
     { name: "quote request", Demo: ContractorQuoteDemo, label: "Customer name" },
+    { name: "quote photos", Demo: ContractorQuoteDemo, label: "Site photos (local only)" },
     {
       name: "quote assignment",
       Demo: ContractorQuoteDemo,
@@ -22,6 +23,7 @@ describe("interactive demos", () => {
     { name: "file product type", Demo: FileUploadPortalDemo, label: "Product type" },
     { name: "proof approval", Demo: ProofApprovalDemo, label: "Revision notes" },
     { name: "field checklist", Demo: MobileChecklistDemo, label: "Field notes" },
+    { name: "field photo", Demo: MobileChecklistDemo, label: "Job photo (local only)" },
     { name: "AI request", Demo: AiSummarizerDemo, label: "Customer request" },
     { name: "file processing", Demo: FileProcessingDemo, label: "Artwork file (local only)" },
   ])("gives the $name form control a visible label", ({ Demo, label, open }) => {
@@ -51,6 +53,32 @@ describe("interactive demos", () => {
 
     expect(screen.getByText("vehicle-wrap.ai selected locally")).toBeInTheDocument();
     expect(input.closest("form")).toBeNull();
+  });
+
+  it.each([
+    {
+      name: "quote site photos",
+      Demo: ContractorQuoteDemo,
+      label: "Site photos (local only)",
+      fileName: "kitchen-before.jpg",
+    },
+    {
+      name: "field job photos",
+      Demo: MobileChecklistDemo,
+      label: "Job photo (local only)",
+      fileName: "front-door-after.jpg",
+    },
+  ])("keeps $name in the browser without a network request", ({ Demo, label, fileName }) => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response());
+    render(<Demo />);
+
+    const input = screen.getByLabelText(label);
+    fireEvent.change(input, { target: { files: [new File(["photo"], fileName)] } });
+
+    expect(screen.getByText(`${fileName} selected locally`)).toBeInTheDocument();
+    expect(input.closest("form")).toBeNull();
+    expect(fetchSpy).not.toHaveBeenCalled();
+    fetchSpy.mockRestore();
   });
 
   it("uses 44px minimum classes for demo controls and steppers", () => {

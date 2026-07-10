@@ -2,8 +2,7 @@
 
 import { useState } from "react";
 import { DemoPhone } from "./DemoPhone";
-import { DemoPlaceholder } from "./DemoPlaceholder";
-import { DemoLabel, DemoTextarea } from "./demoUi";
+import { DemoInput, DemoLabel, DemoTextarea } from "./demoUi";
 
 const TASKS = [
   "Verify site access",
@@ -17,6 +16,7 @@ const TASKS = [
 export function MobileChecklistDemo() {
   const [checked, setChecked] = useState<boolean[]>(TASKS.map(() => false));
   const [notes, setNotes] = useState("");
+  const [selectedPhotoName, setSelectedPhotoName] = useState("");
   const done = checked.filter(Boolean).length;
   const progress = Math.round((done / TASKS.length) * 100);
 
@@ -74,12 +74,22 @@ export function MobileChecklistDemo() {
           />
         </div>
 
-        <DemoPlaceholder
-          variant="photo"
-          label="Add photo"
-          hint="Before / after · geotagged"
-          className="min-h-20 py-4"
-        />
+        <div>
+          <DemoLabel htmlFor="field-job-photo">Job photo (local only)</DemoLabel>
+          <DemoInput
+            id="field-job-photo"
+            type="file"
+            accept=".jpg,.jpeg,.heic"
+            aria-describedby="field-job-photo-help"
+            onChange={(event) => setSelectedPhotoName(event.target.files?.[0]?.name ?? "")}
+          />
+          <p id="field-job-photo-help" className="mt-1.5 text-xs text-muted">
+            JPG or HEIC · this demo keeps photos in your browser.
+          </p>
+          {selectedPhotoName ? (
+            <p className="mt-1.5 text-xs text-ink">{selectedPhotoName} selected locally</p>
+          ) : null}
+        </div>
 
         {done === TASKS.length && (
           <div className="border border-accent/40 bg-accent/5 px-3 py-2.5 text-center">
