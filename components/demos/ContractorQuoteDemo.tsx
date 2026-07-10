@@ -24,7 +24,7 @@ export function ContractorQuoteDemo() {
     <DemoWindow
       title="Quote & job tracker"
       subtitle="ops.gdg · demo workspace"
-      toolbar={<DemoStepper steps={STEPS} current={step} onSelect={setStep} />}
+      toolbar={<DemoStepper steps={STEPS} current={step} />}
     >
       <DemoPanel panelKey={step}>
         {step === 0 && (

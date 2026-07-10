@@ -17,7 +17,13 @@ describe("interactive demos", () => {
       name: "quote assignment",
       Demo: ContractorQuoteDemo,
       label: "Assign to",
-      open: () => fireEvent.click(screen.getByRole("button", { name: "Assign" })),
+      open: () => {
+        fireEvent.change(screen.getByLabelText("Site photos (local only)"), {
+          target: { files: [new File(["photo"], "kitchen-before.jpg")] },
+        });
+        fireEvent.click(screen.getByRole("button", { name: /Submit request/ }));
+        fireEvent.click(screen.getByRole("button", { name: /Open lead/ }));
+      },
     },
     { name: "file intake", Demo: FileUploadPortalDemo, label: "Production file (local only)" },
     { name: "file product type", Demo: FileUploadPortalDemo, label: "Product type" },
@@ -104,6 +110,14 @@ describe("interactive demos", () => {
     expect(screen.getByText("Kitchen remodel · 1 photo selected locally")).toBeInTheDocument();
   });
 
+  it("does not let the quote stepper bypass required local site photos", () => {
+    render(<ContractorQuoteDemo />);
+
+    expect(screen.queryByRole("button", { name: "Lead" })).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Site photos (local only)")).toBeInTheDocument();
+    expect(screen.queryByText(/Kitchen remodel/)).not.toBeInTheDocument();
+  });
+
   it("counts multiple selected contractor site photos", () => {
     render(<ContractorQuoteDemo />);
 
@@ -158,7 +172,7 @@ describe("interactive demos", () => {
   it("uses 44px minimum classes for demo controls and steppers", () => {
     render(<ContractorQuoteDemo />);
 
-    expect(screen.getByRole("button", { name: "Request" })).toHaveClass(
+    expect(screen.getByText("Request")).toHaveClass(
       "min-h-[var(--tap-min)]",
     );
     expect(screen.getByRole("button", { name: /Submit request/ })).toHaveClass(
