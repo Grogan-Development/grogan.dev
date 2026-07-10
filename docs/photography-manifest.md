@@ -18,10 +18,10 @@ Store release evidence with the business records, not in the public repository. 
 
 | Manifest record | Target path after release | Delivery specification |
 | --- | --- | --- |
-| `hero` | `public/photography/hero-tri-cities-operations.webp` or `.jpg` | Real Tri-Cities operations photography; 2000 × 1333 px (3:2), WebP or JPEG, generally 150–350 KB. The approved crop must tolerate the responsive hero frame. Decorative alt remains empty. |
-| `founder` | `public/photography/founder-operations.webp` or `.jpg` | Founder portrait; 1500 × 2000 px (3:4), WebP or JPEG, generally 150–350 KB. Use the descriptive manifest alt only after release. |
-| `industry-*` (six records) | `public/photography/industries/<industry-slug>.webp` or `.jpg` | One rights-cleared contextual photograph per industry; 1600 × 1200 px (4:3), WebP or JPEG, generally 150–350 KB. These tiles are already labelled, so their alt remains empty. |
-| `og` | `public/photography/og-default.webp` or `.jpg` | Branded/typeset card built on approved real photography, exactly 1200 × 630 px (1.91:1), WebP or JPEG, no more than 300 KB, with its own source/license/release evidence. Do not add `openGraph.images` or a large Twitter card until this record is released. |
+| `hero` | `public/photography/hero-tri-cities-operations.webp`, `.jpg`, or `.jpeg` | Real Tri-Cities operations photography; 2000 × 1333 px (3:2), WebP or JPEG, generally 150–350 KB. The approved crop must tolerate the responsive hero frame. Decorative alt remains empty. |
+| `founder` | `public/photography/founder-operations.webp`, `.jpg`, or `.jpeg` | Founder portrait; 1500 × 2000 px (3:4), WebP or JPEG, generally 150–350 KB. Use the descriptive manifest alt only after release. |
+| `industry-*` (six records) | `public/photography/industries/<industry-slug>.webp`, `.jpg`, or `.jpeg` | One rights-cleared contextual photograph per industry; 1600 × 1200 px (4:3), WebP or JPEG, generally 150–350 KB. These tiles are already labelled, so their alt remains empty. |
+| `og` | `public/photography/og-default.webp`, `.jpg`, or `.jpeg` | Branded/typeset card built on approved real photography, exactly 1200 × 630 px (1.91:1), WebP or JPEG, no more than 300 KB, with its own source/license/release evidence. Do not add `openGraph.images` or a large Twitter card until this record is released. |
 
 ## Activation checklist
 
