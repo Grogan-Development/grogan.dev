@@ -20,6 +20,25 @@ You can start editing the page by modifying `app/page.tsx`. The page auto-update
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
 
+## Verification
+
+Run the Node-compatible checks used by Railway:
+
+```bash
+npm run check
+```
+
+`check` runs linting, application typechecking, and unit/route tests. The unit-test command also typechecks test sources with `tsconfig.tests.json`; browser tests are intentionally excluded so Railpack does not need browser binaries.
+
+Run the browser and accessibility suites separately against a staging deployment:
+
+```bash
+PLAYWRIGHT_BASE_URL=https://staging.example.com npm run test:e2e
+PLAYWRIGHT_BASE_URL=https://staging.example.com npm run test:a11y
+```
+
+Without `PLAYWRIGHT_BASE_URL`, Playwright starts a local `npm run dev` server at `http://127.0.0.1:3000`.
+
 ## Learn More
 
 To learn more about Next.js, take a look at the following resources:

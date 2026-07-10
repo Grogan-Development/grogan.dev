@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run",
+    "test": "vitest run && npm run test:typecheck",
+    "test:typecheck": "tsc --noEmit -p tsconfig.tests.json",
     "test:e2e": "playwright test",
     "test:a11y": "playwright test tests/e2e/accessibility.spec.ts",
     "check": "npm run lint && npm run typecheck && npm run test"
