@@ -2,16 +2,8 @@ import { existsSync } from "node:fs";
 import { readFile, readdir } from "node:fs/promises";
 import { describe, expect, it } from "vitest";
 
-const imageConsumers = [
-  "components/home/HomePage.tsx",
-  "app/industries/page.tsx",
-  "components/pages/IndustryPageTemplate.tsx",
-  "app/about/page.tsx",
-  "app/layout.tsx",
-  "lib/images.ts",
-];
-
 const sourceDirectories = ["app", "components", "lib", "content"];
+const trustedImageComponent = "components/ui/ImagePlaceholder.tsx";
 
 async function relevantSourcePaths() {
   const paths = await Promise.all(
@@ -24,6 +16,13 @@ async function relevantSourcePaths() {
   );
 
   return paths.flat();
+}
+
+async function relevantSources() {
+  const sourcePaths = await relevantSourcePaths();
+  return Promise.all(
+    sourcePaths.map(async (path) => ({ path, source: await readFile(path, "utf8") })),
+  );
 }
 
 const generatedImagePaths = [
@@ -47,26 +46,38 @@ const generatedImageArtifacts = [
 
 describe("released photography references", () => {
   it("does not leave generated PNGs anywhere in app source", async () => {
-    const sourcePaths = await relevantSourcePaths();
-    const sources = await Promise.all(sourcePaths.map((path) => readFile(path, "utf8")));
+    const sources = await relevantSources();
 
-    for (const source of sources) {
+    for (const { source } of sources) {
       for (const generatedPath of generatedImagePaths) {
         expect(source).not.toContain(generatedPath);
       }
     }
   });
 
-  it("routes every photography slot through the release-aware frame", async () => {
-    const photoConsumerPaths = imageConsumers.slice(0, 4);
-    const sources = await Promise.all(photoConsumerPaths.map((path) => readFile(path, "utf8")));
+  it("allows next/image and local photography only through the trusted manifest frame", async () => {
+    const sources = await relevantSources();
+    const runtimeSources = sources.filter(({ path }) => !path.endsWith(".server.ts"));
+    const nextImageImports = sources
+      .filter(({ source }) => /from\s+["']next\/image["']/.test(source))
+      .map(({ path }) => path);
+    const directLocalPhotography = sources
+      .filter(({ source }) => /(?:src|href)\s*=\s*(?:\{\s*)?["']\/(?:photography|images)\//.test(source))
+      .map(({ path }) => path);
 
-    for (const source of sources) {
-      expect(source).not.toContain('from "next/image"');
-      expect(source).toContain("image={");
+    expect(nextImageImports).toEqual([trustedImageComponent]);
+    expect(directLocalPhotography).toEqual([]);
+
+    const trustedSource = sources.find(({ path }) => path === trustedImageComponent)?.source;
+    expect(trustedSource).toContain("isReleasedImage");
+    expect(trustedSource).toContain("src={releasedImage.src}");
+
+    for (const { source } of runtimeSources) {
+      expect(source).not.toContain("node:fs");
+      expect(source).not.toContain("@/lib/images.server");
     }
 
-    const layout = await readFile("app/layout.tsx", "utf8");
+    const layout = sources.find(({ path }) => path === "app/layout.tsx")?.source;
     expect(layout).toContain("isReleasedImage(SITE_IMAGES.og)");
     expect(layout).toContain("releasedSocialImage ?");
     expect(layout).not.toContain("og-default.png");

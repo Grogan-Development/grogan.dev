@@ -138,11 +138,7 @@ function HeroCollage() {
 
 function DemoThumb({ title }: { title: string }) {
   return (
-    <ImagePlaceholder
-      aspect="demo"
-      label={title}
-      className="interactive-card border-line transition-[border-color] group-hover:border-ink"
-    >
+    <div className="relative aspect-[16/10] overflow-hidden border border-line bg-surface-alt interactive-card transition-[border-color] group-hover:border-ink">
       <div className="absolute inset-0 bg-paper">
         <div className="absolute inset-x-0 top-0 z-10 flex items-center gap-1.5 border-b border-line bg-surface px-2.5 py-1.5">
           <span className="size-1.5 rounded-full bg-line" />
@@ -161,7 +157,7 @@ function DemoThumb({ title }: { title: string }) {
           <div className="min-h-[4rem] border border-accent/30 bg-accent/5" />
         </div>
       </div>
-    </ImagePlaceholder>
+    </div>
   );
 }
 
@@ -186,14 +182,15 @@ export function HomePage() {
             </div>
           </Reveal>
           <Reveal delayMs={80} className="min-w-0">
-            <ImagePlaceholder
-              image={SITE_IMAGES.hero}
-              priority
-              sizes="(max-width: 1024px) 100vw, 55vw"
-              className="border-line"
-            >
+            <div className="relative">
+              <ImagePlaceholder
+                image={SITE_IMAGES.hero}
+                priority
+                sizes="(max-width: 1024px) 100vw, 55vw"
+                className="border-line"
+              />
               <HeroCollage />
-            </ImagePlaceholder>
+            </div>
           </Reveal>
         </div>
       </section>
