@@ -5,7 +5,8 @@
   --ink: oklch(0.22 0.02 250);
   --paper: oklch(0.97 0.01 85);
   --surface: oklch(0.99 0.005 85);
-  --line: oklch(0.86 0.01 85);
+  --line: oklch(0.6 0.02 250);
+  --control-border: oklch(0.6 0.02 250);
   --muted: oklch(0.48 0.02 250);
   --accent: oklch(0.45 0.09 230);
   --accent-2: oklch(0.55 0.08 70);
@@ -16,6 +17,18 @@
   --foreground: var(--ink);
   --border: var(--line);
   --surface-alt: oklch(0.94 0.01 85);
+  --wash-blue: oklch(0.95 0.015 225);
+  --wash-brass: oklch(0.95 0.018 78);
+
+  /* Semantic layout rhythm */
+  --space-inline: clamp(1rem, 0.75rem + 1vw, 1.5rem);
+  --space-stack: clamp(1rem, 0.8rem + 1vw, 1.75rem);
+  --section-compact: clamp(2.5rem, 2.1rem + 1vw, 3.5rem);
+  --section-standard: clamp(3rem, 2.4rem + 2vw, 5rem);
+  --section-roomy: clamp(4rem, 3rem + 3vw, 6.5rem);
+  --elevation-header: 0 4px 16px oklch(0.22 0.02 250 / 0.08);
+  --elevation-raised: 0 8px 20px oklch(0.22 0.02 250 / 0.06);
+  --ease-operator: cubic-bezier(0.16, 1, 0.3, 1);
 
   /* Fraunces · Geist · IBM Plex Mono */
   --font-display: var(--font-fraunces), ui-serif, Georgia, serif;
@@ -43,6 +56,7 @@
   --color-ink: var(--ink);
   --color-paper: var(--paper);
   --color-line: var(--line);
+  --color-control: var(--control-border);
   --color-accent: var(--accent);
   --color-accent-2: var(--accent-2);
   --color-danger: var(--danger);
@@ -83,29 +97,29 @@ body::before {
   background-size: 180px 180px;
 }
 
-h1,
-h2,
-h3 {
-  font-family: var(--font-display);
-  font-weight: 550;
-  letter-spacing: -0.02em;
-  line-height: 1.2;
-  color: var(--ink);
-}
-
-h1 {
-  font-size: var(--text-h1);
-}
-
-h2 {
-  font-size: var(--text-h2);
-}
-
-h3 {
-  font-size: var(--text-h3);
-}
-
 @layer base {
+  h1,
+  h2,
+  h3 {
+    font-family: var(--font-display);
+    font-weight: 550;
+    letter-spacing: -0.02em;
+    line-height: 1.2;
+    color: var(--ink);
+  }
+
+  h1 {
+    font-size: var(--text-h1);
+  }
+
+  h2 {
+    font-size: var(--text-h2);
+  }
+
+  h3 {
+    font-size: var(--text-h3);
+  }
+
   a {
     color: inherit;
   }
@@ -133,7 +147,7 @@ h3 {
   font-size: var(--text-small);
   font-weight: 500;
   min-height: var(--tap-min);
-  transition: transform 0.15s ease;
+  transition: transform 0.15s var(--ease-operator);
 }
 
 .skip-to-content:focus,
@@ -156,8 +170,8 @@ h3 {
   opacity: 0;
   transform: translateY(0.75rem);
   transition:
-    opacity 0.55s ease,
-    transform 0.55s ease;
+    opacity 0.55s var(--ease-operator),
+    transform 0.55s var(--ease-operator);
   will-change: opacity, transform;
 }
 
@@ -173,7 +187,7 @@ h3 {
 
 .demo-crossfade-panel,
 .demo-panel {
-  animation: demo-crossfade-in 0.28s ease both;
+  animation: demo-crossfade-in 0.28s var(--ease-operator) both;
 }
 
 @keyframes demo-crossfade-in {
@@ -188,8 +202,8 @@ h3 {
 /* Restrained interactive hover — accent / border only, no scale */
 .interactive-card {
   transition:
-    border-color 0.2s ease,
-    color 0.2s ease;
+    border-color 0.2s var(--ease-operator),
+    color 0.2s var(--ease-operator);
 }
 
 .interactive-card:hover {
@@ -197,7 +211,7 @@ h3 {
 }
 
 .interactive-link {
-  transition: color 0.2s ease;
+  transition: color 0.2s var(--ease-operator);
 }
 
 .interactive-link:hover {

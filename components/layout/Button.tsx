@@ -14,7 +14,7 @@ type ButtonProps = {
 const variantStyles: Record<ButtonVariant, string> = {
   // !text-* beats inherited link color from @layer base `a { color: inherit }`
   primary: "border-ink bg-ink !text-paper hover:bg-transparent hover:!text-ink",
-  secondary: "border-line bg-surface text-ink hover:border-ink hover:bg-surface-alt",
+  secondary: "border-control bg-surface text-ink hover:border-ink hover:bg-surface-alt",
   ghost: "border-transparent bg-transparent text-accent underline-offset-4 hover:underline",
   // Paper fill on ink/dark bands — do not override via className (no twMerge)
   inverse:

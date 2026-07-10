@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import type { ReactNode } from "react";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Section } from "@/components/layout/Section";
 import { Card } from "@/components/layout/Card";
@@ -53,6 +54,29 @@ const foundingRuleList = [
   foundingRules.verticalPreference,
 ] as const;
 
+type PricingTableProps = {
+  caption: string;
+  children: ReactNode;
+};
+
+function PricingTable({ caption, children }: PricingTableProps) {
+  return (
+    <>
+      <p className="mb-2 font-mono text-[length:var(--text-label)] uppercase tracking-wider text-muted sm:hidden">
+        Scroll to compare all columns →
+      </p>
+      <div
+        role="region"
+        aria-label={caption}
+        tabIndex={0}
+        className="overflow-x-auto focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-accent"
+      >
+        {children}
+      </div>
+    </>
+  );
+}
+
 export default function PricingPage() {
   return (
     <>
@@ -63,7 +87,7 @@ export default function PricingPage() {
       />
 
       {/* 1. Hero ranges + positioning */}
-      <Section label="Overview" className="bg-surface">
+      <Section label="Overview" tone="surface">
         <div className="grid gap-4 sm:grid-cols-3">
           <Card className="flex h-full flex-col">
             <p className="font-mono text-[length:var(--text-label)] uppercase tracking-wider text-muted">
@@ -103,13 +127,14 @@ export default function PricingPage() {
 
       {/* 2. Choose starting point */}
       <Section label="Starting points" title="Choose a starting point">
-        <div className="overflow-x-auto">
+        <PricingTable caption="Starting point pricing">
           <table className="data-table">
+            <caption className="sr-only">Starting point pricing</caption>
             <thead>
               <tr>
-                <th>Starting point</th>
-                <th>Price</th>
-                <th>Best for</th>
+                <th scope="col">Starting point</th>
+                <th scope="col">Price</th>
+                <th scope="col">Best for</th>
               </tr>
             </thead>
             <tbody>
@@ -122,11 +147,11 @@ export default function PricingPage() {
               ))}
             </tbody>
           </table>
-        </div>
+        </PricingTable>
       </Section>
 
       {/* 3. Offer ladder */}
-      <Section label="Ladder" title="Offer ladder" className="bg-surface">
+      <Section label="Ladder" title="Offer ladder" tone="wash">
         <p className="mb-8 max-w-2xl font-sans text-[length:var(--text-body)] text-muted">
           Start with a free Fit Check, then move through audit, prototype, build, and optional
           monthly support — only as far as you need.
@@ -154,13 +179,14 @@ export default function PricingPage() {
 
       {/* 4. Service / example budgets */}
       <Section label="Services" title="Service ranges">
-        <div className="overflow-x-auto">
+        <PricingTable caption="Service range pricing">
           <table className="data-table">
+            <caption className="sr-only">Service range pricing</caption>
             <thead>
               <tr>
-                <th>Service</th>
-                <th>Typical range</th>
-                <th>Best for</th>
+                <th scope="col">Service</th>
+                <th scope="col">Typical range</th>
+                <th scope="col">Best for</th>
               </tr>
             </thead>
             <tbody>
@@ -173,10 +199,10 @@ export default function PricingPage() {
               ))}
             </tbody>
           </table>
-        </div>
+        </PricingTable>
       </Section>
 
-      <Section label="Examples" title="Example budgets" className="bg-surface">
+      <Section label="Examples" title="Example budgets" tone="surface">
         <p className="mb-6 max-w-2xl font-sans text-[length:var(--text-body)] text-muted">
           Local-operator language for common first systems. Final quotes follow discovery.
         </p>
@@ -205,13 +231,15 @@ export default function PricingPage() {
             {foundingRules.scarcityNote}
           </p>
 
-          <div className="mt-8 overflow-x-auto">
+          <div className="mt-8">
+            <PricingTable caption="Founding client pricing">
             <table className="data-table">
+              <caption className="sr-only">Founding client pricing</caption>
               <thead>
                 <tr>
-                  <th>Offer</th>
-                  <th>Public rate</th>
-                  <th>Founding (50%)</th>
+                  <th scope="col">Offer</th>
+                  <th scope="col">Public rate</th>
+                  <th scope="col">Founding (50%)</th>
                 </tr>
               </thead>
               <tbody>
@@ -224,6 +252,7 @@ export default function PricingPage() {
                 ))}
               </tbody>
             </table>
+            </PricingTable>
           </div>
 
           <h3 className="mt-8 font-display text-[length:var(--text-h3)] text-ink">
@@ -253,7 +282,7 @@ export default function PricingPage() {
       </Section>
 
       {/* 6. Integrations */}
-      <Section label="Integrations" title="Bridge tools you already use" className="bg-surface">
+      <Section label="Integrations" title="Bridge tools you already use" tone="wash">
         <p className="max-w-3xl font-sans text-[length:var(--text-body)] text-muted">
           {positioning.integrationsBridge}
         </p>
@@ -295,7 +324,7 @@ export default function PricingPage() {
       </Section>
 
       {/* 8. How quoting works */}
-      <Section label="Quoting" title="How quoting works" className="bg-surface">
+      <Section label="Quoting" title="How quoting works" tone="surface">
         <ol className="divide-y divide-line border-y border-line">
           {quotingSteps.map((item, index) => (
             <li key={item.step} className="flex gap-4 py-5 sm:gap-6">

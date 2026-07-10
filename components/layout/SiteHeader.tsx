@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { useEffect, useId, useState } from "react";
 import { Container } from "./Container";
 import { Button } from "./Button";
@@ -10,6 +11,7 @@ export function SiteHeader() {
   const [open, setOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
   const panelId = useId();
+  const pathname = usePathname();
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 8);
@@ -24,10 +26,8 @@ export function SiteHeader() {
       if (event.key === "Escape") setOpen(false);
     };
     document.addEventListener("keydown", onKey);
-    document.body.style.overflow = "hidden";
     return () => {
       document.removeEventListener("keydown", onKey);
-      document.body.style.overflow = "";
     };
   }, [open]);
 
@@ -35,7 +35,7 @@ export function SiteHeader() {
     <header
       className={`sticky top-0 z-50 border-b border-line bg-surface/95 backdrop-blur-sm transition-shadow duration-200 ${
         scrolled
-          ? "shadow-[0_4px_16px_oklch(0.22_0.02_250_/_0.08)]"
+          ? "shadow-[var(--elevation-header)]"
           : "shadow-none"
       }`}
     >
@@ -46,8 +46,11 @@ export function SiteHeader() {
           aria-label={SITE.shortName}
           onClick={() => setOpen(false)}
         >
-          <span className="font-display text-[length:var(--text-h3)] text-ink sm:text-[length:var(--text-h2)]">
+          <span aria-hidden className="font-display text-[length:var(--text-h3)] text-ink lg:hidden">
             {SITE.mark}
+          </span>
+          <span aria-hidden className="hidden font-display text-[length:var(--text-h3)] text-ink lg:inline">
+            {SITE.shortName}
           </span>
         </Link>
 
@@ -59,7 +62,10 @@ export function SiteHeader() {
             <Link
               key={link.href}
               href={link.href}
-              className="inline-flex min-h-[var(--tap-min)] items-center px-2.5 font-sans text-[length:var(--text-small)] text-muted transition-colors hover:text-ink"
+              aria-current={pathname === link.href ? "page" : undefined}
+              className={`inline-flex min-h-[var(--tap-min)] items-center px-2.5 font-sans text-[length:var(--text-small)] transition-colors hover:text-ink ${
+                pathname === link.href ? "text-ink underline decoration-accent underline-offset-4" : "text-muted"
+              }`}
             >
               {link.label}
             </Link>
@@ -73,7 +79,7 @@ export function SiteHeader() {
 
           <button
             type="button"
-            className="inline-flex min-h-[var(--tap-min)] min-w-[var(--tap-min)] items-center justify-center border border-line bg-surface text-ink lg:hidden"
+            className="inline-flex min-h-[var(--tap-min)] min-w-[var(--tap-min)] items-center justify-center border border-control bg-surface text-ink lg:hidden"
             aria-expanded={open}
             aria-controls={panelId}
             aria-label={open ? "Close menu" : "Open menu"}
@@ -102,18 +108,17 @@ export function SiteHeader() {
       </Container>
 
       {open ? (
-        <div
+        <nav
           id={panelId}
           className="border-t border-line bg-surface lg:hidden"
-          role="dialog"
-          aria-modal="true"
-          aria-label="Mobile navigation"
+          aria-label="Mobile"
         >
           <Container className="flex flex-col gap-1 py-4">
             {MOBILE_NAV_LINKS.map((link) => (
               <Link
                 key={link.href}
                 href={link.href}
+                aria-current={pathname === link.href ? "page" : undefined}
                 className="inline-flex min-h-[var(--tap-min)] items-center font-sans text-[length:var(--text-body)] text-ink"
                 onClick={() => setOpen(false)}
               >
@@ -126,7 +131,7 @@ export function SiteHeader() {
               </Button>
             </div>
           </Container>
-        </div>
+        </nav>
       ) : null}
     </header>
   );

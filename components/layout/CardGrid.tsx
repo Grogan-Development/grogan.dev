@@ -12,11 +12,14 @@ type CardItem = {
 type CardGridProps = {
   items: CardItem[];
   columns?: 2 | 3;
+  /** Hub pages start at h2; nested uses can preserve their hierarchy with h3. */
+  headingLevel?: 2 | 3;
 };
 
-export function CardGrid({ items, columns = 2 }: CardGridProps) {
+export function CardGrid({ items, columns = 2, headingLevel = 2 }: CardGridProps) {
   const gridClass =
     columns === 3 ? "grid gap-4 sm:grid-cols-2 lg:grid-cols-3" : "grid gap-4 sm:grid-cols-2";
+  const Heading = headingLevel === 2 ? "h2" : "h3";
 
   return (
     <div className={gridClass}>
@@ -28,13 +31,13 @@ export function CardGrid({ items, columns = 2 }: CardGridProps) {
                 {item.label}
               </span>
             ) : null}
-            <h3
+            <Heading
               className={`font-display text-[length:var(--text-h3)] text-ink group-hover:text-accent ${
                 item.label ? "mt-2" : ""
               }`}
             >
               {item.title}
-            </h3>
+            </Heading>
             {item.description ? (
               <p className="mt-2 line-clamp-3 font-sans text-[length:var(--text-small)] leading-snug text-muted">
                 {item.description}

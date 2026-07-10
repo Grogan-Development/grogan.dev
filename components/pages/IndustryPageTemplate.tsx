@@ -58,22 +58,25 @@ export function IndustryPageTemplate({ industry }: IndustryPageTemplateProps) {
                 <h2 className="mb-4 font-display text-[length:var(--text-h2)]">
                   If this sounds familiar
                 </h2>
-                <div className="grid gap-3 sm:grid-cols-2">
-                  {industry.painPoints.map((p) => (
-                    <Card key={p} className="p-4">
+                <ol aria-label="Operational pain points" className="divide-y divide-line border-y border-line">
+                  {industry.painPoints.map((painPoint, index) => (
+                    <li key={painPoint} className="flex gap-4 py-4 sm:gap-6">
+                      <span className="w-8 shrink-0 font-mono text-[length:var(--text-small)] tabular-nums text-accent">
+                        {String(index + 1).padStart(2, "0")}
+                      </span>
                       <p className="font-sans text-[length:var(--text-small)] leading-snug text-muted">
-                        {p}
+                        {painPoint}
                       </p>
-                    </Card>
+                    </li>
                   ))}
-                </div>
+                </ol>
               </div>
 
               <div>
                 <h2 className="mb-4 font-display text-[length:var(--text-h2)]">
                   What we build for this industry
                 </h2>
-                <ul className="space-y-2.5">
+                <ul aria-label="Operational systems" className="space-y-2.5">
                   {industry.systems.map((s) => (
                     <li
                       key={s}
