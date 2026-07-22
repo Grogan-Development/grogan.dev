@@ -1,5 +1,8 @@
-<!-- BEGIN:nextjs-agent-rules -->
-# This is NOT the Next.js you know
+# grogan.dev
 
-This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` before writing any code. Heed deprecation notices.
-<!-- END:nextjs-agent-rules -->
+Personal blank site for Zack Grogan (developer). Not an agency or hireable group.
+
+- Public surface: single home page only.
+- Hosting: Railway `toolbox-home` in `grogan-foundry`.
+- Optional private toolbox link: `https://loom.grogan.dev`.
+- Do not reintroduce marketing, services, pricing, hire CTAs, or agency framing.

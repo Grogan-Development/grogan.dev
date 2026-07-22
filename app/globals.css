@@ -1,288 +1,89 @@
-@import "tailwindcss";
-
-:root {
-  /* Industrial Operator Studio — light mode only */
-  --ink: oklch(0.22 0.02 250);
-  --paper: oklch(0.97 0.01 85);
-  --surface: oklch(0.99 0.005 85);
-  --line: oklch(0.6 0.02 250);
-  --control-border: oklch(0.6 0.02 250);
-  --muted: oklch(0.48 0.02 250);
-  --accent: oklch(0.45 0.09 230);
-  --accent-2: oklch(0.55 0.08 70);
-  --danger: oklch(0.55 0.15 25);
-
-  /* Compatibility aliases used by existing utilities */
-  --background: var(--paper);
-  --foreground: var(--ink);
-  --border: var(--line);
-  --surface-alt: oklch(0.94 0.01 85);
-  --wash-blue: oklch(0.95 0.015 225);
-  --wash-brass: oklch(0.95 0.018 78);
-
-  /* Semantic layout rhythm */
-  --space-inline: clamp(1rem, 0.75rem + 1vw, 1.5rem);
-  --space-stack: clamp(1rem, 0.8rem + 1vw, 1.75rem);
-  --section-compact: clamp(2.5rem, 2.1rem + 1vw, 3.5rem);
-  --section-standard: clamp(3rem, 2.4rem + 2vw, 5rem);
-  --section-roomy: clamp(4rem, 3rem + 3vw, 6.5rem);
-  --elevation-header: 0 4px 16px oklch(0.22 0.02 250 / 0.08);
-  --elevation-raised: 0 8px 20px oklch(0.22 0.02 250 / 0.06);
-  --ease-operator: cubic-bezier(0.16, 1, 0.3, 1);
-
-  /* Fraunces · Geist · IBM Plex Mono */
-  --font-display: var(--font-fraunces), ui-serif, Georgia, serif;
-  --font-sans: var(--font-geist), ui-sans-serif, system-ui, sans-serif;
-  --font-mono: var(--font-plex-mono), ui-monospace, monospace;
-
-  /* Type scale — Fraunces: display/H1–H3; Geist: body; Plex: labels/prices */
-  --text-display: clamp(2.75rem, 2.2rem + 2.2vw, 3.5rem);
-  --text-h1: clamp(2rem, 1.7rem + 1.2vw, 2.75rem);
-  --text-h2: clamp(1.5rem, 1.35rem + 0.6vw, 1.875rem);
-  --text-h3: clamp(1.125rem, 1.05rem + 0.3vw, 1.25rem);
-  --text-body: 1.0625rem;
-  --text-small: 0.875rem;
-  --text-label: 0.625rem;
-  --tap-min: 2.75rem; /* 44px */
-}
-
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --color-border: var(--border);
-  --color-muted: var(--muted);
-  --color-surface: var(--surface);
-  --color-surface-alt: var(--surface-alt);
-  --color-ink: var(--ink);
-  --color-paper: var(--paper);
-  --color-line: var(--line);
-  --color-control: var(--control-border);
-  --color-accent: var(--accent);
-  --color-accent-2: var(--accent-2);
-  --color-danger: var(--danger);
-  --font-sans: var(--font-sans);
-  --font-serif: var(--font-display);
-  --font-mono: var(--font-mono);
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
 }
 
 html {
-  scroll-behavior: smooth;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  html {
-    scroll-behavior: auto;
-  }
+  color-scheme: dark;
 }
 
 body {
-  position: relative;
-  background: var(--paper);
-  color: var(--ink);
-  font-family: var(--font-sans);
-  font-size: var(--text-body);
+  margin: 0;
+  min-height: 100vh;
+  font-family:
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    "Segoe UI",
+    Roboto,
+    Helvetica,
+    Arial,
+    sans-serif;
+  font-size: 1.0625rem;
   line-height: 1.6;
+  color: #e8e8e6;
+  background: #0c0c0b;
+  -webkit-font-smoothing: antialiased;
 }
 
-/* Very subtle paper grain — light mode only, does not fight type */
-body::before {
-  content: "";
-  position: fixed;
-  inset: 0;
-  z-index: 9999;
-  pointer-events: none;
-  opacity: 0.035;
-  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
-  background-repeat: repeat;
-  background-size: 180px 180px;
+main {
+  max-width: 36rem;
+  margin: 0 auto;
+  padding: clamp(3rem, 12vh, 6rem) 1.5rem 4rem;
 }
 
-@layer base {
-  h1,
-  h2,
-  h3 {
-    font-family: var(--font-display);
-    font-weight: 550;
-    letter-spacing: -0.02em;
-    line-height: 1.2;
-    color: var(--ink);
-  }
-
-  h1 {
-    font-size: var(--text-h1);
-  }
-
-  h2 {
-    font-size: var(--text-h2);
-  }
-
-  h3 {
-    font-size: var(--text-h3);
-  }
-
-  a {
-    color: inherit;
-  }
-}
-
-:focus {
-  outline: none;
-}
-
-:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 3px;
-}
-
-.skip-to-content {
-  position: absolute;
-  left: 1rem;
-  top: 0;
-  z-index: 100;
-  transform: translateY(-120%);
-  border: 1px solid var(--line);
-  background: var(--surface);
-  color: var(--ink);
-  padding: 0.75rem 1rem;
-  font-size: var(--text-small);
-  font-weight: 500;
-  min-height: var(--tap-min);
-  transition: transform 0.15s var(--ease-operator);
-}
-
-.skip-to-content:focus,
-.skip-to-content:focus-visible {
-  transform: translateY(0.75rem);
-}
-
-.font-display {
-  font-family: var(--font-display);
-  font-weight: 550;
-  letter-spacing: -0.02em;
-}
-
-.font-mono {
-  font-family: var(--font-mono);
-}
-
-/* Motion system 1: section reveal (fade + slide-up, once) */
-.reveal {
-  opacity: 0;
-  transform: translateY(0.75rem);
-  transition:
-    opacity 0.55s var(--ease-operator),
-    transform 0.55s var(--ease-operator);
-  will-change: opacity, transform;
-}
-
-.reveal.reveal-visible {
-  opacity: 1;
-  transform: translateY(0);
-}
-
-/* Motion system 2: demo step panel crossfade */
-.demo-crossfade {
-  position: relative;
-}
-
-.demo-crossfade-panel,
-.demo-panel {
-  animation: demo-crossfade-in 0.28s var(--ease-operator) both;
-}
-
-@keyframes demo-crossfade-in {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
-}
-
-/* Restrained interactive hover — accent / border only, no scale */
-.interactive-card {
-  transition:
-    border-color 0.2s var(--ease-operator),
-    color 0.2s var(--ease-operator);
-}
-
-.interactive-card:hover {
-  border-color: var(--ink);
-}
-
-.interactive-link {
-  transition: color 0.2s var(--ease-operator);
-}
-
-.interactive-link:hover {
-  color: var(--accent);
-}
-
-.price-display {
-  font-family: var(--font-mono);
-  font-size: var(--text-h2);
-  font-variant-numeric: tabular-nums;
-  letter-spacing: -0.02em;
+h1 {
+  margin: 0 0 0.35rem;
+  font-size: clamp(1.75rem, 4vw, 2.125rem);
+  font-weight: 600;
+  letter-spacing: -0.03em;
   line-height: 1.15;
-  color: var(--ink);
+  color: #f5f5f2;
 }
 
-.price-inline {
-  font-family: var(--font-mono);
-  font-size: var(--text-small);
-  font-variant-numeric: tabular-nums;
-  color: var(--ink);
+.role {
+  margin: 0 0 2rem;
+  font-size: 0.95rem;
+  letter-spacing: 0.02em;
+  color: #8a8a84;
 }
 
-.data-table {
-  width: 100%;
-  border-collapse: collapse;
-  border: 1px solid var(--line);
-  text-align: left;
-  font-size: var(--text-small);
+p {
+  margin: 0 0 1rem;
+  color: #c4c4be;
 }
 
-.data-table th,
-.data-table td {
-  border: 1px solid var(--line);
-  padding: 0.5rem 0.75rem;
-  vertical-align: top;
+p:last-of-type {
+  margin-bottom: 0;
 }
 
-.data-table thead {
-  background: var(--surface-alt);
+.note {
+  margin-top: 1.75rem;
+  padding-top: 1.75rem;
+  border-top: 1px solid #242422;
+  font-size: 0.95rem;
+  color: #9a9a94;
 }
 
-.data-table th {
-  font-weight: 500;
-  color: var(--ink);
+.tools {
+  margin-top: 2.5rem;
+  font-size: 0.875rem;
+  color: #6e6e68;
 }
 
-.data-table td.price-cell {
-  font-family: var(--font-mono);
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
+a {
+  color: #d0d0ca;
+  text-decoration: underline;
+  text-underline-offset: 0.18em;
+  text-decoration-thickness: 1px;
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .reveal {
-    opacity: 1;
-    transform: none;
-    transition: none;
-    will-change: auto;
-  }
+a:hover {
+  color: #f5f5f2;
+}
 
-  .demo-crossfade-panel,
-  .demo-panel {
-    animation: none;
-  }
-
-  .interactive-card,
-  .interactive-link {
-    transition: none;
-  }
-
-  .demo-stepper-btn {
-    transition: none;
-  }
+a:focus-visible {
+  outline: 2px solid #a8a8a0;
+  outline-offset: 3px;
 }
