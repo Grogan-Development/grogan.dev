@@ -34,36 +34,30 @@ if [ -n "${NERO_JOB_ID:-}" ]; then
 fi
 
 bus="${XDG_RUNTIME_DIR}/bus"
-mem_args="-p MemoryHigh=48G -p MemoryMax=64G"
+# Same -p set the real job uses. User manager in Docker may reject resource
+# properties; slice + container memory.max still fence the pig.
+resource_args="-p MemoryHigh=48G -p MemoryMax=64G -p CPUWeight=100"
 
 if [ "${NERO_RUN_DRY:-}" != 1 ]; then
   if [ ! -S "$bus" ]; then
     echo "nero-run: cannot connect to user bus at ${bus} (need linger / user@${uid}.service)" >&2
     exit 1
   fi
-  if ! systemctl --user is-system-running >/dev/null 2>&1; then
-    echo "nero-run: cannot connect to user bus at ${bus}" >&2
-    exit 1
-  fi
-  # User manager inside Docker may reject Memory*=; slice + container memory.max
-  # still fence the job. Probe with a throwaway scope so the real command is
-  # not started twice.
+  # shellcheck disable=SC2086
   if ! systemd-run --user --quiet --scope --slice=nero-job.slice \
-      -p MemoryHigh=48G -p MemoryMax=64G --collect -- true; then
-    mem_args=""
+      $resource_args --collect -- true; then
+    resource_args=""
   fi
 fi
 
 if [ "${NERO_RUN_DRY:-}" = 1 ]; then
-  # Intentionally unquoted mem/unit args so empty values disappear.
+  # Intentionally unquoted resource/unit args so empty values disappear.
   # shellcheck disable=SC2086
   echo systemd-run --user --scope --slice=nero-job.slice \
-    $mem_args -p CPUWeight=100 \
-    --collect $unit_args -- "$cmd" "$@"
+    $resource_args --collect $unit_args -- "$cmd" "$@"
   exit 0
 fi
 
 # shellcheck disable=SC2086
 exec systemd-run --user --scope --slice=nero-job.slice \
-  $mem_args -p CPUWeight=100 \
-  --collect $unit_args -- "$cmd" "$@"
+  $resource_args --collect $unit_args -- "$cmd" "$@"

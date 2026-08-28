@@ -3,7 +3,7 @@ Description=Nero seat compositor (openbox on DISPLAY=:1)
 After=kasmvnc.service user@1000.service
 Requires=kasmvnc.service
 BindsTo=kasmvnc.service
-Wants=user@1000.service
+Wants=user@1000.service nero-chromium.service
 
 [Service]
 Type=simple
