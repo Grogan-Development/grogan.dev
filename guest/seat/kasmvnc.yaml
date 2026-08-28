@@ -1,0 +1,36 @@
+# KasmVNC serves the agent seat. Bind loopback only; Caddy on the host
+# will reverse-proxy this later. TLS stays off inside the container.
+desktop:
+  resolution:
+    width: 1920
+    height: 1080
+  allow_resize: true
+  pixel_depth: 24
+  gpu:
+    hw3d: false
+
+network:
+  protocol: http
+  interface: 127.0.0.1
+  websocket_port: 8444
+  use_ipv4: true
+  use_ipv6: false
+  ssl:
+    require_ssl: false
+
+user_session:
+  session_type: shared
+  idle_timeout: never
+
+command_line:
+  prompt: false
+
+server:
+  http:
+    httpd_directory: /usr/share/kasmvnc/www
+  advanced:
+    kasm_password_file: /etc/nero/kasmpasswd
+  auto_shutdown:
+    no_user_session_timeout: never
+    active_user_session_timeout: never
+    inactive_user_session_timeout: never

@@ -1,0 +1,178 @@
+#!/usr/bin/env python3
+"""Seat CLI: shot / click / type / key against the Nero X11 display.
+
+Injects via xdotool; captures via scrot. Every real inject/shot takes an
+exclusive flock so only one CLI or VNC helper drives the seat at a time
+(queue, not overlap). Cage/weston are Wayland; KasmVNC is X11, so the seat
+is openbox on KasmVNC's Xvnc (display :1).
+"""
+from __future__ import annotations
+
+import argparse
+import contextlib
+import fcntl
+import os
+import shlex
+import subprocess
+import time
+from typing import Iterator, Sequence
+
+DEFAULT_DISPLAY = ":1"
+DEFAULT_LOCK = "/run/nero/seat.lock"
+DEFAULT_LOCK_TIMEOUT = 60.0
+BUTTONS = {"left": 1, "middle": 2, "right": 3, "1": 1, "2": 2, "3": 3}
+
+
+def default_lock_path() -> str:
+    env = os.environ.get("NERO_SEAT_LOCK")
+    if env:
+        return env
+    runtime = os.environ.get("XDG_RUNTIME_DIR")
+    if runtime:
+        return os.path.join(runtime, "nero-seat.lock")
+    return DEFAULT_LOCK
+
+
+def default_display() -> str:
+    return os.environ.get("NERO_SEAT_DISPLAY") or os.environ.get("DISPLAY") or DEFAULT_DISPLAY
+
+
+def build_parser() -> argparse.ArgumentParser:
+    p = argparse.ArgumentParser(
+        prog="nero-desktop",
+        description="Drive the Nero seat (shot/click/type/key). Serialised with flock.",
+    )
+    p.add_argument("--display", default=None, help="X display (default: $NERO_SEAT_DISPLAY or $DISPLAY or :1)")
+    p.add_argument(
+        "--lock-file",
+        default=None,
+        help="flock path (default: $NERO_SEAT_LOCK, else $XDG_RUNTIME_DIR/nero-seat.lock, else /run/nero/seat.lock)",
+    )
+    p.add_argument("--lock-timeout", type=float, default=DEFAULT_LOCK_TIMEOUT, help="seconds to wait for the seat lock")
+    p.add_argument("--dry-run", action="store_true", help="print the planned command and exit (no display, no lock)")
+    sub = p.add_subparsers(dest="cmd", required=True)
+
+    shot = sub.add_parser("shot", help="capture the seat as PNG")
+    shot.add_argument("--out", default="-", help="output path, or - for stdout")
+
+    click = sub.add_parser("click", help="click at pixel coordinates")
+    click.add_argument("x", type=int)
+    click.add_argument("y", type=int)
+    click.add_argument("--button", default="left", help="left|middle|right (or 1|2|3)")
+    click.add_argument("--double", action="store_true")
+
+    typ = sub.add_parser("type", help="type literal text")
+    typ.add_argument("text", help="string to type (use -- if it starts with -)")
+    typ.add_argument("--delay", type=int, default=12, help="xdotool inter-key delay in ms")
+
+    key = sub.add_parser("key", help="press keysyms (xdotool names, e.g. Return ctrl+s)")
+    key.add_argument("keys", nargs="+")
+
+    lock = sub.add_parser("lock", help="hold the seat lock and run a command (VNC helper / queue)")
+    lock.add_argument("command", nargs=argparse.REMAINDER, help="command after --")
+    return p
+
+
+def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
+    args = build_parser().parse_args(argv)
+    args.display = args.display or default_display()
+    args.lock_file = args.lock_file or default_lock_path()
+    if args.cmd == "click":
+        button_key = str(args.button).lower()
+        if button_key not in BUTTONS:
+            raise SystemExit(f"nero-desktop: unknown button {args.button!r} (left|middle|right)")
+        args.button_num = BUTTONS[button_key]
+    if args.cmd == "type" and args.text == "":
+        raise SystemExit("nero-desktop: type: empty string")
+    if args.cmd == "lock":
+        cmd = list(args.command)
+        if cmd[:1] == ["--"]:
+            cmd = cmd[1:]
+        if not cmd:
+            raise SystemExit("nero-desktop: lock: missing command")
+        args.command = cmd
+    return args
+
+
+def tool_argv(args: argparse.Namespace) -> list[str]:
+    if args.cmd == "shot":
+        out = args.out if args.out != "-" else "-"
+        return ["scrot", "--overwrite", "--file", out]
+    if args.cmd == "click":
+        argv = ["xdotool", "mousemove", "--sync", str(args.x), str(args.y), "click"]
+        if args.double:
+            argv.extend(["--repeat", "2", "--delay", "80"])
+        argv.append(str(args.button_num))
+        return argv
+    if args.cmd == "type":
+        return ["xdotool", "type", "--clearmodifiers", "--delay", str(args.delay), "--", args.text]
+    if args.cmd == "key":
+        return ["xdotool", "key", "--clearmodifiers", "--", *args.keys]
+    if args.cmd == "lock":
+        return list(args.command)
+    raise AssertionError(args.cmd)
+
+
+def format_plan(args: argparse.Namespace) -> str:
+    argv = tool_argv(args)
+    return f"DISPLAY={args.display} {shlex.join(argv)}"
+
+
+@contextlib.contextmanager
+def seat_lock(path: str, timeout: float) -> Iterator[None]:
+    parent = os.path.dirname(path)
+    if parent:
+        os.makedirs(parent, exist_ok=True)
+    fd = os.open(path, os.O_CREAT | os.O_RDWR, 0o644)
+    deadline = time.monotonic() + timeout
+    try:
+        while True:
+            try:
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except BlockingIOError:
+                if time.monotonic() >= deadline:
+                    raise SystemExit(f"nero-desktop: seat lock busy ({path})") from None
+                time.sleep(0.05)
+        yield
+    finally:
+        try:
+            fcntl.flock(fd, fcntl.LOCK_UN)
+        finally:
+            os.close(fd)
+
+
+def _env_with_display(display: str) -> dict[str, str]:
+    env = os.environ.copy()
+    env["DISPLAY"] = display
+    return env
+
+
+def run_tool(args: argparse.Namespace) -> int:
+    env = _env_with_display(args.display)
+    if args.cmd == "lock":
+        # Stay in this process so the flock FD remains open for the helper's
+        # lifetime. os.execvpe would drop it (O_CLOEXEC since Python 3.4).
+        subprocess.run(args.command, check=True, env=env)
+        return 0
+    # scrot --file - writes PNG to stdout (Debian trixie scrot 1.12).
+    subprocess.run(tool_argv(args), check=True, env=env)
+    return 0
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    args = parse_args(argv)
+    if args.dry_run:
+        print(format_plan(args))
+        return 0
+    try:
+        with seat_lock(args.lock_file, args.lock_timeout):
+            return run_tool(args)
+    except FileNotFoundError as e:
+        raise SystemExit(f"nero-desktop: missing tool ({e.filename})") from e
+    except subprocess.CalledProcessError as e:
+        raise SystemExit(e.returncode) from e
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

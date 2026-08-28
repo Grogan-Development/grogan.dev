@@ -1,0 +1,5 @@
+#!/bin/sh
+# Short-lived openbox --startup hook. Do not exec a long-running client here
+# or openbox itself never starts.
+set -eu
+xsetroot -solid '#202020' || true

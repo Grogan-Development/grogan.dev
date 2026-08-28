@@ -1,0 +1,25 @@
+[Unit]
+Description=Nero seat Chromium
+After=nero-seat.service user@1000.service
+Requires=nero-seat.service
+BindsTo=nero-seat.service
+PartOf=nero-seat.service
+Wants=user@1000.service
+
+[Service]
+Type=simple
+User=nero
+Group=nero
+WorkingDirectory=/home/nero
+Environment=HOME=/home/nero
+Environment=USER=nero
+Environment=DISPLAY=:1
+Environment=XAUTHORITY=/home/nero/.Xauthority
+Environment=XDG_RUNTIME_DIR=/run/user/1000
+Environment=DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus
+ExecStart=/usr/bin/chromium --start-maximized about:blank
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

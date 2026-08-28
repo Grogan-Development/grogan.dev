@@ -1,0 +1,63 @@
+#!/bin/sh
+# Register a keep-awake job: a systemd --user scope under nero-job.slice.
+# Live cgroup: user@1000.service/nero-job.slice/ (not a system slice).
+# Stray processes (unnamed daemons, tmux, etc.) are not jobs.
+set -eu
+
+usage() {
+  echo "usage: nero-run command [args...]" >&2
+  echo "env: NERO_JOB_ID   optional unit suffix (nero-job-<id>.scope)" >&2
+  echo "     NERO_RUN_DRY=1  print systemd-run argv and exit" >&2
+  exit 2
+}
+
+[ "$#" -ge 1 ] || usage
+
+cmd=$1
+shift
+
+uid=$(id -u)
+: "${XDG_RUNTIME_DIR:=/run/user/${uid}}"
+: "${DBUS_SESSION_BUS_ADDRESS:=unix:path=${XDG_RUNTIME_DIR}/bus}"
+: "${DISPLAY:=:1}"
+export XDG_RUNTIME_DIR DBUS_SESSION_BUS_ADDRESS DISPLAY
+
+unit_args=""
+if [ -n "${NERO_JOB_ID:-}" ]; then
+  case "$NERO_JOB_ID" in
+    *[!A-Za-z0-9_-]*)
+      echo "nero-run: NERO_JOB_ID must be alphanumeric, _ or -" >&2
+      exit 2
+      ;;
+  esac
+  unit_args="--unit=nero-job-${NERO_JOB_ID}.scope"
+fi
+
+bus="${XDG_RUNTIME_DIR}/bus"
+# Same -p set the real job uses. User manager in Docker may reject resource
+# properties; slice + container memory.max still fence the pig.
+resource_args="-p MemoryHigh=48G -p MemoryMax=64G -p CPUWeight=100"
+
+if [ "${NERO_RUN_DRY:-}" != 1 ]; then
+  if [ ! -S "$bus" ]; then
+    echo "nero-run: cannot connect to user bus at ${bus} (need linger / user@${uid}.service)" >&2
+    exit 1
+  fi
+  # shellcheck disable=SC2086
+  if ! systemd-run --user --quiet --scope --slice=nero-job.slice \
+      $resource_args --collect -- true; then
+    resource_args=""
+  fi
+fi
+
+if [ "${NERO_RUN_DRY:-}" = 1 ]; then
+  # Intentionally unquoted resource/unit args so empty values disappear.
+  # shellcheck disable=SC2086
+  echo systemd-run --user --scope --slice=nero-job.slice \
+    $resource_args --collect $unit_args -- "$cmd" "$@"
+  exit 0
+fi
+
+# shellcheck disable=SC2086
+exec systemd-run --user --scope --slice=nero-job.slice \
+  $resource_args --collect $unit_args -- "$cmd" "$@"

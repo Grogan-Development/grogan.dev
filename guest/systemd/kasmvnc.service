@@ -1,0 +1,27 @@
+[Unit]
+Description=KasmVNC seat display (Xvnc :1, loopback :8444)
+Documentation=https://www.kasmweb.com/kasmvnc/docs/latest/index.html
+After=network.target systemd-tmpfiles-setup.service
+Wants=nero-seat.service
+
+[Service]
+Type=forking
+User=nero
+Group=nero
+SupplementaryGroups=ssl-cert
+WorkingDirectory=/home/nero
+Environment=HOME=/home/nero
+Environment=USER=nero
+Environment=DISPLAY=:1
+# Xvnc *is* the virtual framebuffer (no Xvfb). Openbox attaches in nero-seat.service.
+# /run/nero is tmpfiles.d, not RuntimeDirectory: lock inode must outlive Xvnc restarts.
+ExecStartPre=/usr/lib/nero/seed-home
+ExecStartPre=-/usr/bin/vncserver -kill :1
+ExecStart=/usr/bin/vncserver :1 -geometry 1920x1080 -depth 24 -noxstartup -DisableBasicAuth -interface 127.0.0.1 -websocketPort 8444
+ExecStop=/usr/bin/vncserver -kill :1
+Restart=on-failure
+RestartSec=2
+TimeoutStartSec=30
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,9 @@
+[Unit]
+Description=Nero registered jobs (keep-awake)
+# Host heartbeat: user@1000.service/nero-job.slice/ under the container cgroup.
+# There is no system nero-job.slice.
+
+[Slice]
+CPUWeight=100
+MemoryHigh=48G
+MemoryMax=64G
