@@ -1,3 +1,4 @@
+/// <reference types="node" />
 import * as NodeCrypto from "node:crypto";
 
 import { assert, describe, it } from "@effect/vitest";

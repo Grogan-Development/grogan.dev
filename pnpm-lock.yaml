@@ -228,9 +228,6 @@ importers:
       '@types/react-dom':
         specifier: ~19.2.3
         version: 19.2.5(@types/react@19.2.18)
-      '@vercel/config':
-        specifier: ^0.3.0
-        version: 0.3.0
       '@vitejs/plugin-react':
         specifier: ^6.0.0
         version: 6.1.0(@rolldown/plugin-babel@0.2.3(@babel/core@7.29.7)(@babel/runtime@7.29.7)(@voidzero-dev/vite-plus-core@0.2.2(@types/node@24.12.4)(jiti@2.7.0)(yaml@2.9.0))(rolldown@1.2.6))(@voidzero-dev/vite-plus-core@0.2.2(@types/node@24.12.4)(jiti@2.7.0)(yaml@2.9.0))(babel-plugin-react-compiler@1.0.0)
@@ -1623,13 +1620,6 @@ packages:
   '@ungap/structured-clone@1.4.0':
     resolution: {integrity: sha512-1mEZtMKPM09vDmQt5y7YvmN2+DFTP7Tg0EWXdic8/C6VRnpb33e4ghisCIE3WZjsE2N8mf+QV1Zqh7ZFYLWInQ==}
 
-  '@vercel/config@0.3.0':
-    resolution: {integrity: sha512-Tf5k5y2F478oTiQcU5R8Ntix1UejE6NdduZnI7aa1XXxjCtifX1XdRS/D2uTjiQAwIL3pLa1LSAN80ABbba+TQ==}
-    hasBin: true
-
-  '@vercel/routing-utils@6.2.0':
-    resolution: {integrity: sha512-YI2cGYZmJKEyGSEgf5Fw5rVuW7X1bTOQ7/pnLRNTFMH3YB3qqP5erCLCJGv2kIvNo1iQAPINHQRJj6ykEdGoPg==}
-
   '@vitejs/plugin-react@6.1.0':
     resolution: {integrity: sha512-qd2BzUBehkov86WFhg0JkEFEYyCLG9uPCe6qWTY/kRlss9OvJrOF2UbIWT7p+8IzZHkEu0DNGHc4HSv+JdDLsw==}
     engines: {node: ^20.19.0 || >=22.12.0}
@@ -1799,9 +1789,6 @@ packages:
 
   '@zxcvbn-ts/language-common@3.0.4':
     resolution: {integrity: sha512-viSNNnRYtc7ULXzxrQIVUNwHAPSXRtoIwy/Tq4XQQdIknBzw4vz36lQLF6mvhMlTIlpjoN/Z1GFu/fwiAlUSsw==}
-
-  ajv@6.15.0:
-    resolution: {integrity: sha512-fgFx7Hfoq60ytK2c7DhnF8jIvzYgOMxfugjLOSMHjLIPgenqa7S7oaagATUq99mV6IYvN2tRmC0wnTYX6iPbMw==}
 
   alien-signals@2.0.6:
     resolution: {integrity: sha512-P3TxJSe31bUHBiblg59oU1PpaWPtmxF9GhJ/cB7OkgJ0qN/ifFSKUI25/v8ZhsT+lIG6ac8DpTOplXxORX6F3Q==}
@@ -2045,12 +2032,6 @@ packages:
     resolution: {integrity: sha512-7ms6T7SybUev/PQITciI0yLM2pOSFy5zpG8Ty7tQofcVaQUvrMXp6CBwqF6fThLCLOrfBtuHAtwq6Yu4XPCllg==}
     engines: {node: '>=12.17.0'}
 
-  fast-deep-equal@3.1.3:
-    resolution: {integrity: sha512-f3qQ9oQy9j2AhBe/H9VC91wLmKBCCU/gDOnKNAYG5hswO7BLKj09Hc5HYNz9cGI++xlpDCIgDaitVs03ATR84Q==}
-
-  fast-json-stable-stringify@2.1.0:
-    resolution: {integrity: sha512-lhd/wF+Lk98HZoTCtlVraHtfh5XYijIjalXck7saUtuanSDyLMxnHhSXEDJqHxD7msR8D0uCmqlkwjCV8xvwHw==}
-
   fastest-levenshtein@1.0.16:
     resolution: {integrity: sha512-eRnCtTTtGZFpQCwhJiUOuxPQWRXVKYDn0b2PeHfXL6/Zi53SLAzAHfVhVWK2AryC/WH05kGfxhFIPvTF0SXQzg==}
     engines: {node: '>= 4.9.1'}
@@ -2197,9 +2178,6 @@ packages:
     resolution: {integrity: sha512-/sM3dO2FOzXjKQhJuo0Q173wf2KOo8t4I8vHy6lF9poUp7bKT0/NHE8fPX23PwfhnykfqnC2xRxOnVw5XuGIaA==}
     engines: {node: '>=6'}
     hasBin: true
-
-  json-schema-traverse@0.4.1:
-    resolution: {integrity: sha512-xbbCH5dCYU5T8LcEhhuh7HJ88HXuW3qsI3Y0zOZFKfZEHcpWiHU/Jxzk629Brsab/mMiHQti9wMP+845RPe3Vg==}
 
   json5@2.2.3:
     resolution: {integrity: sha512-XmOWe7eyHYH14cLdVPoyg+GOH3rYX++KpzrylJwSW98t3Nk+U8XOl8FWKOgwtzdb8lXGf6zYwDUzeHMWfxasyg==}
@@ -2649,9 +2627,6 @@ packages:
   parse5@7.3.0:
     resolution: {integrity: sha512-IInvU7fabl34qmi9gY8XOVxhYyMyuH2xUNpb2q8/Y+7552KlejkRvqvD19nMoUW/uQGGbqNpA6Tufu5FL5BZgw==}
 
-  path-to-regexp@6.1.0:
-    resolution: {integrity: sha512-h9DqehX3zZZDCEm+xbfU0ZmwCGFCAAraPJWMXJ4+v32NjZJilVg3k1TcKsRgIb8IQ/izZSaydDc1OhJCZvs2Dw==}
-
   path-to-regexp@6.3.0:
     resolution: {integrity: sha512-Yhpw4T9C6hPpgPeA28us07OJeqZ5EzQTkbfwuhsUg0c237RomFoETJgmp2sa3F/41gfLE6G5cqcYwznmeEeOlQ==}
 
@@ -2686,10 +2661,6 @@ packages:
     engines: {node: '>=14'}
     hasBin: true
 
-  pretty-cache-header@1.0.0:
-    resolution: {integrity: sha512-xtXazslu25CdnGnUkByU1RoOjK55TqwatJkjjJLg5ZAdz2Lngko/mmaUgeET36P2GMlNwh3fdM7FWBO717pNcw==}
-    engines: {node: '>=12.13'}
-
   pretty-format@27.5.1:
     resolution: {integrity: sha512-Qb1gy5OrP5+zDf2Bvnzdl3jsTf1qXVMazbvCoKhtKqVs4/YK4ozX4gKQJJVyNe+cajNPn0KoC0MC3FUmaHWEmQ==}
     engines: {node: ^10.13.0 || ^12.13.0 || ^14.15.0 || >=15.0.0}
@@ -2707,10 +2678,6 @@ packages:
 
   property-information@7.2.0:
     resolution: {integrity: sha512-IAtzIB6sUiWaJYrX9smp3V46pBGbBeLFRGdh25kg1334VcBlD8HzhPeNIWQH9zhGmo2itIe25EHt9dQP7G5hmg==}
-
-  punycode@2.3.1:
-    resolution: {integrity: sha512-vYt7UD1U9Wg6138shLtLOvdAu+8DsC/ilFtEVHcH+wydcSpNE20AfSOduf6MkRFahL5FY7X1oU7nKVZFtfq8Fg==}
-    engines: {node: '>=6'}
 
   pure-rand@8.4.2:
     resolution: {integrity: sha512-vvuOGgcuPJAirlHvuQw1TrOiw7ptaIXXmIbNuiNOY6lNGJJH49PQ1Kj4nd783nPdQhQdicgOjVI2yI/9BD6/Ng==}
@@ -2912,10 +2879,6 @@ packages:
     resolution: {integrity: sha512-uxc/zpqFg6x7C8vOE7lh6Lbda8eEL9zmVm/PLeTPBRhh1xCgdWaQ+J1CUieGpIfm2HdtsUpRv+HshiasBMcc6A==}
     engines: {node: '>=6'}
 
-  timestring@6.0.0:
-    resolution: {integrity: sha512-wMctrWD2HZZLuIlchlkE2dfXJh7J2KDI9Dwl+2abPYg0mswQHfOAyQW3jJg1pY5VfttSINZuKcXoB3FGypVklA==}
-    engines: {node: '>=8'}
-
   tinybench@2.9.0:
     resolution: {integrity: sha512-0+DUvqWMValLmha6lr4kD8iAMK1HzV0/aKnCtWb9v9641TnP/MFb7Pc2bxoxQjTXAErryXVgUOfv2YqNllqGeg==}
 
@@ -3037,9 +3000,6 @@ packages:
     hasBin: true
     peerDependencies:
       browserslist: '>= 4.21.0'
-
-  uri-js@4.4.1:
-    resolution: {integrity: sha512-7rKUyy33Q1yc98pQ1DAmLtwX109F7TIfWlW1Ydo8Wl1ii1SeHieeh0HHfPeL2fMXK6z0s8ecKs9frCuLJvndBg==}
 
   use-sync-external-store@1.6.0:
     resolution: {integrity: sha512-Pp6GSwGP/NrPIrxVFAIkOQeyw8lFenOHijQWkUTrDvrF4ALqylP2C/KCkeS9dpUM3KvYRQhna5vt7IL95+ZQ9w==}
@@ -3178,9 +3138,6 @@ packages:
   yoctocolors-cjs@2.1.3:
     resolution: {integrity: sha512-U/PBtDf35ff0D8X8D0jfdzHYEPFxAI7jJlxZXwCSez5M3190m+QobIfh+sWDWSHMCWWJN2AWamkegn6vr6YBTw==}
     engines: {node: '>=18'}
-
-  zod@3.25.76:
-    resolution: {integrity: sha512-gzUt/qt81nXsFGKIFcC3YnfEAx5NkunCfnDlvuBSSFS02bcXu4Lmea0AFIUwbLWxWPx3d9p8S5QoaujKcNQxcQ==}
 
   zod@4.4.3:
     resolution: {integrity: sha512-ytENFjIJFl2UwYglde2jchW2Hwm4GJFLDiSXWdTrJQBIN9Fcyp7n4DhxJEiWNAJMV1/BqWfW/kkg71UDcHJyTQ==}
@@ -4417,19 +4374,6 @@ snapshots:
 
   '@ungap/structured-clone@1.4.0': {}
 
-  '@vercel/config@0.3.0':
-    dependencies:
-      '@vercel/routing-utils': 6.2.0
-      pretty-cache-header: 1.0.0
-      zod: 3.25.76
-
-  '@vercel/routing-utils@6.2.0':
-    dependencies:
-      path-to-regexp: 6.1.0
-      path-to-regexp-updated: path-to-regexp@6.3.0
-    optionalDependencies:
-      ajv: 6.15.0
-
   '@vitejs/plugin-react@6.1.0(@rolldown/plugin-babel@0.2.3(@babel/core@7.29.7)(@babel/runtime@7.29.7)(@voidzero-dev/vite-plus-core@0.2.2(@types/node@24.12.4)(jiti@2.7.0)(yaml@2.9.0))(rolldown@1.2.6))(@voidzero-dev/vite-plus-core@0.2.2(@types/node@24.12.4)(jiti@2.7.0)(yaml@2.9.0))(babel-plugin-react-compiler@1.0.0)':
     dependencies:
       '@rolldown/pluginutils': 1.0.1
@@ -4550,14 +4494,6 @@ snapshots:
       fastest-levenshtein: 1.0.16
 
   '@zxcvbn-ts/language-common@3.0.4': {}
-
-  ajv@6.15.0:
-    dependencies:
-      fast-deep-equal: 3.1.3
-      fast-json-stable-stringify: 2.1.0
-      json-schema-traverse: 0.4.1
-      uri-js: 4.4.1
-    optional: true
 
   alien-signals@2.0.6: {}
 
@@ -4764,12 +4700,6 @@ snapshots:
     dependencies:
       pure-rand: 8.4.2
 
-  fast-deep-equal@3.1.3:
-    optional: true
-
-  fast-json-stable-stringify@2.1.0:
-    optional: true
-
   fastest-levenshtein@1.0.16: {}
 
   fdir@6.5.0(picomatch@4.0.7):
@@ -4944,9 +4874,6 @@ snapshots:
   js-tokens@4.0.0: {}
 
   jsesc@3.1.0: {}
-
-  json-schema-traverse@0.4.1:
-    optional: true
 
   json5@2.2.3: {}
 
@@ -5592,8 +5519,6 @@ snapshots:
     dependencies:
       entities: 6.0.1
 
-  path-to-regexp@6.1.0: {}
-
   path-to-regexp@6.3.0: {}
 
   pathe@2.0.3: {}
@@ -5618,10 +5543,6 @@ snapshots:
 
   prettier@3.9.6: {}
 
-  pretty-cache-header@1.0.0:
-    dependencies:
-      timestring: 6.0.0
-
   pretty-format@27.5.1:
     dependencies:
       ansi-regex: 5.0.1
@@ -5635,9 +5556,6 @@ snapshots:
   progress@2.0.3: {}
 
   property-information@7.2.0: {}
-
-  punycode@2.3.1:
-    optional: true
 
   pure-rand@8.4.2: {}
 
@@ -5876,8 +5794,6 @@ snapshots:
 
   tapable@2.3.3: {}
 
-  timestring@6.0.0: {}
-
   tinybench@2.9.0: {}
 
   tinyexec@1.3.0: {}
@@ -5971,11 +5887,6 @@ snapshots:
       browserslist: 4.28.8
       escalade: 3.2.0
       picocolors: 1.1.1
-
-  uri-js@4.4.1:
-    dependencies:
-      punycode: 2.3.1
-    optional: true
 
   use-sync-external-store@1.6.0(react@19.2.6):
     dependencies:
@@ -6134,8 +6045,6 @@ snapshots:
       lib0: 0.2.117
 
   yoctocolors-cjs@2.1.3: {}
-
-  zod@3.25.76: {}
 
   zod@4.4.3: {}
 
