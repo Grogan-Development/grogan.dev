@@ -263,3 +263,55 @@ func TestRestoreRoundTripAndOverBudget(t *testing.T) {
 		t.Fatalf("second restore running=%d", running2)
 	}
 }
+
+func TestStartCLIErrorInspectRunningCountsTowardAdmission(t *testing.T) {
+	ctx := context.Background()
+	l, rt, _ := newTest(t)
+	rt.StartErr = errors.New("cli timeout after daemon start")
+
+	a, err := l.Create(ctx, "a")
+	if err != nil {
+		t.Fatalf("inspect running should record start: %v", err)
+	}
+	if a.State != StateRunning {
+		t.Fatalf("state=%s", a.State)
+	}
+	if !rt.Running(a.ID) {
+		t.Fatal("docker side is running")
+	}
+
+	b, err := l.Create(ctx, "b")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if b.State != StateRunning {
+		t.Fatalf("b state=%s", b.State)
+	}
+	c, err := l.Create(ctx, "c")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.State != StateQueued {
+		t.Fatalf("third must queue, got %s", c.State)
+	}
+	if rt.Running(c.ID) {
+		t.Fatal("must not start a third 64GiB workspace")
+	}
+}
+
+func TestStopInspectFailureKeepsRunning(t *testing.T) {
+	ctx := context.Background()
+	l, rt, _ := newTest(t)
+	a, err := l.Create(ctx, "a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	rt.InspectErr = errors.New("inspect deadline")
+	if _, err := l.Stop(ctx, a.ID); err == nil {
+		t.Fatal("expected inspect error")
+	}
+	got, _ := l.Get(a.ID)
+	if got.State != StateRunning {
+		t.Fatalf("must not flip to stopped on inspect failure, got %s", got.State)
+	}
+}

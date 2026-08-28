@@ -20,6 +20,8 @@ type Fake struct {
 	Stops         []string
 	CgroupApplies []string
 	ListErr       error
+	StartErr      error
+	InspectErr    error
 }
 
 func NewFake() *Fake {
@@ -72,6 +74,9 @@ func (f *Fake) StartContainer(_ context.Context, id string) error {
 	}
 	c.Running = true
 	f.Starts = append(f.Starts, id)
+	if f.StartErr != nil {
+		return f.StartErr
+	}
 	return nil
 }
 
@@ -90,6 +95,9 @@ func (f *Fake) StopContainer(_ context.Context, id string) error {
 func (f *Fake) InspectContainer(_ context.Context, id string) (ContainerInfo, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if f.InspectErr != nil {
+		return ContainerInfo{}, f.InspectErr
+	}
 	c, ok := f.Containers[id]
 	if !ok {
 		return ContainerInfo{}, fmt.Errorf("no container: %s", id)

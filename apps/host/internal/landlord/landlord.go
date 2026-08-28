@@ -86,10 +86,8 @@ func opContext() (context.Context, context.CancelFunc) {
 func (l *Landlord) Restore(_ context.Context) error {
 	l.opMu.Lock()
 	defer l.opMu.Unlock()
-	op, cancel := opContext()
-	defer cancel()
 
-	list, err := l.rt.ListContainers(op)
+	list, err := l.rtList()
 	if err != nil {
 		l.mu.Lock()
 		l.runtimeOK = false
@@ -123,7 +121,7 @@ func (l *Landlord) Restore(_ context.Context) error {
 		l.workspaces[c.ID] = ws
 	}
 	l.mu.Unlock()
-	l.enforceBudget(op)
+	l.enforceBudget()
 	l.log.Info("restored workspaces", "n", len(l.List()))
 	return nil
 }
@@ -134,8 +132,6 @@ func (l *Landlord) Create(_ context.Context, name string) (Workspace, error) {
 	}
 	l.opMu.Lock()
 	defer l.opMu.Unlock()
-	op, cancel := opContext()
-	defer cancel()
 
 	l.mu.Lock()
 	id := l.unusedID()
@@ -144,11 +140,11 @@ func (l *Landlord) Create(_ context.Context, name string) (Workspace, error) {
 		name = "workspace-" + id[:4]
 	}
 
-	if err := l.rt.CreateDataset(op, id); err != nil {
+	if err := l.rtCreateDataset(id); err != nil {
 		return Workspace{}, err
 	}
-	if err := l.rt.CreateContainer(op, runtime.WorkspaceSpec{ID: id, Name: name}); err != nil {
-		_ = l.rt.DestroyDataset(op, id)
+	if err := l.rtCreateContainer(runtime.WorkspaceSpec{ID: id, Name: name}); err != nil {
+		_ = l.rtDestroyDataset(id)
 		return Workspace{}, err
 	}
 
@@ -165,7 +161,7 @@ func (l *Landlord) Create(_ context.Context, name string) (Workspace, error) {
 	l.workspaces[id] = ws
 	l.mu.Unlock()
 
-	if err := l.tryStart(op, id); err != nil {
+	if err := l.tryStart(id); err != nil {
 		return Workspace{}, err
 	}
 	l.log.Info("workspace created", "id", id)
@@ -175,8 +171,6 @@ func (l *Landlord) Create(_ context.Context, name string) (Workspace, error) {
 func (l *Landlord) Wake(_ context.Context, id string) (Workspace, error) {
 	l.opMu.Lock()
 	defer l.opMu.Unlock()
-	op, cancel := opContext()
-	defer cancel()
 
 	l.mu.Lock()
 	ws, ok := l.workspaces[id]
@@ -191,7 +185,7 @@ func (l *Landlord) Wake(_ context.Context, id string) (Workspace, error) {
 	}
 	l.mu.Unlock()
 
-	if err := l.tryStart(op, id); err != nil {
+	if err := l.tryStart(id); err != nil {
 		return Workspace{}, err
 	}
 	l.log.Info("workspace wake", "id", id)
@@ -201,9 +195,7 @@ func (l *Landlord) Wake(_ context.Context, id string) (Workspace, error) {
 func (l *Landlord) Stop(_ context.Context, id string) (Workspace, error) {
 	l.opMu.Lock()
 	defer l.opMu.Unlock()
-	op, cancel := opContext()
-	defer cancel()
-	return l.stopOp(op, id, false)
+	return l.stopOp(id, false)
 }
 
 func (l *Landlord) Heartbeat(id string, hb Heartbeat) (Workspace, error) {
@@ -272,10 +264,8 @@ func (l *Landlord) Queue() []string {
 func (l *Landlord) ReconcileIdle(_ context.Context) []string {
 	l.opMu.Lock()
 	defer l.opMu.Unlock()
-	op, cancel := opContext()
-	defer cancel()
 
-	if err := l.syncRuntime(op); err != nil {
+	if err := l.syncRuntime(); err != nil {
 		l.log.Warn("runtime sync failed", "err", err)
 		l.mu.Lock()
 		l.runtimeOK = false
@@ -287,10 +277,10 @@ func (l *Landlord) ReconcileIdle(_ context.Context) []string {
 	l.runtimeOK = true
 	l.mu.Unlock()
 	if !wasOK {
-		l.drainQueue(op)
+		l.drainQueue()
 	}
 
-	l.reapplyCgroups(op)
+	l.reapplyCgroups()
 
 	now := l.clock.Now()
 	l.mu.Lock()
@@ -305,7 +295,7 @@ func (l *Landlord) ReconcileIdle(_ context.Context) []string {
 
 	var stopped []string
 	for _, id := range ids {
-		if _, err := l.stopOp(op, id, false); err != nil {
+		if _, err := l.stopOp(id, false); err != nil {
 			l.log.Warn("idle stop failed", "id", id, "err", err)
 			continue
 		}
@@ -316,7 +306,9 @@ func (l *Landlord) ReconcileIdle(_ context.Context) []string {
 }
 
 // tryStart assumes opMu is held. mu is not held across runtime calls.
-func (l *Landlord) tryStart(ctx context.Context, id string) error {
+// Inspect is the source of truth: a CLI timeout after docker has started
+// still records running. Inspect failure does not flip to stopped.
+func (l *Landlord) tryStart(id string) error {
 	l.mu.Lock()
 	ws, ok := l.workspaces[id]
 	if !ok {
@@ -337,9 +329,25 @@ func (l *Landlord) tryStart(ctx context.Context, id string) error {
 	}
 	l.mu.Unlock()
 
-	startErr := l.rt.StartContainer(ctx, id)
-	info, inspErr := l.rt.InspectContainer(ctx, id)
-	running := startErr == nil && inspErr == nil && info.Running
+	startErr := l.rtStart(id)
+	if startErr != nil {
+		l.log.Warn("docker start cli", "id", id, "err", startErr)
+	}
+	info, inspErr := l.rtInspect(id)
+	if inspErr != nil {
+		return inspErr
+	}
+	if !info.Running {
+		l.mu.Lock()
+		if w := l.workspaces[id]; w != nil && w.State != StateQueued {
+			w.State = StateStopped
+		}
+		l.mu.Unlock()
+		if startErr != nil {
+			return startErr
+		}
+		return fmt.Errorf("container %s not running after start", id)
+	}
 
 	l.mu.Lock()
 	ws, ok = l.workspaces[id]
@@ -347,30 +355,25 @@ func (l *Landlord) tryStart(ctx context.Context, id string) error {
 		l.mu.Unlock()
 		return ErrNotFound
 	}
-	if !running {
-		if ws.State != StateQueued {
-			ws.State = StateStopped
-		}
-		l.mu.Unlock()
-		if startErr != nil {
-			return startErr
-		}
-		if inspErr != nil {
-			return inspErr
-		}
-		return fmt.Errorf("container %s not running after start", id)
-	}
 	if !l.canAdmitLocked() {
 		l.mu.Unlock()
-		_ = l.rt.StopContainer(ctx, id)
-		_, _ = l.rt.InspectContainer(ctx, id)
+		_ = l.rtStop(id)
+		stopped, err := l.rtInspect(id)
 		l.mu.Lock()
-		if w := l.workspaces[id]; w != nil {
-			w.State = StateQueued
-			l.enqueueLocked(id)
+		if err == nil && !stopped.Running {
+			if w := l.workspaces[id]; w != nil {
+				w.State = StateQueued
+				l.enqueueLocked(id)
+			}
+			l.mu.Unlock()
+			return nil
 		}
-		l.mu.Unlock()
-		return nil
+		// still running or inspect failed: count as running so we do not under-count
+		ws = l.workspaces[id]
+		if ws == nil {
+			l.mu.Unlock()
+			return ErrNotFound
+		}
 	}
 	now := l.clock.Now()
 	ws.State = StateRunning
@@ -384,7 +387,7 @@ func (l *Landlord) tryStart(ctx context.Context, id string) error {
 }
 
 // stopOp assumes opMu is held. queueAfter stops docker then FIFO-queues (restore extras).
-func (l *Landlord) stopOp(ctx context.Context, id string, queueAfter bool) (Workspace, error) {
+func (l *Landlord) stopOp(id string, queueAfter bool) (Workspace, error) {
 	l.mu.Lock()
 	ws, ok := l.workspaces[id]
 	if !ok {
@@ -396,10 +399,12 @@ func (l *Landlord) stopOp(ctx context.Context, id string, queueAfter bool) (Work
 	l.mu.Unlock()
 
 	if wasRunning {
-		stopErr := l.rt.StopContainer(ctx, id)
-		info, inspErr := l.rt.InspectContainer(ctx, id)
-		stillRunning := inspErr == nil && info.Running
-		if stillRunning {
+		stopErr := l.rtStop(id)
+		info, inspErr := l.rtInspect(id)
+		if inspErr != nil {
+			return Workspace{}, inspErr
+		}
+		if info.Running {
 			if stopErr != nil {
 				return Workspace{}, stopErr
 			}
@@ -428,12 +433,12 @@ func (l *Landlord) stopOp(ctx context.Context, id string, queueAfter bool) (Work
 	l.mu.Unlock()
 
 	if !queueAfter {
-		l.drainQueue(ctx)
+		l.drainQueue()
 	}
 	return view, nil
 }
 
-func (l *Landlord) drainQueue(ctx context.Context) {
+func (l *Landlord) drainQueue() {
 	for {
 		l.mu.Lock()
 		if len(l.queue) == 0 || !l.canAdmitLocked() {
@@ -448,20 +453,19 @@ func (l *Landlord) drainQueue(ctx context.Context) {
 			continue
 		}
 		l.mu.Unlock()
-		if err := l.tryStart(ctx, id); err != nil {
+		if err := l.tryStart(id); err != nil {
 			l.log.Warn("queued start failed", "id", id, "err", err)
 			l.mu.Lock()
-			if w := l.workspaces[id]; w != nil && w.State != StateRunning {
-				w.State = StateStopped
-				l.removeFromQueueLocked(id)
+			if w := l.workspaces[id]; w != nil && w.State == StateQueued {
+				l.enqueueLocked(id)
 			}
 			l.mu.Unlock()
 		}
 	}
 }
 
-func (l *Landlord) syncRuntime(ctx context.Context) error {
-	list, err := l.rt.ListContainers(ctx)
+func (l *Landlord) syncRuntime() error {
+	list, err := l.rtList()
 	if err != nil {
 		return err
 	}
@@ -520,14 +524,14 @@ func (l *Landlord) syncRuntime(ctx context.Context) error {
 	}
 	l.mu.Unlock()
 
-	l.enforceBudget(ctx)
+	l.enforceBudget()
 	if needDrain {
-		l.drainQueue(ctx)
+		l.drainQueue()
 	}
 	return nil
 }
 
-func (l *Landlord) enforceBudget(ctx context.Context) {
+func (l *Landlord) enforceBudget() {
 	for {
 		l.mu.Lock()
 		var running []string
@@ -544,14 +548,14 @@ func (l *Landlord) enforceBudget(ctx context.Context) {
 		id := running[len(running)-1]
 		l.mu.Unlock()
 		l.log.Info("stopping extra workspace to keep packing", "id", id)
-		if _, err := l.stopOp(ctx, id, true); err != nil {
+		if _, err := l.stopOp(id, true); err != nil {
 			l.log.Warn("demote failed", "id", id, "err", err)
 			return
 		}
 	}
 }
 
-func (l *Landlord) reapplyCgroups(ctx context.Context) {
+func (l *Landlord) reapplyCgroups() {
 	l.mu.Lock()
 	var ids []string
 	for id, ws := range l.workspaces {
@@ -561,10 +565,58 @@ func (l *Landlord) reapplyCgroups(ctx context.Context) {
 	}
 	l.mu.Unlock()
 	for _, id := range ids {
-		if err := l.rt.ApplyCgroup(ctx, id); err != nil {
+		if err := l.rtApplyCgroup(id); err != nil {
 			l.log.Warn("cgroup reapply failed", "id", id, "err", err)
 		}
 	}
+}
+
+func (l *Landlord) rtStart(id string) error {
+	ctx, cancel := opContext()
+	defer cancel()
+	return l.rt.StartContainer(ctx, id)
+}
+
+func (l *Landlord) rtStop(id string) error {
+	ctx, cancel := opContext()
+	defer cancel()
+	return l.rt.StopContainer(ctx, id)
+}
+
+func (l *Landlord) rtInspect(id string) (runtime.ContainerInfo, error) {
+	ctx, cancel := opContext()
+	defer cancel()
+	return l.rt.InspectContainer(ctx, id)
+}
+
+func (l *Landlord) rtList() ([]runtime.ContainerInfo, error) {
+	ctx, cancel := opContext()
+	defer cancel()
+	return l.rt.ListContainers(ctx)
+}
+
+func (l *Landlord) rtApplyCgroup(id string) error {
+	ctx, cancel := opContext()
+	defer cancel()
+	return l.rt.ApplyCgroup(ctx, id)
+}
+
+func (l *Landlord) rtCreateDataset(id string) error {
+	ctx, cancel := opContext()
+	defer cancel()
+	return l.rt.CreateDataset(ctx, id)
+}
+
+func (l *Landlord) rtDestroyDataset(id string) error {
+	ctx, cancel := opContext()
+	defer cancel()
+	return l.rt.DestroyDataset(ctx, id)
+}
+
+func (l *Landlord) rtCreateContainer(spec runtime.WorkspaceSpec) error {
+	ctx, cancel := opContext()
+	defer cancel()
+	return l.rt.CreateContainer(ctx, spec)
 }
 
 func (l *Landlord) canAdmitLocked() bool {
