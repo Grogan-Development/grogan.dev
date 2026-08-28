@@ -1,0 +1,16 @@
+[Unit]
+Description=Nero host landlord
+After=network-online.target docker.service
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Type=simple
+User=root
+EnvironmentFile=-/etc/nero/host.env
+ExecStart=/usr/local/bin/nero-host
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

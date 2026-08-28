@@ -1,0 +1,29 @@
+# Nero v1 — Grid-01
+# TLS via Caddy defaults (Let's Encrypt). Set NERO_ACME_EMAIL if you want a contact on the account.
+#
+# grogan.dev      landing (nero-host GET /)
+# www.grogan.dev  → grogan.dev
+# nero.grogan.dev control plane (nero-host :8080)
+# /w/*            placeholder until PR 10 wires workspace daemons
+
+www.grogan.dev {
+	redir https://grogan.dev{uri} permanent
+}
+
+grogan.dev {
+	encode gzip
+	reverse_proxy 127.0.0.1:8080
+}
+
+nero.grogan.dev {
+	encode gzip
+
+	handle /w/* {
+		# PR 10: reverse_proxy to the workspace Nero daemon
+		respond "workspace proxy not wired yet" 501
+	}
+
+	handle {
+		reverse_proxy 127.0.0.1:8080
+	}
+}
