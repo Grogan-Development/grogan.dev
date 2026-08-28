@@ -1,0 +1,20 @@
+[Unit]
+Description=Nero workspace daemon
+# Binary lands in a later PR (apps/daemon). Condition keeps the unit inert
+# until that file exists; leave this disabled in the image.
+ConditionPathExists=/usr/local/bin/nero-daemon
+After=network.target
+
+[Service]
+Type=simple
+User=nero
+Group=nero
+WorkingDirectory=/home/nero
+Environment=HOME=/home/nero
+Environment=USER=nero
+ExecStart=/usr/local/bin/nero-daemon
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

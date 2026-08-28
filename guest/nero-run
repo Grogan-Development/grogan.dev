@@ -1,0 +1,44 @@
+#!/bin/sh
+# Register a keep-awake job: a systemd --user scope under nero-job.slice.
+# The host treats a live scope in that slice as "job still running".
+# Stray processes (unnamed daemons, tmux, etc.) are not jobs.
+set -eu
+
+usage() {
+  echo "usage: nero-run command [args...]" >&2
+  echo "env: NERO_JOB_ID   optional unit suffix (nero-job-<id>.scope)" >&2
+  echo "     NERO_RUN_DRY=1  print systemd-run argv and exit" >&2
+  exit 2
+}
+
+[ "$#" -ge 1 ] || usage
+
+cmd=$1
+shift
+
+uid=$(id -u)
+if [ "${NERO_RUN_DRY:-}" != 1 ]; then
+  if ! systemctl --user is-system-running >/dev/null 2>&1; then
+    echo "nero-run: user systemd is not running (need linger / user@${uid}.service)" >&2
+    exit 1
+  fi
+fi
+
+unit_args=""
+if [ -n "${NERO_JOB_ID:-}" ]; then
+  unit_args="--unit=nero-job-${NERO_JOB_ID}.scope"
+fi
+
+if [ "${NERO_RUN_DRY:-}" = 1 ]; then
+  # Intentionally unquoted unit_args so an empty value disappears.
+  # shellcheck disable=SC2086
+  echo systemd-run --user --scope --slice=nero-job.slice \
+    -p MemoryHigh=48G -p MemoryMax=64G -p CPUWeight=100 \
+    --collect $unit_args -- "$cmd" "$@"
+  exit 0
+fi
+
+# shellcheck disable=SC2086
+exec systemd-run --user --scope --slice=nero-job.slice \
+  -p MemoryHigh=48G -p MemoryMax=64G -p CPUWeight=100 \
+  --collect $unit_args -- "$cmd" "$@"

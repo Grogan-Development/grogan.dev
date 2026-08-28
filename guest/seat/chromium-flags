@@ -1,0 +1,2 @@
+# Container seat: no user-ns sandbox, software GL only (llvmpipe).
+export CHROMIUM_FLAGS="$CHROMIUM_FLAGS --no-sandbox --disable-dev-shm-usage --disable-gpu"
