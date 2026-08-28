@@ -2,7 +2,10 @@ package runtime
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -14,16 +17,21 @@ type Docker struct {
 	Image     string
 	Pool      string
 	MountRoot string
+	log       *slog.Logger
 	run       func(ctx context.Context, name string, args ...string) (string, error)
 	readFile  func(name string) ([]byte, error)
 	writeFile func(name string, data []byte, perm os.FileMode) error
 }
 
-func NewDocker(image, pool, mountRoot string) *Docker {
+func NewDocker(image, pool, mountRoot string, log *slog.Logger) *Docker {
+	if log == nil {
+		log = slog.Default()
+	}
 	return &Docker{
 		Image:     image,
 		Pool:      pool,
 		MountRoot: mountRoot,
+		log:       log,
 		run:       runCmd,
 		readFile:  os.ReadFile,
 		writeFile: os.WriteFile,
@@ -69,7 +77,7 @@ func (d *Docker) StartContainer(ctx context.Context, id string) error {
 	}
 	// Best-effort: --memory already set memory.max. Do not fail start if
 	// cgroupfs is missing (dev) or the path differs across Docker versions.
-	_ = d.applyCgroup(ctx, id)
+	_ = d.ApplyCgroup(ctx, id)
 	return nil
 }
 
@@ -78,58 +86,68 @@ func (d *Docker) StopContainer(ctx context.Context, id string) error {
 	return err
 }
 
+func (d *Docker) InspectContainer(ctx context.Context, id string) (ContainerInfo, error) {
+	out, err := d.run(ctx, "docker", "inspect", "--format",
+		`{"id":{{json (index .Config.Labels "nero.workspace.id")}},"name":{{json (index .Config.Labels "nero.workspace.name")}},"running":{{json .State.Running}}}`,
+		ContainerName(id))
+	if err != nil {
+		return ContainerInfo{}, err
+	}
+	var row struct {
+		ID      string `json:"id"`
+		Name    string `json:"name"`
+		Running bool   `json:"running"`
+	}
+	if err := json.Unmarshal([]byte(out), &row); err != nil {
+		return ContainerInfo{}, fmt.Errorf("inspect json: %w", err)
+	}
+	return ContainerInfo{ID: row.ID, Name: row.Name, Running: row.Running}, nil
+}
+
 func (d *Docker) ListContainers(ctx context.Context) ([]ContainerInfo, error) {
 	out, err := d.run(ctx, "docker", "ps", "-a",
 		"--filter", "label=nero.workspace.id",
-		"--format", "{{index .Labels \"nero.workspace.id\"}}|{{index .Labels \"nero.workspace.name\"}}|{{.State}}")
+		"--format", "{{json .}}")
 	if err != nil {
 		return nil, err
 	}
-	if out == "" {
-		return nil, nil
-	}
-	var list []ContainerInfo
-	for _, line := range strings.Split(out, "\n") {
-		line = strings.TrimSpace(line)
-		if line == "" {
-			continue
-		}
-		parts := strings.Split(line, "|")
-		if len(parts) < 3 {
-			continue
-		}
-		list = append(list, ContainerInfo{
-			ID:      parts[0],
-			Name:    parts[1],
-			Running: parts[2] == "running",
-		})
-	}
-	return list, nil
+	return parseDockerPS(out)
 }
 
-func (d *Docker) applyCgroup(ctx context.Context, id string) error {
+func (d *Docker) ApplyCgroup(ctx context.Context, id string) error {
+	dir, err := d.applyCgroup(ctx, id)
+	if err != nil && d.log != nil {
+		d.log.Warn("cgroup apply failed", "id", id, "dir", dir, "err", err)
+	}
+	return err
+}
+
+func (d *Docker) applyCgroup(ctx context.Context, id string) (string, error) {
 	pidStr, err := d.run(ctx, "docker", "inspect", "-f", "{{.State.Pid}}", ContainerName(id))
 	if err != nil {
-		return err
+		return "", err
 	}
 	pid, err := strconv.Atoi(strings.TrimSpace(pidStr))
 	if err != nil || pid <= 0 {
-		return fmt.Errorf("container pid %q", pidStr)
+		return "", fmt.Errorf("container pid %q", pidStr)
 	}
 	raw, err := d.readFile(fmt.Sprintf("/proc/%d/cgroup", pid))
 	if err != nil {
-		return err
+		return "", err
 	}
 	rel := cgroupRel(string(raw))
 	if rel == "" {
-		return fmt.Errorf("no cgroup v2 path for pid %d", pid)
+		return "", fmt.Errorf("no cgroup v2 path for pid %d", pid)
 	}
 	dir := filepath.Join("/sys/fs/cgroup", rel)
 	high := []byte(strconv.FormatInt(MemoryHighBytes, 10))
 	if err := d.writeFile(filepath.Join(dir, "memory.high"), high, 0o644); err != nil {
-		return err
+		return dir, err
 	}
-	return d.writeFile(filepath.Join(dir, "memory.oom.group"), []byte(MemoryOOMGroup), 0o644)
+	if err := d.writeFile(filepath.Join(dir, "memory.oom.group"), []byte(MemoryOOMGroup), 0o644); err != nil {
+		return dir, err
+	}
+	return dir, nil
 }
 
 func cgroupRel(procCgroup string) string {
@@ -140,4 +158,75 @@ func cgroupRel(procCgroup string) string {
 		}
 	}
 	return ""
+}
+
+// docker ps --format '{{json .}}' is NDJSON. Labels is a comma-separated
+// k=v string; State is its own field (so a '|' in the name cannot shift running).
+type dockerPsRow struct {
+	State  string `json:"State"`
+	Labels string `json:"Labels"`
+}
+
+func parseDockerPS(out string) ([]ContainerInfo, error) {
+	out = strings.TrimSpace(out)
+	if out == "" {
+		return nil, nil
+	}
+	if strings.HasPrefix(out, "[") {
+		var rows []dockerPsRow
+		if err := json.Unmarshal([]byte(out), &rows); err != nil {
+			return nil, fmt.Errorf("docker ps json array: %w", err)
+		}
+		list := make([]ContainerInfo, 0, len(rows))
+		for _, row := range rows {
+			info, ok := row.info()
+			if ok {
+				list = append(list, info)
+			}
+		}
+		return list, nil
+	}
+	var list []ContainerInfo
+	dec := json.NewDecoder(strings.NewReader(out))
+	for {
+		var row dockerPsRow
+		if err := dec.Decode(&row); err != nil {
+			if err == io.EOF {
+				break
+			}
+			return nil, fmt.Errorf("docker ps json: %w", err)
+		}
+		info, ok := row.info()
+		if ok {
+			list = append(list, info)
+		}
+	}
+	return list, nil
+}
+
+func (row dockerPsRow) info() (ContainerInfo, bool) {
+	labels := parseLabelString(row.Labels)
+	id := labels["nero.workspace.id"]
+	if id == "" {
+		return ContainerInfo{}, false
+	}
+	return ContainerInfo{
+		ID:      id,
+		Name:    labels["nero.workspace.name"],
+		Running: row.State == "running",
+	}, true
+}
+
+func parseLabelString(s string) map[string]string {
+	m := make(map[string]string)
+	if s == "" {
+		return m
+	}
+	for _, part := range strings.Split(s, ",") {
+		k, v, ok := strings.Cut(part, "=")
+		if ok {
+			m[k] = v
+		}
+	}
+	return m
 }

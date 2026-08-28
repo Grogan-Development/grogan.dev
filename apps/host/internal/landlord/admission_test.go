@@ -2,6 +2,7 @@ package landlord
 
 import (
 	"context"
+	"errors"
 	"io"
 	"log/slog"
 	"testing"
@@ -9,6 +10,8 @@ import (
 
 	"nero-host/internal/runtime"
 )
+
+var errDockerDown = errors.New("docker down")
 
 func discardLogger() *slog.Logger {
 	return slog.New(slog.NewTextHandler(io.Discard, nil))
@@ -182,5 +185,81 @@ func TestCreatePersistsDatasetWhenQueued(t *testing.T) {
 	}
 	if rt.Running(c.ID) {
 		t.Fatal("must be stopped")
+	}
+}
+
+func TestInvalidNameRejected(t *testing.T) {
+	ctx := context.Background()
+	l, _, _ := newTest(t)
+	for _, name := range []string{"foo|bar", "has space", "slash/name", "a,b"} {
+		if _, err := l.Create(ctx, name); err != ErrInvalidName {
+			t.Fatalf("name %q: err=%v", name, err)
+		}
+	}
+	if _, err := l.Create(ctx, "ok._-Name1"); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestRestoreFailsWhenListFails(t *testing.T) {
+	l, rt, _ := newTest(t)
+	rt.ListErr = errDockerDown
+	if err := l.Restore(context.Background()); err == nil {
+		t.Fatal("expected list error")
+	}
+}
+
+func TestRestoreRoundTripAndOverBudget(t *testing.T) {
+	ctx := context.Background()
+	clk := NewFakeClock(time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC))
+	rt := runtime.NewFake()
+	rt.Seed("aa", "alpha", true)
+	rt.Seed("bb", "beta", true)
+	rt.Seed("cc", "foo|bar", true) // pipe in stored name must not affect Running
+	l := New(rt, clk, discardLogger())
+	if err := l.Restore(ctx); err != nil {
+		t.Fatal(err)
+	}
+	var running, queued int
+	for _, ws := range l.List() {
+		switch ws.State {
+		case StateRunning:
+			running++
+			if !rt.Running(ws.ID) {
+				t.Fatalf("%s map running but docker stopped", ws.ID)
+			}
+		case StateQueued:
+			queued++
+			if rt.Running(ws.ID) {
+				t.Fatalf("%s queued but docker still running", ws.ID)
+			}
+		}
+	}
+	if running != 2 {
+		t.Fatalf("running=%d want 2", running)
+	}
+	if queued != 1 {
+		t.Fatalf("queued extras=%d want 1", queued)
+	}
+	cc, err := l.Get("cc")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cc.Name != "foo|bar" {
+		t.Fatalf("name round-trip %q", cc.Name)
+	}
+
+	l2 := New(rt, clk, discardLogger())
+	if err := l2.Restore(ctx); err != nil {
+		t.Fatal(err)
+	}
+	var running2 int
+	for _, ws := range l2.List() {
+		if ws.State == StateRunning {
+			running2++
+		}
+	}
+	if running2 != 2 {
+		t.Fatalf("second restore running=%d", running2)
 	}
 }

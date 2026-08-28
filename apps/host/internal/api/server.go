@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"html"
@@ -77,7 +78,7 @@ func (s *Server) create(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "invalid json")
 		return
 	}
-	ws, err := s.ll.Create(r.Context(), body.Name)
+	ws, err := s.ll.Create(context.Background(), body.Name)
 	if err != nil {
 		if errors.Is(err, landlord.ErrInvalidName) {
 			writeErr(w, http.StatusBadRequest, err.Error())
@@ -90,7 +91,7 @@ func (s *Server) create(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) wake(w http.ResponseWriter, r *http.Request) {
-	ws, err := s.ll.Wake(r.Context(), r.PathValue("id"))
+	ws, err := s.ll.Wake(context.Background(), r.PathValue("id"))
 	if err != nil {
 		writeLandlordErr(w, err)
 		return
@@ -99,7 +100,7 @@ func (s *Server) wake(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) stop(w http.ResponseWriter, r *http.Request) {
-	ws, err := s.ll.Stop(r.Context(), r.PathValue("id"))
+	ws, err := s.ll.Stop(context.Background(), r.PathValue("id"))
 	if err != nil {
 		writeLandlordErr(w, err)
 		return

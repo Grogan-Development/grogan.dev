@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"log/slog"
 	"sort"
 	"sync"
@@ -18,6 +19,10 @@ var (
 	ErrNotFound    = errors.New("workspace not found")
 	ErrInvalidName = errors.New("invalid name")
 )
+
+// opTimeout covers docker stop -t 20 plus inspect. Detached from HTTP cancel
+// so a dropped client cannot leave docker started with StateStopped.
+const opTimeout = 60 * time.Second
 
 type State string
 
@@ -37,6 +42,7 @@ type Workspace struct {
 	JobRunning     bool      `json:"jobRunning"`
 	LastHeartbeat  time.Time `json:"lastHeartbeat"`
 	LastDisconnect time.Time `json:"-"`
+	UnpinnedAt     time.Time `json:"-"`
 	QueuePosition  int       `json:"queuePosition,omitempty"`
 }
 
@@ -47,12 +53,14 @@ type Heartbeat struct {
 }
 
 type Landlord struct {
-	mu         sync.Mutex
+	opMu       sync.Mutex // serializes docker/zfs + packing transitions; never after mu
+	mu         sync.Mutex // short: map/queue/heartbeat
 	rt         runtime.Runtime
 	clock      Clock
 	log        *slog.Logger
 	workspaces map[string]*Workspace
 	queue      []string
+	runtimeOK  bool
 }
 
 func New(rt runtime.Runtime, clock Clock, log *slog.Logger) *Landlord {
@@ -67,18 +75,31 @@ func New(rt runtime.Runtime, clock Clock, log *slog.Logger) *Landlord {
 		clock:      clock,
 		log:        log,
 		workspaces: make(map[string]*Workspace),
+		runtimeOK:  true,
 	}
 }
 
-func (l *Landlord) Restore(ctx context.Context) error {
-	list, err := l.rt.ListContainers(ctx)
+func opContext() (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.Background(), opTimeout)
+}
+
+func (l *Landlord) Restore(_ context.Context) error {
+	l.opMu.Lock()
+	defer l.opMu.Unlock()
+	op, cancel := opContext()
+	defer cancel()
+
+	list, err := l.rt.ListContainers(op)
 	if err != nil {
-		l.log.Warn("restore skipped", "err", err)
-		return nil
+		l.mu.Lock()
+		l.runtimeOK = false
+		l.mu.Unlock()
+		return err
 	}
-	l.mu.Lock()
-	defer l.mu.Unlock()
+
 	now := l.clock.Now()
+	l.mu.Lock()
+	l.runtimeOK = true
 	for _, c := range list {
 		if c.ID == "" {
 			continue
@@ -91,29 +112,46 @@ func (l *Landlord) Restore(ctx context.Context) error {
 		if c.Running {
 			st = StateRunning
 		}
-		l.workspaces[c.ID] = &Workspace{
+		ws := &Workspace{
 			ID:            c.ID,
 			Name:          name,
 			State:         st,
 			CreatedAt:     now,
 			LastHeartbeat: now,
 		}
+		ws.touchUnpinned(now)
+		l.workspaces[c.ID] = ws
 	}
-	l.log.Info("restored workspaces", "n", len(l.workspaces))
+	l.mu.Unlock()
+	l.enforceBudget(op)
+	l.log.Info("restored workspaces", "n", len(l.List()))
 	return nil
 }
 
-func (l *Landlord) Create(ctx context.Context, name string) (Workspace, error) {
+func (l *Landlord) Create(_ context.Context, name string) (Workspace, error) {
 	if err := validateName(name); err != nil {
 		return Workspace{}, err
 	}
-	l.mu.Lock()
-	defer l.mu.Unlock()
+	l.opMu.Lock()
+	defer l.opMu.Unlock()
+	op, cancel := opContext()
+	defer cancel()
 
+	l.mu.Lock()
 	id := l.unusedID()
+	l.mu.Unlock()
 	if name == "" {
 		name = "workspace-" + id[:4]
 	}
+
+	if err := l.rt.CreateDataset(op, id); err != nil {
+		return Workspace{}, err
+	}
+	if err := l.rt.CreateContainer(op, runtime.WorkspaceSpec{ID: id, Name: name}); err != nil {
+		_ = l.rt.DestroyDataset(op, id)
+		return Workspace{}, err
+	}
+
 	now := l.clock.Now()
 	ws := &Workspace{
 		ID:            id,
@@ -122,42 +160,50 @@ func (l *Landlord) Create(ctx context.Context, name string) (Workspace, error) {
 		CreatedAt:     now,
 		LastHeartbeat: now,
 	}
-	if err := l.rt.CreateDataset(ctx, id); err != nil {
-		return Workspace{}, err
-	}
-	if err := l.rt.CreateContainer(ctx, runtime.WorkspaceSpec{ID: id, Name: name}); err != nil {
-		_ = l.rt.DestroyDataset(ctx, id)
-		return Workspace{}, err
-	}
+	ws.touchUnpinned(now)
+	l.mu.Lock()
 	l.workspaces[id] = ws
-	if err := l.admitOrQueueLocked(ctx, ws); err != nil {
+	l.mu.Unlock()
+
+	if err := l.tryStart(op, id); err != nil {
 		return Workspace{}, err
 	}
-	l.log.Info("workspace created", "id", id, "state", ws.State)
-	return l.viewLocked(ws), nil
+	l.log.Info("workspace created", "id", id)
+	return l.Get(id)
 }
 
-func (l *Landlord) Wake(ctx context.Context, id string) (Workspace, error) {
+func (l *Landlord) Wake(_ context.Context, id string) (Workspace, error) {
+	l.opMu.Lock()
+	defer l.opMu.Unlock()
+	op, cancel := opContext()
+	defer cancel()
+
 	l.mu.Lock()
-	defer l.mu.Unlock()
 	ws, ok := l.workspaces[id]
 	if !ok {
+		l.mu.Unlock()
 		return Workspace{}, ErrNotFound
 	}
 	if ws.State == StateRunning || ws.State == StateQueued {
-		return l.viewLocked(ws), nil
+		view := l.viewLocked(ws)
+		l.mu.Unlock()
+		return view, nil
 	}
-	if err := l.admitOrQueueLocked(ctx, ws); err != nil {
+	l.mu.Unlock()
+
+	if err := l.tryStart(op, id); err != nil {
 		return Workspace{}, err
 	}
-	l.log.Info("workspace wake", "id", id, "state", ws.State)
-	return l.viewLocked(ws), nil
+	l.log.Info("workspace wake", "id", id)
+	return l.Get(id)
 }
 
-func (l *Landlord) Stop(ctx context.Context, id string) (Workspace, error) {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	return l.stopLocked(ctx, id)
+func (l *Landlord) Stop(_ context.Context, id string) (Workspace, error) {
+	l.opMu.Lock()
+	defer l.opMu.Unlock()
+	op, cancel := opContext()
+	defer cancel()
+	return l.stopOp(op, id, false)
 }
 
 func (l *Landlord) Heartbeat(id string, hb Heartbeat) (Workspace, error) {
@@ -185,6 +231,7 @@ func (l *Landlord) Heartbeat(id string, hb Heartbeat) (Workspace, error) {
 		ws.JobRunning = *hb.JobRunning
 	}
 	ws.LastHeartbeat = now
+	ws.touchUnpinned(now)
 	return l.viewLocked(ws), nil
 }
 
@@ -222,20 +269,43 @@ func (l *Landlord) Queue() []string {
 	return out
 }
 
-func (l *Landlord) ReconcileIdle(ctx context.Context) []string {
+func (l *Landlord) ReconcileIdle(_ context.Context) []string {
+	l.opMu.Lock()
+	defer l.opMu.Unlock()
+	op, cancel := opContext()
+	defer cancel()
+
+	if err := l.syncRuntime(op); err != nil {
+		l.log.Warn("runtime sync failed", "err", err)
+		l.mu.Lock()
+		l.runtimeOK = false
+		l.mu.Unlock()
+		return nil
+	}
 	l.mu.Lock()
-	defer l.mu.Unlock()
+	wasOK := l.runtimeOK
+	l.runtimeOK = true
+	l.mu.Unlock()
+	if !wasOK {
+		l.drainQueue(op)
+	}
+
+	l.reapplyCgroups(op)
+
 	now := l.clock.Now()
+	l.mu.Lock()
 	var ids []string
 	for id, ws := range l.workspaces {
 		if shouldIdleStop(ws, now) {
 			ids = append(ids, id)
 		}
 	}
+	l.mu.Unlock()
 	sort.Strings(ids)
+
 	var stopped []string
 	for _, id := range ids {
-		if _, err := l.stopLocked(ctx, id); err != nil {
+		if _, err := l.stopOp(op, id, false); err != nil {
 			l.log.Warn("idle stop failed", "id", id, "err", err)
 			continue
 		}
@@ -245,63 +315,262 @@ func (l *Landlord) ReconcileIdle(ctx context.Context) []string {
 	return stopped
 }
 
-func (l *Landlord) admitOrQueueLocked(ctx context.Context, ws *Workspace) error {
-	if l.canAdmitLocked() {
-		return l.startLocked(ctx, ws)
-	}
-	ws.State = StateQueued
-	l.enqueueLocked(ws.ID)
-	l.log.Info("workspace queued", "id", ws.ID, "position", l.queuePositionLocked(ws.ID))
-	return nil
-}
-
-func (l *Landlord) startLocked(ctx context.Context, ws *Workspace) error {
-	if err := l.rt.StartContainer(ctx, ws.ID); err != nil {
-		return err
-	}
-	ws.State = StateRunning
-	ws.LastHeartbeat = l.clock.Now()
-	l.removeFromQueueLocked(ws.ID)
-	return nil
-}
-
-func (l *Landlord) stopLocked(ctx context.Context, id string) (Workspace, error) {
+// tryStart assumes opMu is held. mu is not held across runtime calls.
+func (l *Landlord) tryStart(ctx context.Context, id string) error {
+	l.mu.Lock()
 	ws, ok := l.workspaces[id]
 	if !ok {
+		l.mu.Unlock()
+		return ErrNotFound
+	}
+	if ws.State == StateRunning {
+		l.mu.Unlock()
+		return nil
+	}
+	if !l.canAdmitLocked() {
+		ws.State = StateQueued
+		l.enqueueLocked(id)
+		pos := l.queuePositionLocked(id)
+		l.mu.Unlock()
+		l.log.Info("workspace queued", "id", id, "position", pos)
+		return nil
+	}
+	l.mu.Unlock()
+
+	startErr := l.rt.StartContainer(ctx, id)
+	info, inspErr := l.rt.InspectContainer(ctx, id)
+	running := startErr == nil && inspErr == nil && info.Running
+
+	l.mu.Lock()
+	ws, ok = l.workspaces[id]
+	if !ok {
+		l.mu.Unlock()
+		return ErrNotFound
+	}
+	if !running {
+		if ws.State != StateQueued {
+			ws.State = StateStopped
+		}
+		l.mu.Unlock()
+		if startErr != nil {
+			return startErr
+		}
+		if inspErr != nil {
+			return inspErr
+		}
+		return fmt.Errorf("container %s not running after start", id)
+	}
+	if !l.canAdmitLocked() {
+		l.mu.Unlock()
+		_ = l.rt.StopContainer(ctx, id)
+		_, _ = l.rt.InspectContainer(ctx, id)
+		l.mu.Lock()
+		if w := l.workspaces[id]; w != nil {
+			w.State = StateQueued
+			l.enqueueLocked(id)
+		}
+		l.mu.Unlock()
+		return nil
+	}
+	now := l.clock.Now()
+	ws.State = StateRunning
+	ws.LastHeartbeat = now
+	if !pinned(ws) {
+		ws.UnpinnedAt = now
+	}
+	l.removeFromQueueLocked(id)
+	l.mu.Unlock()
+	return nil
+}
+
+// stopOp assumes opMu is held. queueAfter stops docker then FIFO-queues (restore extras).
+func (l *Landlord) stopOp(ctx context.Context, id string, queueAfter bool) (Workspace, error) {
+	l.mu.Lock()
+	ws, ok := l.workspaces[id]
+	if !ok {
+		l.mu.Unlock()
 		return Workspace{}, ErrNotFound
 	}
 	l.removeFromQueueLocked(id)
-	if ws.State == StateRunning {
-		if err := l.rt.StopContainer(ctx, id); err != nil {
-			return Workspace{}, err
+	wasRunning := ws.State == StateRunning
+	l.mu.Unlock()
+
+	if wasRunning {
+		stopErr := l.rt.StopContainer(ctx, id)
+		info, inspErr := l.rt.InspectContainer(ctx, id)
+		stillRunning := inspErr == nil && info.Running
+		if stillRunning {
+			if stopErr != nil {
+				return Workspace{}, stopErr
+			}
+			return Workspace{}, fmt.Errorf("container %s still running after stop", id)
 		}
 	}
-	ws.State = StateStopped
+
+	l.mu.Lock()
+	ws, ok = l.workspaces[id]
+	if !ok {
+		l.mu.Unlock()
+		return Workspace{}, ErrNotFound
+	}
+	now := l.clock.Now()
 	ws.Connected = false
 	ws.AgentWorking = false
 	ws.JobRunning = false
-	l.drainQueueLocked(ctx)
-	return l.viewLocked(ws), nil
+	ws.touchUnpinned(now)
+	if queueAfter {
+		ws.State = StateQueued
+		l.enqueueLocked(id)
+	} else {
+		ws.State = StateStopped
+	}
+	view := l.viewLocked(ws)
+	l.mu.Unlock()
+
+	if !queueAfter {
+		l.drainQueue(ctx)
+	}
+	return view, nil
 }
 
-func (l *Landlord) drainQueueLocked(ctx context.Context) {
-	for len(l.queue) > 0 && l.canAdmitLocked() {
+func (l *Landlord) drainQueue(ctx context.Context) {
+	for {
+		l.mu.Lock()
+		if len(l.queue) == 0 || !l.canAdmitLocked() {
+			l.mu.Unlock()
+			return
+		}
 		id := l.queue[0]
 		l.queue = l.queue[1:]
 		ws := l.workspaces[id]
 		if ws == nil || ws.State != StateQueued {
+			l.mu.Unlock()
 			continue
 		}
-		if err := l.startLocked(ctx, ws); err != nil {
+		l.mu.Unlock()
+		if err := l.tryStart(ctx, id); err != nil {
 			l.log.Warn("queued start failed", "id", id, "err", err)
-			ws.State = StateStopped
+			l.mu.Lock()
+			if w := l.workspaces[id]; w != nil && w.State != StateRunning {
+				w.State = StateStopped
+				l.removeFromQueueLocked(id)
+			}
+			l.mu.Unlock()
+		}
+	}
+}
+
+func (l *Landlord) syncRuntime(ctx context.Context) error {
+	list, err := l.rt.ListContainers(ctx)
+	if err != nil {
+		return err
+	}
+	seen := make(map[string]runtime.ContainerInfo, len(list))
+	for _, c := range list {
+		if c.ID != "" {
+			seen[c.ID] = c
+		}
+	}
+
+	now := l.clock.Now()
+	l.mu.Lock()
+	needDrain := false
+	for id, c := range seen {
+		if _, ok := l.workspaces[id]; ok {
 			continue
 		}
-		l.log.Info("queued workspace started", "id", id)
+		name := c.Name
+		if name == "" {
+			name = "workspace-" + id
+		}
+		st := StateStopped
+		if c.Running {
+			st = StateRunning
+		}
+		ws := &Workspace{
+			ID:            id,
+			Name:          name,
+			State:         st,
+			CreatedAt:     now,
+			LastHeartbeat: now,
+		}
+		ws.touchUnpinned(now)
+		l.workspaces[id] = ws
+		l.log.Info("adopted container", "id", id, "running", c.Running)
+	}
+	for id, ws := range l.workspaces {
+		c, ok := seen[id]
+		live := ok && c.Running
+		if live {
+			if ws.State != StateRunning {
+				ws.State = StateRunning
+				l.removeFromQueueLocked(id)
+			}
+			continue
+		}
+		if ws.State == StateRunning {
+			ws.State = StateStopped
+			ws.Connected = false
+			ws.AgentWorking = false
+			ws.JobRunning = false
+			ws.touchUnpinned(now)
+			needDrain = true
+			l.log.Info("container exited", "id", id)
+		}
+	}
+	l.mu.Unlock()
+
+	l.enforceBudget(ctx)
+	if needDrain {
+		l.drainQueue(ctx)
+	}
+	return nil
+}
+
+func (l *Landlord) enforceBudget(ctx context.Context) {
+	for {
+		l.mu.Lock()
+		var running []string
+		for id, ws := range l.workspaces {
+			if ws.State == StateRunning {
+				running = append(running, id)
+			}
+		}
+		sort.Strings(running)
+		if len(running) <= MaxAwake() {
+			l.mu.Unlock()
+			return
+		}
+		id := running[len(running)-1]
+		l.mu.Unlock()
+		l.log.Info("stopping extra workspace to keep packing", "id", id)
+		if _, err := l.stopOp(ctx, id, true); err != nil {
+			l.log.Warn("demote failed", "id", id, "err", err)
+			return
+		}
+	}
+}
+
+func (l *Landlord) reapplyCgroups(ctx context.Context) {
+	l.mu.Lock()
+	var ids []string
+	for id, ws := range l.workspaces {
+		if ws.State == StateRunning {
+			ids = append(ids, id)
+		}
+	}
+	l.mu.Unlock()
+	for _, id := range ids {
+		if err := l.rt.ApplyCgroup(ctx, id); err != nil {
+			l.log.Warn("cgroup reapply failed", "id", id, "err", err)
+		}
 	}
 }
 
 func (l *Landlord) canAdmitLocked() bool {
+	if !l.runtimeOK {
+		return false
+	}
 	awake := 0
 	for _, ws := range l.workspaces {
 		if ws.State == StateRunning {
@@ -370,9 +639,20 @@ func validateName(name string) error {
 		return ErrInvalidName
 	}
 	for _, r := range name {
-		if r == '/' || r == '\x00' {
+		if !validNameRune(r) {
 			return ErrInvalidName
 		}
 	}
 	return nil
+}
+
+func validNameRune(r rune) bool {
+	switch {
+	case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
+		return true
+	case r == '.' || r == '_' || r == '-':
+		return true
+	default:
+		return false
+	}
 }

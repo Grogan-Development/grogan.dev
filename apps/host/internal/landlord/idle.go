@@ -9,20 +9,33 @@ const (
 	ZombieGrace     = 20 * time.Minute
 )
 
-// shouldIdleStop implements the two clocks from workspace-lifecycle.md:
-// connected UI / agent turn / registered job pin the workspace;
-// 5 min after last UI disconnect; 20 min with no heartbeat (zombie tab or stale guest).
+func pinned(ws *Workspace) bool {
+	return ws.Connected || ws.AgentWorking || ws.JobRunning
+}
+
+// shouldIdleStop: ZombieGrace only while a keep-awake bit is set but heartbeats
+// are stale. DisconnectGrace starts when the workspace becomes unpinned
+// (no session AND no agent AND no job), including never-connected.
 func shouldIdleStop(ws *Workspace, now time.Time) bool {
 	if ws.State != StateRunning {
 		return false
 	}
-	heartbeatAge := now.Sub(ws.LastHeartbeat)
-	keep := ws.Connected || ws.AgentWorking || ws.JobRunning
-	if keep {
-		return heartbeatAge >= ZombieGrace
+	if pinned(ws) {
+		return now.Sub(ws.LastHeartbeat) >= ZombieGrace
 	}
-	if !ws.LastDisconnect.IsZero() {
-		return now.Sub(ws.LastDisconnect) >= DisconnectGrace
+	since := ws.UnpinnedAt
+	if since.IsZero() {
+		since = ws.CreatedAt
 	}
-	return heartbeatAge >= ZombieGrace
+	return now.Sub(since) >= DisconnectGrace
+}
+
+func (ws *Workspace) touchUnpinned(now time.Time) {
+	if pinned(ws) {
+		ws.UnpinnedAt = time.Time{}
+		return
+	}
+	if ws.UnpinnedAt.IsZero() {
+		ws.UnpinnedAt = now
+	}
 }

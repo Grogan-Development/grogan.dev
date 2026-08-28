@@ -13,11 +13,13 @@ type FakeContainer struct {
 }
 
 type Fake struct {
-	mu         sync.Mutex
-	Datasets   map[string]bool
-	Containers map[string]*FakeContainer
-	Starts     []string
-	Stops      []string
+	mu            sync.Mutex
+	Datasets      map[string]bool
+	Containers    map[string]*FakeContainer
+	Starts        []string
+	Stops         []string
+	CgroupApplies []string
+	ListErr       error
 }
 
 func NewFake() *Fake {
@@ -25,6 +27,13 @@ func NewFake() *Fake {
 		Datasets:   make(map[string]bool),
 		Containers: make(map[string]*FakeContainer),
 	}
+}
+
+func (f *Fake) Seed(id, name string, running bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.Datasets[id] = true
+	f.Containers[id] = &FakeContainer{ID: id, Name: name, Running: running}
 }
 
 func (f *Fake) CreateDataset(_ context.Context, id string) error {
@@ -78,14 +87,34 @@ func (f *Fake) StopContainer(_ context.Context, id string) error {
 	return nil
 }
 
+func (f *Fake) InspectContainer(_ context.Context, id string) (ContainerInfo, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	c, ok := f.Containers[id]
+	if !ok {
+		return ContainerInfo{}, fmt.Errorf("no container: %s", id)
+	}
+	return ContainerInfo{ID: c.ID, Name: c.Name, Running: c.Running}, nil
+}
+
 func (f *Fake) ListContainers(_ context.Context) ([]ContainerInfo, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if f.ListErr != nil {
+		return nil, f.ListErr
+	}
 	out := make([]ContainerInfo, 0, len(f.Containers))
 	for _, c := range f.Containers {
 		out = append(out, ContainerInfo{ID: c.ID, Name: c.Name, Running: c.Running})
 	}
 	return out, nil
+}
+
+func (f *Fake) ApplyCgroup(_ context.Context, id string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.CgroupApplies = append(f.CgroupApplies, id)
+	return nil
 }
 
 func (f *Fake) Running(id string) bool {
@@ -105,4 +134,10 @@ func (f *Fake) StartedCount(id string) int {
 		}
 	}
 	return n
+}
+
+func (f *Fake) CgroupApplyCount() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return len(f.CgroupApplies)
 }

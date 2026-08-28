@@ -18,6 +18,35 @@ func TestCgroupRel(t *testing.T) {
 	}
 }
 
+func TestParseDockerPSPipeInNameDoesNotShiftState(t *testing.T) {
+	out := `{"ID":"deadbeef","State":"running","Labels":"nero.workspace.id=abc,nero.workspace.name=foo|bar"}
+{"ID":"cafebabe","State":"exited","Labels":"nero.workspace.id=def,nero.workspace.name=other"}`
+	list, err := parseDockerPS(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(list) != 2 {
+		t.Fatalf("len=%d", len(list))
+	}
+	byID := map[string]ContainerInfo{}
+	for _, c := range list {
+		byID[c.ID] = c
+	}
+	if byID["abc"].Name != "foo|bar" || !byID["abc"].Running {
+		t.Fatalf("abc=%+v", byID["abc"])
+	}
+	if byID["def"].Running {
+		t.Fatalf("def should be stopped: %+v", byID["def"])
+	}
+}
+
+func TestParseDockerPSEmpty(t *testing.T) {
+	list, err := parseDockerPS("")
+	if err != nil || len(list) != 0 {
+		t.Fatalf("list=%v err=%v", list, err)
+	}
+}
+
 func TestStartContainerWritesMemoryHigh(t *testing.T) {
 	writes := map[string]string{}
 	d := &Docker{
@@ -51,5 +80,22 @@ func TestStartContainerWritesMemoryHigh(t *testing.T) {
 	}
 	if writes[filepath.Join(dir, "memory.oom.group")] != MemoryOOMGroup {
 		t.Fatalf("oom.group=%q", writes[filepath.Join(dir, "memory.oom.group")])
+	}
+}
+
+func TestStartContainerCgroupFailureDoesNotFailStart(t *testing.T) {
+	d := &Docker{
+		run: func(_ context.Context, name string, args ...string) (string, error) {
+			if name == "docker" && len(args) > 0 && args[0] == "start" {
+				return "", nil
+			}
+			if name == "docker" && len(args) > 0 && args[0] == "inspect" {
+				return "0", nil
+			}
+			return "", nil
+		},
+	}
+	if err := d.StartContainer(context.Background(), "abc"); err != nil {
+		t.Fatalf("start must succeed: %v", err)
 	}
 }

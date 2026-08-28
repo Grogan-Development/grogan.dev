@@ -30,7 +30,7 @@ Put values in `/etc/nero/host.env` (mode `0600`, **not in git**). systemd `Envir
 | `NERO_LISTEN` | `:8080` | Landlord HTTP bind |
 | `NERO_DEV_BYPASS` | unset | `1` skips auth. **Local tests only.** Do not set on the public host. |
 | `WORKOS_AUTHKIT_URL` | empty | Portal button `href` on grogan.dev landing. AuthKit itself is PR 6. |
-| `NERO_GUEST_IMAGE` | `nero-guest:v1` | Image from PR 2. Create still records the name if the image is missing. |
+| `NERO_GUEST_IMAGE` | `nero-guest:v1` | Image from PR 2. `docker create` requires the image; failure rolls back the dataset. |
 | `NERO_ZFS_POOL` | `grid` | Datasets at `{pool}/nero/{id}` |
 | `NERO_WS_MOUNT` | `/var/lib/nero/ws` | Bind-mounted at `/home/nero` in the container |
 | `NERO_IDLE_TICK` | `10s` | How often the host reconciles idle stop |
@@ -74,14 +74,16 @@ After `docker start`, write on the container cgroup (not `--memory-reservation`;
 
 ## Admission
 
-`awake_count * 64GiB + 24GiB > 187GiB` → queue (`~2` awake). FIFO for create/wake. Stop (idle or API) starts the head of the queue. Never start a third 64 GiB-capable workspace and hope the OOM killer is smart.
+Queue if `(running+1)*64GiB + 24GiB > 187GiB` (max 2 awake). FIFO for create/wake. Stop (idle or API) starts the head of the queue. Never start a third 64 GiB-capable workspace and hope the OOM killer is smart. Restore fails closed if `docker ps` fails (systemd retries); extras already running are stopped and queued until the packing invariant holds.
 
 ## Idle
 
 Host ticker. Keep-awake is UI `connected`, `agentWorking`, or `jobRunning` (guest `nero-run` reports via heartbeat). Stray processes do not pin.
 
-- 20 minutes with no heartbeat (zombie tab / dead guest) → `docker stop`
-- 5 minutes after last UI disconnect (`connected: true` → `false`) if no job/agent → `docker stop`
+- 20 minutes with no heartbeat **while pinned** (zombie tab / stale guest) → `docker stop`
+- 5 minutes after the workspace becomes **unpinned** (no session, agent, or job — including never-connected) → `docker stop`
+
+Each idle tick reconciles `docker ps` (exited guests free a slot; unknown running nero containers are adopted then packed) and re-applies `memory.high`.
 
 ## Caddy / AuthKit redirect URIs (PR 6)
 
