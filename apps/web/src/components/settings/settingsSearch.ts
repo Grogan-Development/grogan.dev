@@ -4,10 +4,8 @@ export type SettingsPath =
   | "/settings/general"
   | "/settings/appearance"
   | "/settings/keybindings"
-  | "/settings/providers"
   | "/settings/integrations"
   | "/settings/source-control"
-  | "/settings/connections"
   | "/settings/archived";
 
 export interface SettingsSearchItem {
@@ -28,10 +26,8 @@ export const SETTINGS_SECTION_LABELS: Readonly<Record<SettingsPath, string>> = {
   "/settings/general": "General",
   "/settings/appearance": "Appearance",
   "/settings/keybindings": "Keybindings",
-  "/settings/providers": "Providers",
   "/settings/integrations": "Integrations",
   "/settings/source-control": "Source Control",
-  "/settings/connections": "Connections",
   "/settings/archived": "Archive",
 };
 
@@ -204,11 +200,6 @@ export const SETTINGS_SEARCH_ITEMS = [
     to: "/settings/keybindings",
   },
   {
-    id: "providers",
-    title: "Providers",
-    to: "/settings/providers",
-  },
-  {
     id: "agent-browser-access",
     title: "Agent browser access",
     to: "/settings/integrations",
@@ -242,11 +233,6 @@ export const SETTINGS_SEARCH_ITEMS = [
     id: "source-control",
     title: "Source control",
     to: "/settings/source-control",
-  },
-  {
-    id: "remote-environments",
-    title: "Remote environments",
-    to: "/settings/connections",
   },
   {
     id: "archive",

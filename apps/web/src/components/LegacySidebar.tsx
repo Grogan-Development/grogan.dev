@@ -110,7 +110,9 @@ import { useShortcutModifierState } from "../shortcutModifierState";
 import { ensureLocalApi, readLocalApi } from "../localApi";
 import { useComposerDraftStore } from "../composerDraftStore";
 import { useNewThreadHandler } from "../hooks/useHandleNewThread";
-import { useDesktopUpdateState } from "../state/desktopUpdate";
+function useDesktopUpdateState(): null {
+  return null;
+}
 
 import { useThreadActions } from "../hooks/useThreadActions";
 import { projectEnvironment } from "../state/projects";
@@ -126,16 +128,28 @@ import {
 import { stackedThreadToast, toastManager } from "./ui/toast";
 import { formatRelativeTimeLabel } from "../timestampFormat";
 import { Kbd } from "./ui/kbd";
-import {
-  getArm64IntelBuildWarningDescription,
-  getDesktopUpdateActionError,
-  getDesktopUpdateInstallConfirmationMessage,
-  isDesktopUpdateButtonDisabled,
-  resolveDesktopUpdateButtonAction,
-  shouldShowArm64IntelBuildWarning,
-  shouldToastDesktopUpdateActionResult,
-} from "./desktopUpdate.logic";
-import { showDesktopUpdateDownloadedToast } from "./desktopUpdate.toast";
+function getArm64IntelBuildWarningDescription(_state: unknown): string {
+  return "";
+}
+function getDesktopUpdateActionError(..._args: Array<unknown>): string {
+  return "";
+}
+function getDesktopUpdateInstallConfirmationMessage(_state: unknown): string {
+  return "";
+}
+function isDesktopUpdateButtonDisabled(_state: unknown): boolean {
+  return true;
+}
+function resolveDesktopUpdateButtonAction(_state: unknown): "none" {
+  return "none";
+}
+function shouldShowArm64IntelBuildWarning(_state: unknown): boolean {
+  return false;
+}
+function shouldToastDesktopUpdateActionResult(..._args: Array<unknown>): boolean {
+  return false;
+}
+function showDesktopUpdateDownloadedToast(..._args: Array<unknown>): void {}
 import { Alert, AlertAction, AlertDescription, AlertTitle } from "./ui/alert";
 import { Button } from "./ui/button";
 import {
@@ -1729,7 +1743,7 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
         setOpenMobile(false);
       }
       void router.navigate({
-        to: "/$environmentId/$threadId",
+        to: "/w/$workspaceId/$threadId",
         params: buildThreadRouteParams(threadRef),
       });
     },
@@ -1776,7 +1790,7 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
         setOpenMobile(false);
       }
       void router.navigate({
-        to: "/$environmentId/$threadId",
+        to: "/w/$workspaceId/$threadId",
         params: buildThreadRouteParams(threadRef),
       });
     },
@@ -3234,7 +3248,7 @@ export default function LegacySidebar() {
         setOpenMobile(false);
       }
       void navigate({
-        to: "/$environmentId/$threadId",
+        to: "/w/$workspaceId/$threadId",
         params: buildThreadRouteParams(threadRef),
       });
     },

@@ -10,10 +10,8 @@ import {
 import {
   ArchiveIcon,
   BlocksIcon,
-  BotIcon,
   GitBranchIcon,
   KeyboardIcon,
-  Link2Icon,
   PaletteIcon,
   SearchIcon,
   Settings2Icon,
@@ -33,7 +31,6 @@ import {
   SidebarMenuItem,
   useSidebar,
 } from "../ui/sidebar";
-import { T3ConnectSidebarAvatar, T3ConnectSidebarSignIn } from "../clerk/T3ConnectSidebarSignIn";
 import { SidebarUtilityMenu } from "../sidebar/SidebarChrome";
 import { scrollToSettingsTarget } from "./settingsLayout";
 import {
@@ -49,10 +46,8 @@ const SETTINGS_SECTION_ICONS: Readonly<
   "/settings/general": Settings2Icon,
   "/settings/appearance": PaletteIcon,
   "/settings/keybindings": KeyboardIcon,
-  "/settings/providers": BotIcon,
   "/settings/integrations": BlocksIcon,
   "/settings/source-control": GitBranchIcon,
-  "/settings/connections": Link2Icon,
   "/settings/archived": ArchiveIcon,
 };
 
@@ -284,13 +279,7 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
         </SidebarGroup>
       </SidebarContent>
       <SidebarFooter className="p-[var(--sidebar-content-inset)]">
-        <T3ConnectSidebarSignIn />
-        <div className="flex items-center gap-1">
-          <div className="min-w-0 flex-1">
-            <SidebarUtilityMenu />
-          </div>
-          <T3ConnectSidebarAvatar />
-        </div>
+        <SidebarUtilityMenu />
       </SidebarFooter>
     </>
   );

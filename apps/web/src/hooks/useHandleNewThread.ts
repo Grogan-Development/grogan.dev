@@ -346,8 +346,11 @@ export function useNewThreadHandler() {
             return opened;
           }
           await router.navigate({
-            to: "/draft/$draftId",
-            params: { draftId: emptyStoredDraftThread.draftId },
+            to: "/w/$workspaceId/draft/$draftId",
+            params: {
+              workspaceId: projectRef.environmentId,
+              draftId: emptyStoredDraftThread.draftId,
+            },
             replace: options?.replace ?? false,
           });
           return opened;
@@ -420,8 +423,8 @@ export function useNewThreadHandler() {
           });
           carryComposerContentTo(racedDraft.draftId);
           await router.navigate({
-            to: "/draft/$draftId",
-            params: { draftId: racedDraft.draftId },
+            to: "/w/$workspaceId/draft/$draftId",
+            params: { workspaceId: projectRef.environmentId, draftId: racedDraft.draftId },
             replace: options?.replace ?? false,
           });
           return { draftId: racedDraft.draftId, threadId: racedDraft.threadId };
@@ -451,8 +454,8 @@ export function useNewThreadHandler() {
         carryComposerContentTo(draftId);
 
         await router.navigate({
-          to: "/draft/$draftId",
-          params: { draftId },
+          to: "/w/$workspaceId/draft/$draftId",
+          params: { workspaceId: projectRef.environmentId, draftId },
           replace: options?.replace ?? false,
         });
         return { draftId, threadId };

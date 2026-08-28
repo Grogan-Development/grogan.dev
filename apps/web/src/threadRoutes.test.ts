@@ -17,7 +17,7 @@ describe("threadRoutes", () => {
     const ref = scopeThreadRef("env-1" as never, ThreadId.make("thread-1"));
 
     expect(buildThreadRouteParams(ref)).toEqual({
-      environmentId: "env-1",
+      workspaceId: "env-1",
       threadId: "thread-1",
     });
   });
@@ -25,7 +25,7 @@ describe("threadRoutes", () => {
   it("resolves a scoped ref only when both params are present", () => {
     expect(
       resolveThreadRouteRef({
-        environmentId: "env-1",
+        workspaceId: "env-1",
         threadId: "thread-1",
       }),
     ).toEqual({
@@ -33,12 +33,13 @@ describe("threadRoutes", () => {
       threadId: "thread-1",
     });
 
-    expect(resolveThreadRouteRef({ environmentId: "env-1" })).toBeNull();
+    expect(resolveThreadRouteRef({ workspaceId: "env-1" })).toBeNull();
     expect(resolveThreadRouteRef({ threadId: "thread-1" })).toBeNull();
   });
 
   it("builds canonical draft route params from a draft id", () => {
-    expect(buildDraftThreadRouteParams(DraftId.make("draft-1"))).toEqual({
+    expect(buildDraftThreadRouteParams("env-1" as never, DraftId.make("draft-1"))).toEqual({
+      workspaceId: "env-1",
       draftId: "draft-1",
     });
   });
@@ -46,7 +47,7 @@ describe("threadRoutes", () => {
   it("resolves draft and server route targets", () => {
     expect(
       resolveThreadRouteTarget({
-        environmentId: "env-1",
+        workspaceId: "env-1",
         threadId: "thread-1",
       }),
     ).toEqual({

@@ -28,7 +28,8 @@ export function useActiveProjectTarget(): ActiveProjectTarget | null {
           candidate.environmentId === thread.environmentId && candidate.id === thread.projectId,
       )
     : null;
-  const cwd = thread?.worktreePath ?? project?.workspaceRoot;
+  // Nero threads share the workspace root. Per-thread worktrees are not a product.
+  const cwd = project?.workspaceRoot;
 
   if (!thread || !threadId || !project || !cwd) return null;
 

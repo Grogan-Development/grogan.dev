@@ -985,7 +985,7 @@ function OpenCommandPaletteDialog(props: {
           );
       if (latestThread) {
         await navigate({
-          to: "/$environmentId/$threadId",
+          to: "/w/$workspaceId/$threadId",
           params: buildThreadRouteParams(
             scopeThreadRef(latestThread.environmentId, latestThread.id),
           ),
@@ -1131,7 +1131,7 @@ function OpenCommandPaletteDialog(props: {
         },
         runThread: async (thread) => {
           await navigate({
-            to: "/$environmentId/$threadId",
+            to: "/w/$workspaceId/$threadId",
             params: buildThreadRouteParams(scopeThreadRef(thread.environmentId, thread.id)),
           });
         },
@@ -1730,7 +1730,7 @@ function OpenCommandPaletteDialog(props: {
         );
         if (latestThread) {
           await navigate({
-            to: "/$environmentId/$threadId",
+            to: "/w/$workspaceId/$threadId",
             params: buildThreadRouteParams(
               scopeThreadRef(latestThread.environmentId, latestThread.id),
             ),

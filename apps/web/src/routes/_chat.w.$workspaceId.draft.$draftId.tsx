@@ -13,12 +13,14 @@ import {
 } from "../composerDraftStore";
 import { SidebarInset } from "../components/ui/sidebar";
 import { waitForDraftHeroTransition } from "../components/chat/draftHeroTransition";
-import { buildThreadRouteParams } from "../threadRoutes";
+import { buildThreadRouteParams, THREAD_ROUTE } from "../threadRoutes";
+import { writeLastWorkspaceId } from "../workspaceIdentity";
 import { useThread, useThreadRefs } from "../state/entities";
 
 function DraftChatThreadRouteView() {
   const navigate = useNavigate();
-  const { draftId: rawDraftId } = Route.useParams();
+  const { draftId: rawDraftId, workspaceId } = Route.useParams();
+  writeLastWorkspaceId(workspaceId);
   const draftId = DraftId.make(rawDraftId);
   const draftSession = useComposerDraftStore((store) => store.getDraftSession(draftId));
   const threadRefs = useThreadRefs();
@@ -57,7 +59,7 @@ function DraftChatThreadRouteView() {
         return;
       }
       void navigate({
-        to: "/$environmentId/$threadId",
+        to: THREAD_ROUTE,
         params: buildThreadRouteParams(canonicalThreadRef),
         replace: true,
       });
@@ -92,6 +94,6 @@ function DraftChatThreadRouteView() {
   );
 }
 
-export const Route = createFileRoute("/_chat/draft/$draftId")({
+export const Route = createFileRoute("/_chat/w/$workspaceId/draft/$draftId")({
   component: DraftChatThreadRouteView,
 });

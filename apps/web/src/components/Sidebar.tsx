@@ -2380,7 +2380,7 @@ export default function Sidebar() {
         setOpenMobile(false);
       }
       void router.navigate({
-        to: "/$environmentId/$threadId",
+        to: "/w/$workspaceId/$threadId",
         params: buildThreadRouteParams(threadRef),
       });
     },
@@ -2397,7 +2397,14 @@ export default function Sidebar() {
       if (isMobile) {
         setOpenMobile(false);
       }
-      void router.navigate({ to: "/draft/$draftId", params: { draftId } });
+      const session = useComposerDraftStore.getState().getDraftSession(draftId);
+      if (!session) {
+        return;
+      }
+      void router.navigate({
+        to: "/w/$workspaceId/draft/$draftId",
+        params: { workspaceId: session.environmentId, draftId },
+      });
     },
     [clearSelection, isMobile, router, setOpenMobile],
   );

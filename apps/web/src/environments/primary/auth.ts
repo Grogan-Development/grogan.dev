@@ -14,11 +14,6 @@ import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import { HttpClientError } from "effect/unstable/http";
 
-import {
-  getPairingTokenFromUrl,
-  stripPairingTokenFromUrl as stripPairingTokenUrl,
-} from "../../pairingUrl";
-
 import { PrimaryEnvironmentHttpClient } from "./httpClient";
 import { runPrimaryHttp } from "../../lib/runtime";
 
@@ -154,17 +149,10 @@ const AUTH_SESSION_ESTABLISH_TIMEOUT_MS = 2_000;
 const AUTH_SESSION_ESTABLISH_STEP_MS = 100;
 
 export function peekPairingTokenFromUrl(): string | null {
-  return getPairingTokenFromUrl(new URL(window.location.href));
+  return null;
 }
 
-export function stripPairingTokenFromUrl() {
-  const url = new URL(window.location.href);
-  const next = stripPairingTokenUrl(url);
-  if (next.toString() === url.toString()) {
-    return;
-  }
-  window.history.replaceState({}, document.title, next.toString());
-}
+export function stripPairingTokenFromUrl() {}
 
 export function takePairingTokenFromUrl(): string | null {
   const token = peekPairingTokenFromUrl();
