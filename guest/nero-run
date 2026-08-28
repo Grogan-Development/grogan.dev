@@ -1,6 +1,6 @@
 #!/bin/sh
 # Register a keep-awake job: a systemd --user scope under nero-job.slice.
-# The host treats a live scope in that slice as "job still running".
+# Live cgroup: user@1000.service/nero-job.slice/ (not a system slice).
 # Stray processes (unnamed daemons, tmux, etc.) are not jobs.
 set -eu
 
@@ -17,28 +17,53 @@ cmd=$1
 shift
 
 uid=$(id -u)
-if [ "${NERO_RUN_DRY:-}" != 1 ]; then
-  if ! systemctl --user is-system-running >/dev/null 2>&1; then
-    echo "nero-run: user systemd is not running (need linger / user@${uid}.service)" >&2
-    exit 1
-  fi
-fi
+: "${XDG_RUNTIME_DIR:=/run/user/${uid}}"
+: "${DBUS_SESSION_BUS_ADDRESS:=unix:path=${XDG_RUNTIME_DIR}/bus}"
+: "${DISPLAY:=:1}"
+export XDG_RUNTIME_DIR DBUS_SESSION_BUS_ADDRESS DISPLAY
 
 unit_args=""
 if [ -n "${NERO_JOB_ID:-}" ]; then
+  case "$NERO_JOB_ID" in
+    *[!A-Za-z0-9_-]*)
+      echo "nero-run: NERO_JOB_ID must be alphanumeric, _ or -" >&2
+      exit 2
+      ;;
+  esac
   unit_args="--unit=nero-job-${NERO_JOB_ID}.scope"
 fi
 
+bus="${XDG_RUNTIME_DIR}/bus"
+mem_args="-p MemoryHigh=48G -p MemoryMax=64G"
+
+if [ "${NERO_RUN_DRY:-}" != 1 ]; then
+  if [ ! -S "$bus" ]; then
+    echo "nero-run: cannot connect to user bus at ${bus} (need linger / user@${uid}.service)" >&2
+    exit 1
+  fi
+  if ! systemctl --user is-system-running >/dev/null 2>&1; then
+    echo "nero-run: cannot connect to user bus at ${bus}" >&2
+    exit 1
+  fi
+  # User manager inside Docker may reject Memory*=; slice + container memory.max
+  # still fence the job. Probe with a throwaway scope so the real command is
+  # not started twice.
+  if ! systemd-run --user --quiet --scope --slice=nero-job.slice \
+      -p MemoryHigh=48G -p MemoryMax=64G --collect -- true; then
+    mem_args=""
+  fi
+fi
+
 if [ "${NERO_RUN_DRY:-}" = 1 ]; then
-  # Intentionally unquoted unit_args so an empty value disappears.
+  # Intentionally unquoted mem/unit args so empty values disappear.
   # shellcheck disable=SC2086
   echo systemd-run --user --scope --slice=nero-job.slice \
-    -p MemoryHigh=48G -p MemoryMax=64G -p CPUWeight=100 \
+    $mem_args -p CPUWeight=100 \
     --collect $unit_args -- "$cmd" "$@"
   exit 0
 fi
 
 # shellcheck disable=SC2086
 exec systemd-run --user --scope --slice=nero-job.slice \
-  -p MemoryHigh=48G -p MemoryMax=64G -p CPUWeight=100 \
+  $mem_args -p CPUWeight=100 \
   --collect $unit_args -- "$cmd" "$@"

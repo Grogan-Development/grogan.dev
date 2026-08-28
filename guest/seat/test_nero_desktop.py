@@ -7,6 +7,8 @@ import importlib.machinery
 import importlib.util
 import io
 import os
+import subprocess
+import sys
 import tempfile
 import threading
 import time
@@ -173,6 +175,46 @@ class LockTests(unittest.TestCase):
                 pass
         t.join()
         os.unlink(path)
+
+    def test_lock_subcommand_holds_during_spawn(self):
+        fd, path = tempfile.mkstemp(prefix="nero-seat-")
+        os.close(fd)
+        marker = path + ".ready"
+        proc = subprocess.Popen(
+            [
+                sys.executable,
+                str(SCRIPT),
+                "--lock-file",
+                path,
+                "--lock-timeout",
+                "2",
+                "lock",
+                "--",
+                sys.executable,
+                "-c",
+                f"open({marker!r}, 'w').close(); import time; time.sleep(0.5)",
+            ]
+        )
+        try:
+            deadline = time.monotonic() + 2.0
+            while not os.path.exists(marker) and time.monotonic() < deadline:
+                time.sleep(0.02)
+            self.assertTrue(os.path.exists(marker), "lock helper never started")
+            with self.assertRaises(SystemExit):
+                with self.m.seat_lock(path, timeout=0.15):
+                    pass
+            self.assertEqual(proc.wait(timeout=2), 0)
+            with self.m.seat_lock(path, timeout=0.5):
+                pass
+        finally:
+            if proc.poll() is None:
+                proc.kill()
+                proc.wait(timeout=2)
+            for leftover in (path, marker):
+                try:
+                    os.unlink(leftover)
+                except OSError:
+                    pass
 
 
 if __name__ == "__main__":

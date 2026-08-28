@@ -43,7 +43,11 @@ def build_parser() -> argparse.ArgumentParser:
         description="Drive the Nero seat (shot/click/type/key). Serialised with flock.",
     )
     p.add_argument("--display", default=None, help="X display (default: $NERO_SEAT_DISPLAY or $DISPLAY or :1)")
-    p.add_argument("--lock-file", default=None, help=f"flock path (default: {DEFAULT_LOCK})")
+    p.add_argument(
+        "--lock-file",
+        default=None,
+        help="flock path (default: $NERO_SEAT_LOCK, else $XDG_RUNTIME_DIR/nero-seat.lock, else /run/nero/seat.lock)",
+    )
     p.add_argument("--lock-timeout", type=float, default=DEFAULT_LOCK_TIMEOUT, help="seconds to wait for the seat lock")
     p.add_argument("--dry-run", action="store_true", help="print the planned command and exit (no display, no lock)")
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -64,7 +68,7 @@ def build_parser() -> argparse.ArgumentParser:
     key = sub.add_parser("key", help="press keysyms (xdotool names, e.g. Return ctrl+s)")
     key.add_argument("keys", nargs="+")
 
-    lock = sub.add_parser("lock", help="hold the seat lock and exec a command (VNC helper / queue)")
+    lock = sub.add_parser("lock", help="hold the seat lock and run a command (VNC helper / queue)")
     lock.add_argument("command", nargs=argparse.REMAINDER, help="command after --")
     return p
 
@@ -147,7 +151,10 @@ def _env_with_display(display: str) -> dict[str, str]:
 def run_tool(args: argparse.Namespace) -> int:
     env = _env_with_display(args.display)
     if args.cmd == "lock":
-        os.execvpe(args.command[0], args.command, env)
+        # Stay in this process so the flock FD remains open for the helper's
+        # lifetime. os.execvpe would drop it (O_CLOEXEC since Python 3.4).
+        subprocess.run(args.command, check=True, env=env)
+        return 0
     # scrot --file - writes PNG to stdout (Debian trixie scrot 1.12).
     subprocess.run(tool_argv(args), check=True, env=env)
     return 0

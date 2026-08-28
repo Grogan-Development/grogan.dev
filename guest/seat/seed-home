@@ -1,0 +1,20 @@
+#!/bin/sh
+# vncserver (KasmVNC 1.5.0) only reads $HOME/.kasmpasswd; the yaml
+# kasm_password_file is applied to Xvnc after that check. ZFS over /home/nero
+# hides the image home, so copy the seed if the dataset is empty.
+set -eu
+HOME="${HOME:-/home/nero}"
+
+if [ ! -f /etc/nero/kasmpasswd ]; then
+  echo "seed-home: missing /etc/nero/kasmpasswd" >&2
+  exit 1
+fi
+if [ ! -f "$HOME/.kasmpasswd" ]; then
+  cp /etc/nero/kasmpasswd "$HOME/.kasmpasswd"
+  chmod 600 "$HOME/.kasmpasswd"
+fi
+
+mkdir -p "$HOME/.vnc"
+chmod 700 "$HOME/.vnc"
+# Quiet DE selection on an empty dataset.
+touch "$HOME/.vnc/.de-was-selected"

@@ -54,6 +54,15 @@ class NeroRunTests(unittest.TestCase):
         self.assertEqual(proc.returncode, 0, proc.stderr)
         self.assertNotIn("--unit=", proc.stdout)
 
+    def test_job_id_rejects_slash(self):
+        proc = run_dry("true", job_id="foo/bar")
+        self.assertEqual(proc.returncode, 2)
+        self.assertIn("NERO_JOB_ID", proc.stderr)
+
+    def test_job_id_rejects_space(self):
+        proc = run_dry("true", job_id="bake one")
+        self.assertEqual(proc.returncode, 2)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -1,7 +1,0 @@
-[Unit]
-Description=Nero registered jobs (keep-awake)
-
-[Slice]
-CPUWeight=100
-MemoryHigh=48G
-MemoryMax=64G

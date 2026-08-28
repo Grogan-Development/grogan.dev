@@ -1,4 +1,3 @@
-#!/bin/sh
-# Agent seat: Chromium is the persistent occupancy app. Blender is started
-# on demand (nero-run / agent bash), not here.
-chromium --start-maximized about:blank >/tmp/nero-chromium.log 2>&1 &
+# Chromium is nero-chromium.service (Restart=on-failure), not a background
+# line here. Blender is started on demand (nero-run / agent bash).
+true

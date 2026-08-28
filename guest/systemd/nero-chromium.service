@@ -1,8 +1,8 @@
 [Unit]
-Description=Nero seat compositor (openbox on DISPLAY=:1)
-After=kasmvnc.service user@1000.service
-Requires=kasmvnc.service
-BindsTo=kasmvnc.service
+Description=Nero seat Chromium
+After=nero-seat.service user@1000.service
+Requires=nero-seat.service
+BindsTo=nero-seat.service
 Wants=user@1000.service
 
 [Service]
@@ -16,8 +16,7 @@ Environment=DISPLAY=:1
 Environment=XAUTHORITY=/home/nero/.Xauthority
 Environment=XDG_RUNTIME_DIR=/run/user/1000
 Environment=DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus
-ExecStartPre=/usr/lib/nero/wait-for-display
-ExecStart=/usr/bin/openbox --startup /usr/lib/nero/openbox-startup
+ExecStart=/usr/bin/chromium --start-maximized about:blank
 Restart=on-failure
 RestartSec=2
 
