@@ -5,7 +5,7 @@
  * takes plain OpenAI-style image parts here.
  */
 import { isRouterQuotaError, streamOpenAICompat, type StreamChatResult } from "./openaiCompat.ts";
-import { NERO_TOOLS, upstreamModelSlug, type StreamRequest } from "./catalog.ts";
+import { NERO_TOOLS, type StreamRequest } from "./catalog.ts";
 
 export type ZaiOptions = {
   readonly apiKey: string | undefined;
@@ -22,6 +22,7 @@ export const streamZai = async (
   request: StreamRequest,
   options: ZaiOptions,
   endpoint: "coding" | "payg",
+  upstream: string,
 ): Promise<StreamChatResult> => {
   const apiKey = options.apiKey ?? "";
   const baseUrl = (endpoint === "coding" ? options.codingBaseUrl : options.paygBaseUrl).replace(
@@ -35,7 +36,7 @@ export const streamZai = async (
       accept: "text/event-stream",
     },
     body: {
-      model: upstreamModelSlug("zai", request.model),
+      model: upstream,
       stream: true,
       messages: request.messages,
       tools: NERO_TOOLS,

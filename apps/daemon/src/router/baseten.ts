@@ -4,7 +4,7 @@
  * model — never an automatic fallback, per the router policy.
  */
 import { streamOpenAICompat, type StreamChatResult } from "./openaiCompat.ts";
-import { NERO_TOOLS, upstreamModelSlug, type StreamRequest } from "./catalog.ts";
+import { NERO_TOOLS, type StreamRequest } from "./catalog.ts";
 
 export type BasetenOptions = {
   readonly apiKey: string | undefined;
@@ -17,6 +17,7 @@ export const isBasetenConfigured = (options: BasetenOptions): boolean =>
 export const streamBaseten = (
   request: StreamRequest,
   options: BasetenOptions,
+  upstream: string,
 ): Promise<StreamChatResult> =>
   streamOpenAICompat({
     url: `${options.baseUrl.replace(/\/+$/, "")}/chat/completions`,
@@ -25,7 +26,7 @@ export const streamBaseten = (
       accept: "text/event-stream",
     },
     body: {
-      model: upstreamModelSlug("baseten", request.model),
+      model: upstream,
       stream: true,
       messages: request.messages,
       tools: NERO_TOOLS,

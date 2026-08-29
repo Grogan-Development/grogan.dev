@@ -160,7 +160,7 @@ Law: "After adapt there is no T3 product left." Survivors at main:
       (`session.go:227`); the `*.grogan.dev` domain heuristic remains (`:224`).
 - [x] **docker argv secret leak** — `runCmd` embedded full argv in error strings
       that bubble to HTTP 500 bodies and logs, including `--env
-  OPENROUTER_API_KEY=…`/`NERO_ACCESS_TOKEN`/`NERO_HOST_TOKEN` on create
+OPENROUTER_API_KEY=…`/`NERO_ACCESS_TOKEN`/`NERO_HOST_TOKEN` on create
       failure. `argvForErrors` now redacts env values (4ecfb70).
 - [x] **Daemon credentials were predictable** — tickets/sessions/pairing creds
       minted from timestamp+counter; now CSPRNG (`nextSecret`,
@@ -233,7 +233,7 @@ P1s still open (revert, harness poison, unbounded read).
       loss.** Web sends "keep N" — the clicked turn's checkpoint count minus 1
       (`ChatView.tsx:2637-2642`, dialog at `:5204`, send at `:5216-5222`). Daemon
       reads it as "remove N user turns": `keepUsers = userTurns.length -
-  command.turnCount` (`daemon.ts:1076-1091`). Client reducer keeps
+command.turnCount` (`daemon.ts:1076-1091`). Client reducer keeps
       checkpoints `<= payload.turnCount` (`threadReducer.ts:524-536`). Reverting
       the last turn of a 4-turn thread permanently deletes turns 2–4 server-side
       while the optimistic UI shows 1–3 until reload. Daemon also never prunes
@@ -294,7 +294,7 @@ P1s still open (revert, harness poison, unbounded read).
       promises the opposite behavior.
 - [ ] **`nero-run` reports `running:false` on INT/TERM without killing the
       job.** The trap posts the heartbeat but never signals the `systemd-run
-  --scope` child (`guest/nero-run:86-103`): a harness timeout kills only the
+--scope` child (`guest/nero-run:86-103`): a harness timeout kills only the
       wrapper → live job unpinned → idle-stop kills it after grace.
 - [ ] **Alt-tab never releases the human-driving latch.** `focusout` with
       `relatedTarget === null` (focus left the browser) is treated as "moved
@@ -634,3 +634,14 @@ from it, not annotated); control plane stays landlord-only (no agent loop in
       subscription session).
 - [ ] Composer fast-mode toggle (post-plan §2 UI): the fast model is selectable
       in the picker; the dedicated composer toggle is still UI work.
+- [ ] OpenCode Zen route: inject `OPENCODE_API_KEY` (opencode.ai/auth billing),
+      confirm all three Zen transports stream with tools — chat/completions
+      (`kimi-k3`, `deepseek-v4-pro`, `gemini-3.7-flash`), Responses
+      (`gpt-5.6-sol`, `grok-4.6`), Anthropic messages (`claude-fable-5`).
+      Gemini's endpoint path on Zen is the least documented of the three —
+      verify first. Go subscribers set `OPENCODE_BASE_URL=https://opencode.ai/zen/go/v1`.
+- [ ] Curated catalog (2026-08-29): the selector is latest-only per family
+      (GLM/Kimi/Gemini/Claude/Grok/DeepSeek/GPT) with routing in the label and
+      subscription-first chains; models.dev metadata vendored at
+      `router/modelsdev.json`. Refresh the snapshot when new generations land
+      (add, never accumulate).

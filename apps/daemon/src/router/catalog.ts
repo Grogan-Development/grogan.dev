@@ -1,41 +1,105 @@
 /**
- * Nero's hand-picked model catalog: Nero slugs → per-provider slugs and the
- * routing chain each slug uses. This is the override layer from the router
- * plan — canonical internal names, many providers, no third-party router.
+ * Nero's curated model catalog: Nero slugs → per-provider routes (transport +
+ * upstream slug) and the fallback chain each model uses. This is the override
+ * layer from the router plan — canonical internal names, many providers, no
+ * third-party middleman.
  *
- * The chain entries are provider ids in `router.ts`; `router.ts` decides
- * credentials and fallback per id.
+ * Selection policy (user law): latest-generation models only, a select few per
+ * family — GLM, Kimi, Gemini, Claude, Grok, DeepSeek, GPT. Subscription
+ * routes come first where they exist (GLM → Z.ai plan, GPT → ChatGPT Pro,
+ * Grok → xAI OIDC); OpenCode Zen is the fallback for GPT/Grok and the primary
+ * route for everything else. Baseten is per-token spend behind the GLM chain
+ * only, never an automatic fallback for other families.
+ *
+ * Slug/limit/pricing metadata comes from the vendored models.dev snapshot
+ * (`modelsdev.json`) — refresh that file, never live-fetch at runtime.
  */
+import * as Fs from "node:fs";
+import * as Path from "node:path";
+
 import type { ChatMessage } from "./openaiCompat.ts";
 
-export type RouterProviderId = "zai" | "baseten" | "codex" | "grok";
-/** Chain ids: `zai-payg` is the same provider, different billing endpoint. */
-export type RouterChainId = RouterProviderId | "zai-payg";
+export type RouterProviderId = "zai" | "zai-payg" | "baseten" | "codex" | "grok" | "opencode";
+
+/** Wire protocol a route speaks. */
+export type Transport = "openai" | "anthropic" | "responses";
+
+export type CatalogRoute = {
+  readonly provider: RouterProviderId;
+  readonly transport: Transport;
+  /** Model slug on the provider side (differs from the Nero slug). */
+  readonly upstream: string;
+};
 
 export type CatalogModel = {
   readonly slug: string;
+  /** Selector label — carries the routing so no provider picker is needed. */
   readonly name: string;
-  /** Providers in fallback order; the first configured one streams. */
-  readonly chain: ReadonlyArray<RouterChainId>;
+  readonly chain: ReadonlyArray<CatalogRoute>;
   readonly default?: boolean;
 };
 
 export const CATALOG: ReadonlyArray<CatalogModel> = [
   {
     slug: "glm-5.3-flash",
-    name: "GLM-5.3 Flash",
-    chain: ["zai", "zai-payg", "baseten"],
+    name: "GLM 5.3 Flash · Z.ai → Baseten",
+    chain: [
+      { provider: "zai", transport: "openai", upstream: "glm-5.3-flash" },
+      { provider: "zai-payg", transport: "openai", upstream: "glm-5.3-flash" },
+      { provider: "baseten", transport: "openai", upstream: "zai-org/GLM-5.3-Flash" },
+    ],
     default: true,
   },
-  { slug: "glm-5.3", name: "GLM-5.3", chain: ["zai", "zai-payg"] },
-  // Fast mode: Baseten only, never an automatic fallback (per-token spend is
-  // the user's explicit choice).
-  { slug: "glm-5.3-flash-fast", name: "GLM-5.3 Flash (fast)", chain: ["baseten"] },
-  // Subscription routes. grok-4.6/grok-4.5 are the locally proven defaults;
-  // codex's upstream slug comes from NERO_CODEX_MODEL at bring-up.
-  { slug: "grok-4.6", name: "Grok 4.6", chain: ["grok"] },
-  { slug: "grok-4.5", name: "Grok 4.5", chain: ["grok"] },
-  { slug: "codex", name: "Codex (ChatGPT Pro)", chain: ["codex"] },
+  {
+    // The speed option: Z.ai's Highspeed variant on plan quota first, then
+    // Baseten per-token (best time-to-first-token).
+    slug: "glm-5.3-flash-fast",
+    name: "GLM 5.3 Flash Speed · Z.ai Highspeed → Baseten",
+    chain: [
+      { provider: "zai", transport: "openai", upstream: "glm-5.3-highspeed" },
+      { provider: "zai-payg", transport: "openai", upstream: "glm-5.3-highspeed" },
+      { provider: "baseten", transport: "openai", upstream: "zai-org/GLM-5.3-Flash" },
+    ],
+  },
+  {
+    // ChatGPT Pro subscription first; OpenCode Zen serves the same generation
+    // over its Responses endpoint as the fallback.
+    slug: "gpt-5.6-sol",
+    name: "GPT-5.6 Sol · Pro → OpenCode",
+    chain: [
+      { provider: "codex", transport: "responses", upstream: "gpt-5.6-sol" },
+      { provider: "opencode", transport: "responses", upstream: "gpt-5.6-sol" },
+    ],
+  },
+  {
+    // xAI OIDC subscription serves Heavy; OpenCode Zen has the same slug.
+    slug: "grok-4.6",
+    name: "Grok 4.6 · xAI → OpenCode",
+    chain: [
+      { provider: "grok", transport: "openai", upstream: "grok-4.6" },
+      { provider: "opencode", transport: "responses", upstream: "grok-4.6" },
+    ],
+  },
+  {
+    slug: "claude-fable-5",
+    name: "Claude Fable 5 · OpenCode",
+    chain: [{ provider: "opencode", transport: "anthropic", upstream: "claude-fable-5" }],
+  },
+  {
+    slug: "kimi-k3",
+    name: "Kimi K3 · OpenCode",
+    chain: [{ provider: "opencode", transport: "openai", upstream: "kimi-k3" }],
+  },
+  {
+    slug: "gemini-3.7-flash",
+    name: "Gemini 3.7 Flash · OpenCode",
+    chain: [{ provider: "opencode", transport: "openai", upstream: "gemini-3.7-flash" }],
+  },
+  {
+    slug: "deepseek-v4-pro",
+    name: "DeepSeek V4 Pro · OpenCode",
+    chain: [{ provider: "opencode", transport: "openai", upstream: "deepseek-v4-pro" }],
+  },
 ];
 
 export const DEFAULT_MODEL = "glm-5.3-flash";
@@ -45,20 +109,57 @@ export const resolveCatalogModel = (slug: string | undefined): CatalogModel =>
   CATALOG.find((model) => model.default === true) ??
   CATALOG[0]!;
 
-/** Upstream model slug per provider id (differs from the Nero slug). */
-export const upstreamModelSlug = (provider: RouterChainId, slug: string): string => {
-  switch (provider) {
-    case "baseten":
-      return "zai-org/GLM-5.3-Flash";
-    case "grok":
-      return slug;
-    case "codex":
-      return process.env.NERO_CODEX_MODEL ?? "gpt-5-codex";
-    default:
-      // Z.ai first-party slugs; the legacy "z-ai/" prefix is gone.
-      return slug.startsWith("glm-") ? slug : "glm-5.3-flash";
+/** Providers whose upstream slug differs from the Nero slug (legacy helper). */
+export const upstreamModelSlug = (provider: RouterProviderId, slug: string): string => {
+  if (provider === "baseten") return "zai-org/GLM-5.3-Flash";
+  if (provider === "zai" || provider === "zai-payg") {
+    return slug.startsWith("glm-") ? slug : "glm-5.3-flash";
   }
+  return slug;
 };
+
+// ——— models.dev snapshot ———
+
+type SnapshotModel = {
+  readonly id?: string;
+  readonly name?: string;
+  readonly attachment?: boolean;
+  readonly reasoning?: boolean;
+  readonly tool_call?: boolean;
+  readonly cost?: { readonly input?: number; readonly output?: number };
+  readonly limit?: { readonly context?: number; readonly output?: number };
+};
+
+let snapshotCache: Readonly<Record<string, SnapshotModel>> | undefined;
+
+/** Vendored models.dev metadata keyed `provider/model-id` (best effort). */
+export const snapshotMeta = (provider: string, upstream: string): SnapshotModel | undefined => {
+  if (snapshotCache === undefined) {
+    const cache = new Map<string, SnapshotModel>();
+    try {
+      const raw = JSON.parse(
+        Fs.readFileSync(Path.join(import.meta.dirname ?? ".", "modelsdev.json"), "utf8"),
+      ) as { providers?: Record<string, { models?: Record<string, SnapshotModel> }> };
+      for (const [pid, provider_] of Object.entries(raw.providers ?? {})) {
+        for (const [mid, model] of Object.entries(provider_.models ?? {})) {
+          cache.set(`${pid}/${mid}`, model);
+        }
+      }
+    } catch {
+      // Missing/corrupt snapshot: metadata is optional, routing is not.
+    }
+    snapshotCache = Object.fromEntries(cache);
+  }
+  return (
+    snapshotCache[`${provider}/${upstream}`] ??
+    // Z.ai routes also match the coding-plan snapshot entries.
+    snapshotCache[`zai-coding-plan/${upstream}`]
+  );
+};
+
+/** Max output tokens for providers that require it (Anthropic-style). */
+export const maxOutputTokens = (route: CatalogRoute): number =>
+  snapshotMeta("opencode", route.upstream)?.limit?.output ?? 32_000;
 
 export type ToolSchema = {
   readonly type: "function";

@@ -56,12 +56,24 @@ directly, and Nero owns the model catalog and the fallback policy.
 - **Grok Heavy (xAI OIDC):** the Grok Build auth path (first-party, open
   source). Import the Grok CLI's `~/.grok/auth.json` into the daemon token
   store; refreshes via OIDC discovery on the issuer.
+- **OpenCode Zen (fallback + curated primary):** `https://opencode.ai/zen/v1`
+  with `OPENCODE_API_KEY`. Fallback for GPT (Responses transport) and Grok;
+  primary route for Claude/Kimi/Gemini/DeepSeek. The OpenCode Go subscription
+  is the same gateway at `.../zen/go/v1` (set `OPENCODE_BASE_URL`).
 - Fallback order: Z.ai plan quota → Z.ai PAYG on quota/rate errors → Baseten
-  only when picked. Subscription models route to their own provider only.
-- One `ServerConfig.providers` row: `driver` / `instanceId` = `nero`; the
-  model picker lists the router catalog (`glm-5.3-flash` default, `glm-5.3`,
-  `glm-5.3-flash-fast`, plus `grok-4.6` / `grok-4.5` / `codex` once their
-  subscription is signed in).
+  (GLM chains only). GPT: ChatGPT Pro → OpenCode. Grok: xAI OIDC → OpenCode.
+  Everything else routes straight to OpenCode.
+- The selector is a **curated, latest-only list** — no provider picking, no
+  full catalogs. One entry per family (plus the GLM speed option), each label
+  carrying its routing:
+  `GLM 5.3 Flash · Z.ai → Baseten` (default), `GLM 5.3 Flash Speed · Z.ai
+Highspeed → Baseten`, `GPT-5.6 Sol · Pro → OpenCode`, `Grok 4.6 · xAI →
+OpenCode`, `Claude Fable 5 · OpenCode`, `Kimi K3 · OpenCode`,
+  `Gemini 3.7 Flash · OpenCode`, `DeepSeek V4 Pro · OpenCode`.
+- Catalog source of truth: `apps/daemon/src/router/catalog.ts`, with slug /
+  context / pricing metadata from the vendored models.dev snapshot
+  (`apps/daemon/src/router/modelsdev.json`). Refresh the snapshot file to
+  bump generations — never live-fetch, never list whole provider catalogs.
 
 Agent seat images (`shot`, ≤8 per turn) attach as inline image parts on the
 Z.ai/Baseten requests.

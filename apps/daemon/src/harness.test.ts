@@ -98,6 +98,8 @@ const tmpDaemon = (port: number, extra: Partial<DaemonOptions> = {}) => {
       basetenBaseUrl: "https://inference.baseten.co/v1",
       openaiClientId: undefined,
       codexRedirectUri: undefined,
+      opencodeApiKey: undefined,
+      opencodeBaseUrl: undefined,
       routerTimeoutMs: 120_000,
       routerIdleMs: 45_000,
       hostUrl: undefined,

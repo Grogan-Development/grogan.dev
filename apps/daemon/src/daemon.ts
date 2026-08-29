@@ -291,6 +291,10 @@ export class Daemon {
       baseten: { apiKey: options.basetenApiKey, baseUrl: options.basetenBaseUrl },
       codex: { clientId: options.openaiClientId, redirectUri: options.codexRedirectUri },
       grok: { baseUrl: Process.env.XAI_BASE_URL },
+      opencode: {
+        apiKey: options.opencodeApiKey,
+        baseUrl: options.opencodeBaseUrl,
+      },
       dataDir: options.dataDir,
     });
     this.humanDriving = new HumanDrivingLock(options.seatLockPath, options.seatHoldBin);
@@ -400,7 +404,7 @@ export class Daemon {
   /** A turn can start when at least one router provider is usable. */
   private routerAvailable(): boolean {
     const status = this.router.status();
-    return status.zai || status.baseten || status.codex || status.grok;
+    return status.zai || status.baseten || status.codex || status.grok || status.opencode;
   }
 
   /**
@@ -417,8 +421,8 @@ export class Daemon {
   }> {
     const status = this.router.status();
     return CATALOG.filter((model) => {
-      if (model.chain.every((id) => id === "grok")) return status.grok;
-      if (model.chain.every((id) => id === "codex")) return status.codex;
+      if (model.chain.every((route) => route.provider === "grok")) return status.grok;
+      if (model.chain.every((route) => route.provider === "codex")) return status.codex;
       return true;
     }).map((model) => ({
       slug: model.slug,

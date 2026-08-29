@@ -51,6 +51,9 @@ export type DaemonOptions = {
   /** OAuth login surface for the OpenAI Pro (Codex) subscription route. */
   readonly openaiClientId: string | undefined;
   readonly codexRedirectUri: string | undefined;
+  /** OpenCode Zen gateway (GPT/Grok fallback; primary for Claude/Kimi/Gemini/DeepSeek). */
+  readonly opencodeApiKey: string | undefined;
+  readonly opencodeBaseUrl: string | undefined;
   readonly routerTimeoutMs: number;
   readonly routerIdleMs: number;
   /** Host control-plane base URL; set in guests for the keep-awake pulse. */
@@ -143,6 +146,8 @@ export const loadOptionsFromEnv = (): DaemonOptions => {
     basetenBaseUrl: Process.env.BASETEN_BASE_URL ?? BASETEN_BASE_URL,
     openaiClientId: Process.env.OPENAI_CLIENT_ID,
     codexRedirectUri: Process.env.NERO_CODEX_REDIRECT_URI,
+    opencodeApiKey: Process.env.OPENCODE_API_KEY,
+    opencodeBaseUrl: Process.env.OPENCODE_BASE_URL,
     routerTimeoutMs: ROUTER_TIMEOUT_MS,
     routerIdleMs: ROUTER_IDLE_MS,
     hostUrl: Process.env.NERO_HOST_URL,

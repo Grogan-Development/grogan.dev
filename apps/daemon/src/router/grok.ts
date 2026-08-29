@@ -9,7 +9,7 @@
  * tokens, JWT-expiry tracked). Nero owns the imported copy in its token store;
  * the CLI file itself is never written back to.
  */
-import { NERO_TOOLS, upstreamModelSlug, type StreamRequest } from "./catalog.ts";
+import { NERO_TOOLS, type StreamRequest } from "./catalog.ts";
 import { streamOpenAICompat, type StreamChatResult } from "./openaiCompat.ts";
 import { tokenEndpointRequest, type OAuthTokenSet, type RouterTokenStore } from "./tokenStore.ts";
 
@@ -168,6 +168,7 @@ export const ensureGrokToken = async (options: GrokOptions): Promise<OAuthTokenS
 export const streamGrok = async (
   request: StreamRequest,
   options: GrokOptions,
+  upstream: string,
 ): Promise<StreamChatResult> => {
   const tokens = await ensureGrokToken(options);
   const baseUrl = (options.baseUrl ?? "https://api.x.ai/v1").replace(/\/+$/, "");
@@ -178,7 +179,7 @@ export const streamGrok = async (
       accept: "text/event-stream",
     },
     body: {
-      model: upstreamModelSlug("grok", request.model),
+      model: upstream,
       stream: true,
       messages: request.messages,
       tools: NERO_TOOLS,

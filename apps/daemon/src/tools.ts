@@ -34,6 +34,7 @@ const BASH_ENV_ALLOW = new Set([
 const BASH_ENV_DENY = new Set([
   "ZAI_API_KEY",
   "BASETEN_API_KEY",
+  "OPENCODE_API_KEY",
   "NERO_ACCESS_TOKEN",
   // Host control-plane wiring: the host token authorizes job-heartbeat for
   // ANY workspace id, so it must never reach agent bash.
@@ -145,6 +146,7 @@ export const bashEnv = (ctx: ToolContext): NodeJS.ProcessEnv => {
   env.NERO_WORKSPACE = ctx.workspaceRoot;
   delete env.ZAI_API_KEY;
   delete env.BASETEN_API_KEY;
+  delete env.OPENCODE_API_KEY;
   delete env.NERO_ACCESS_TOKEN;
   return env;
 };

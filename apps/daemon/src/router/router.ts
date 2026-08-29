@@ -1,12 +1,14 @@
 /**
- * Nero Router — the one routing layer for all model traffic. Replaces the
- * retired third-party-router path: Z.ai (main, coding plan → PAYG fallback),
- * Baseten (fast mode, only when explicitly picked), and the OpenAI Pro /
- * Grok Heavy subscription routes (OAuth/OIDC, token store on the dataset).
+ * Nero Router — the one routing layer for all model traffic: Z.ai (main,
+ * coding plan → PAYG fallback), Baseten (behind the GLM chain), OpenCode Zen
+ * (GPT/Grok fallback; primary for Claude/Kimi/Gemini/DeepSeek), and the
+ * OpenAI Pro / Grok Heavy subscription routes (OAuth/OIDC, token store on
+ * the dataset).
  *
- * Policy (router plan §2): plan quota → Z.ai PAYG on quota errors → Baseten
- * only when the user picks the fast model (never automatic). Subscription
- * models route to their own provider only.
+ * Policy: plan quota → Z.ai PAYG on quota errors → Baseten behind the GLM
+ * chain; GPT/Grok try their subscription first and fall back to OpenCode.
+ * The catalog (`catalog.ts`) carries each model's chain, transports, and
+ * upstream slugs.
  */
 import { isBasetenConfigured, streamBaseten, type BasetenOptions } from "./baseten.ts";
 import {
@@ -16,8 +18,14 @@ import {
   type CodexOptions,
 } from "./codex.ts";
 import { importGrokAuth, isGrokConfigured, streamGrok, type GrokOptions } from "./grok.ts";
+import { isOpenCodeConfigured, streamOpenCode, type OpenCodeOptions } from "./opencode.ts";
 import { isZaiConfigured, isZaiQuotaError, streamZai, type ZaiOptions } from "./zai.ts";
-import { resolveCatalogModel, type RouterChainId, type StreamRequest } from "./catalog.ts";
+import {
+  resolveCatalogModel,
+  type CatalogRoute,
+  type RouterProviderId,
+  type StreamRequest,
+} from "./catalog.ts";
 import { RouterTokenStore } from "./tokenStore.ts";
 import type { StreamChatResult } from "./openaiCompat.ts";
 
@@ -26,6 +34,7 @@ export type NeroRouterOptions = {
   readonly baseten: BasetenOptions;
   readonly codex: Pick<CodexOptions, "clientId" | "redirectUri">;
   readonly grok: Pick<GrokOptions, "baseUrl">;
+  readonly opencode: OpenCodeOptions;
   readonly dataDir: string;
 };
 
@@ -34,6 +43,7 @@ export type NeroRouterStatus = {
   readonly baseten: boolean;
   readonly codex: boolean;
   readonly grok: boolean;
+  readonly opencode: boolean;
 };
 
 export class NeroRouter {
@@ -68,6 +78,7 @@ export class NeroRouter {
       baseten: isBasetenConfigured(this.options.baseten),
       codex: isCodexConfigured(this.codexOptions),
       grok: isGrokConfigured(this.grokOptions()),
+      opencode: isOpenCodeConfigured(this.options.opencode),
     };
   }
 
@@ -121,23 +132,24 @@ export class NeroRouter {
     const model = resolveCatalogModel(request.model);
     const chain = model.chain;
     const errors: string[] = [];
-    for (const [index, entry] of chain.entries()) {
+    for (const [index, route] of chain.entries()) {
       if (request.signal.aborted) throw new Error("aborted");
-      if (!this.providerReady(entry)) {
-        errors.push(`${entry}: not configured`);
+      if (!this.providerReady(route.provider)) {
+        errors.push(`${route.provider}: not configured`);
         continue;
       }
       try {
-        return await this.streamVia(entry, request);
+        return await this.streamVia(route, request);
       } catch (error) {
         if (request.signal.aborted) throw new Error("aborted");
         const message = error instanceof Error ? error.message : String(error);
-        errors.push(`${entry}: ${message}`);
-        // Only quota/rate-limit errors fall through to the next provider, and
-        // only within the GLM chain; the last entry's error surfaces.
+        errors.push(`${route.provider}/${route.upstream}: ${message}`);
+        // Only quota/rate-limit errors fall through to the next route, and
+        // only within the GLM chain; the last route's error surfaces.
         const isLast = index === chain.length - 1;
         const fallbackEligible =
-          (entry === "zai" || entry === "zai-payg") && isQuotaShaped(message, error);
+          (route.provider === "zai" || route.provider === "zai-payg") &&
+          isQuotaShaped(message, error);
         if (isLast || !fallbackEligible) {
           throw error;
         }
@@ -148,7 +160,7 @@ export class NeroRouter {
     );
   }
 
-  private providerReady(id: RouterChainId): boolean {
+  private providerReady(id: RouterProviderId): boolean {
     switch (id) {
       case "zai":
       case "zai-payg":
@@ -159,21 +171,25 @@ export class NeroRouter {
         return isCodexConfigured(this.codexOptions);
       case "grok":
         return isGrokConfigured(this.grokOptions());
+      case "opencode":
+        return isOpenCodeConfigured(this.options.opencode);
     }
   }
 
-  private streamVia(id: RouterChainId, request: StreamRequest): Promise<StreamChatResult> {
-    switch (id) {
+  private streamVia(route: CatalogRoute, request: StreamRequest): Promise<StreamChatResult> {
+    switch (route.provider) {
       case "zai":
-        return streamZai(request, this.options.zai, "coding");
+        return streamZai(request, this.options.zai, "coding", route.upstream);
       case "zai-payg":
-        return streamZai(request, this.options.zai, "payg");
+        return streamZai(request, this.options.zai, "payg", route.upstream);
       case "baseten":
-        return streamBaseten(request, this.options.baseten);
+        return streamBaseten(request, this.options.baseten, route.upstream);
       case "codex":
-        return streamCodexResponses(request, this.codexOptions);
+        return streamCodexResponses(request, this.codexOptions, route.upstream);
       case "grok":
-        return streamGrok(request, this.grokOptions());
+        return streamGrok(request, this.grokOptions(), route.upstream);
+      case "opencode":
+        return streamOpenCode(request, route, this.options.opencode);
     }
   }
 }

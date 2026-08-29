@@ -17,29 +17,31 @@ import (
 )
 
 type DockerSettings struct {
-	Image         string
-	Pool          string
-	MountRoot     string
-	HostToken     string
-	AccessToken   string
-	ZaiAPIKey     string
-	BasetenAPIKey string
-	SocketDir     string
+	Image          string
+	Pool           string
+	MountRoot      string
+	HostToken      string
+	AccessToken    string
+	ZaiAPIKey      string
+	BasetenAPIKey  string
+	OpenCodeAPIKey string
+	SocketDir      string
 }
 
 type Docker struct {
-	Image         string
-	Pool          string
-	MountRoot     string
-	HostToken     string
-	AccessToken   string
-	ZaiAPIKey     string
-	BasetenAPIKey string
-	log           *slog.Logger
-	run              func(ctx context.Context, name string, args ...string) (string, error)
-	readFile         func(name string) ([]byte, error)
-	writeFile        func(name string, data []byte, perm os.FileMode) error
-	pingDaemon       func(ctx context.Context, addr string) error
+	Image          string
+	Pool           string
+	MountRoot      string
+	HostToken      string
+	AccessToken    string
+	ZaiAPIKey      string
+	BasetenAPIKey  string
+	OpenCodeAPIKey string
+	log            *slog.Logger
+	run            func(ctx context.Context, name string, args ...string) (string, error)
+	readFile       func(name string) ([]byte, error)
+	writeFile      func(name string, data []byte, perm os.FileMode) error
+	pingDaemon     func(ctx context.Context, addr string) error
 
 	mu        sync.Mutex
 	hostPorts map[string]string
@@ -55,20 +57,21 @@ func NewDocker(cfg DockerSettings, log *slog.Logger) *Docker {
 		dir = DefaultSocketDir
 	}
 	return &Docker{
-		Image:         cfg.Image,
-		Pool:          cfg.Pool,
-		MountRoot:     cfg.MountRoot,
-		HostToken:     cfg.HostToken,
-		AccessToken:   cfg.AccessToken,
-		ZaiAPIKey:     cfg.ZaiAPIKey,
-		BasetenAPIKey: cfg.BasetenAPIKey,
-		log:           log,
-		run:              runCmd,
-		readFile:         os.ReadFile,
-		writeFile:        os.WriteFile,
-		pingDaemon:       pingDaemonHealthz,
-		hostPorts:        make(map[string]string),
-		hub:              newProxyHub(dir),
+		Image:          cfg.Image,
+		Pool:           cfg.Pool,
+		MountRoot:      cfg.MountRoot,
+		HostToken:      cfg.HostToken,
+		AccessToken:    cfg.AccessToken,
+		ZaiAPIKey:      cfg.ZaiAPIKey,
+		BasetenAPIKey:  cfg.BasetenAPIKey,
+		OpenCodeAPIKey: cfg.OpenCodeAPIKey,
+		log:            log,
+		run:            runCmd,
+		readFile:       os.ReadFile,
+		writeFile:      os.WriteFile,
+		pingDaemon:     pingDaemonHealthz,
+		hostPorts:      make(map[string]string),
+		hub:            newProxyHub(dir),
 	}
 }
 
@@ -81,7 +84,7 @@ func argvForErrors(args []string) string {
 	for i, arg := range redacted {
 		if arg == "--env" && i+1 < len(redacted) {
 			if key, _, ok := strings.Cut(redacted[i+1], "="); ok {
-				redacted[i+1] = key+"=<redacted>"
+				redacted[i+1] = key + "=<redacted>"
 			}
 		}
 	}
@@ -132,6 +135,7 @@ func (d *Docker) CreateContainer(ctx context.Context, spec WorkspaceSpec) error 
 		AccessToken:    d.AccessToken,
 		ZaiAPIKey:      d.ZaiAPIKey,
 		BasetenAPIKey:  d.BasetenAPIKey,
+		OpenCodeAPIKey: d.OpenCodeAPIKey,
 		ZaiBaseUrl:     os.Getenv("ZAI_BASE_URL"),
 		NeroModel:      os.Getenv("NERO_MODEL"),
 	})

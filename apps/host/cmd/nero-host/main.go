@@ -25,14 +25,15 @@ func main() {
 	}
 
 	rt := runtime.NewDocker(runtime.DockerSettings{
-		Image:            cfg.GuestImage,
-		Pool:             cfg.ZFSPool,
-		MountRoot:        cfg.MountRoot,
-		HostToken:        cfg.HostToken,
-		AccessToken:      cfg.AccessToken,
-		ZaiAPIKey:        cfg.ZaiAPIKey,
-		BasetenAPIKey:    cfg.BasetenAPIKey,
-		SocketDir:        cfg.SocketDir,
+		Image:          cfg.GuestImage,
+		Pool:           cfg.ZFSPool,
+		MountRoot:      cfg.MountRoot,
+		HostToken:      cfg.HostToken,
+		AccessToken:    cfg.AccessToken,
+		ZaiAPIKey:      cfg.ZaiAPIKey,
+		BasetenAPIKey:  cfg.BasetenAPIKey,
+		OpenCodeAPIKey: cfg.OpenCodeAPIKey,
+		SocketDir:      cfg.SocketDir,
 	}, log)
 	ll := landlord.New(rt, landlord.RealClock{}, log)
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
