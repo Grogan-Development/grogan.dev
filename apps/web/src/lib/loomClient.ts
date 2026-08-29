@@ -152,3 +152,105 @@ export async function listLoomEvents(
     cursor: typeof raw.cursor === "string" ? raw.cursor : null,
   };
 }
+
+// ——— Repo browsing (read-only git over the daemon's Loom proxy) ———
+
+export type LoomRepo = {
+  readonly name: string;
+  readonly protectedRef: string;
+  readonly ci: string;
+  readonly description: string;
+};
+
+export type LoomRepoRef = { readonly name: string; readonly oid: string };
+
+export type LoomTreeEntry = {
+  readonly name: string;
+  readonly kind: "tree" | "blob";
+  readonly size: number | null;
+  readonly oid: string;
+};
+
+export type LoomBlob = {
+  readonly path: string;
+  readonly size: number;
+  readonly truncated: boolean;
+  readonly binary: boolean;
+  readonly encoding: "utf8" | "base64";
+  readonly content: string;
+};
+
+export type LoomCommit = {
+  readonly oid: string;
+  readonly short: string;
+  readonly author: string;
+  readonly date: string;
+  readonly subject: string;
+};
+
+export async function listLoomRepos(): Promise<ReadonlyArray<LoomRepo>> {
+  const raw = await loomFetch("/api/loom/repos");
+  if (!Array.isArray(raw)) throw new LoomApiError("Malformed repos payload.", 0);
+  return raw.filter(isRecord).map((repo) => ({
+    name: String(repo.name ?? ""),
+    protectedRef: String(repo.protected_ref ?? "refs/main"),
+    ci: String(repo.ci ?? ""),
+    description: String(repo.description ?? ""),
+  }));
+}
+
+export async function listRepoRefs(repo: string): Promise<ReadonlyArray<LoomRepoRef>> {
+  const raw = await loomFetch(`/api/loom/repos/${encodeURIComponent(repo)}/refs`);
+  if (!Array.isArray(raw)) throw new LoomApiError("Malformed refs payload.", 0);
+  return raw.filter(isRecord).map((ref) => ({
+    name: String(ref.name ?? ""),
+    oid: String(ref.oid ?? ""),
+  }));
+}
+
+export async function listRepoTree(
+  repo: string,
+  ref: string,
+  path: string,
+): Promise<ReadonlyArray<LoomTreeEntry>> {
+  const query = new URLSearchParams({ ref, path });
+  const raw = await loomFetch(`/api/loom/repos/${encodeURIComponent(repo)}/tree?${query}`);
+  if (!Array.isArray(raw)) throw new LoomApiError("Malformed tree payload.", 0);
+  return raw.filter(isRecord).map((entry) => ({
+    name: String(entry.name ?? ""),
+    kind: entry.kind === "tree" ? ("tree" as const) : ("blob" as const),
+    size: typeof entry.size === "number" ? entry.size : null,
+    oid: String(entry.oid ?? ""),
+  }));
+}
+
+export async function getRepoBlob(repo: string, ref: string, path: string): Promise<LoomBlob> {
+  const query = new URLSearchParams({ ref, path });
+  const raw = await loomFetch(`/api/loom/repos/${encodeURIComponent(repo)}/blob?${query}`);
+  if (!isRecord(raw)) throw new LoomApiError("Malformed blob payload.", 0);
+  return {
+    path: String(raw.path ?? path),
+    size: typeof raw.size === "number" ? raw.size : 0,
+    truncated: raw.truncated === true,
+    binary: raw.binary === true,
+    encoding: raw.encoding === "base64" ? "base64" : "utf8",
+    content: String(raw.content ?? ""),
+  };
+}
+
+export async function listRepoCommits(
+  repo: string,
+  ref: string,
+  limit = 30,
+): Promise<ReadonlyArray<LoomCommit>> {
+  const query = new URLSearchParams({ ref, limit: String(limit) });
+  const raw = await loomFetch(`/api/loom/repos/${encodeURIComponent(repo)}/commits?${query}`);
+  if (!Array.isArray(raw)) throw new LoomApiError("Malformed commits payload.", 0);
+  return raw.filter(isRecord).map((commit) => ({
+    oid: String(commit.oid ?? ""),
+    short: String(commit.short ?? ""),
+    author: String(commit.author ?? ""),
+    date: String(commit.date ?? ""),
+    subject: String(commit.subject ?? ""),
+  }));
+}

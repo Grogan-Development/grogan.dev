@@ -1,4 +1,11 @@
-import { ArrowLeftIcon, GitPullRequestIcon, SettingsIcon, WorkflowIcon } from "lucide-react";
+import {
+  ArrowLeftIcon,
+  FolderGit2Icon,
+  GitPullRequestIcon,
+  MapIcon,
+  SettingsIcon,
+  WorkflowIcon,
+} from "lucide-react";
 import type { ReactNode } from "react";
 import { memo, useCallback } from "react";
 import { Link, useCanGoBack, useLocation, useNavigate, useParams } from "@tanstack/react-router";
@@ -187,6 +194,24 @@ export const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
     void navigate({ to: "/w/$workspaceId/ci", params: { workspaceId } });
   }, [closeMobileSidebar, environments, navigate, routeWorkspaceId]);
 
+  const handleReposClick = useCallback(() => {
+    closeMobileSidebar();
+    const workspaceId = routeWorkspaceId ?? readLastWorkspaceId() ?? environments[0]?.environmentId;
+    if (!workspaceId) {
+      return;
+    }
+    void navigate({ to: "/w/$workspaceId/repos", params: { workspaceId } });
+  }, [closeMobileSidebar, environments, navigate, routeWorkspaceId]);
+
+  const handleCodeMapClick = useCallback(() => {
+    closeMobileSidebar();
+    const workspaceId = routeWorkspaceId ?? readLastWorkspaceId() ?? environments[0]?.environmentId;
+    if (!workspaceId) {
+      return;
+    }
+    void navigate({ to: "/w/$workspaceId/code-map", params: { workspaceId } });
+  }, [closeMobileSidebar, environments, navigate, routeWorkspaceId]);
+
   const handleSettingsClick = useCallback(() => {
     closeMobileSidebar();
     void navigate({ to: "/settings" });
@@ -226,6 +251,16 @@ export const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
           ) : null}
           {pullRequestsSupported ? (
             <SidebarUtilityItem icon={<WorkflowIcon />} label="CI" onClick={handleCiClick} />
+          ) : null}
+          {pullRequestsSupported ? (
+            <SidebarUtilityItem
+              icon={<FolderGit2Icon />}
+              label="Repos"
+              onClick={handleReposClick}
+            />
+          ) : null}
+          {pullRequestsSupported ? (
+            <SidebarUtilityItem icon={<MapIcon />} label="Code Map" onClick={handleCodeMapClick} />
           ) : null}
         </>
       )}

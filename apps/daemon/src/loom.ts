@@ -223,6 +223,26 @@ export const listLoomFeatures = async (): Promise<ReadonlyArray<LoomFeature>> =>
   return raw.map(parseFeature);
 };
 
+export type LoomRepo = {
+  readonly name: string;
+  readonly protectedRef: string;
+  readonly ci: string;
+  readonly description: string;
+};
+
+export const listLoomRepos = async (): Promise<ReadonlyArray<LoomRepo>> => {
+  const raw = await loomFetch("/v1/repos");
+  if (!Array.isArray(raw)) {
+    throw new LoomUnavailableError("Loom repos response was not a list.");
+  }
+  return raw.filter(isRecord).map((repo) => ({
+    name: String(repo.name ?? ""),
+    protectedRef: String(repo.protected_ref ?? "refs/main"),
+    ci: String(repo.ci ?? ""),
+    description: String(repo.description ?? ""),
+  }));
+};
+
 export const getLoomFeature = async (featureId: string): Promise<LoomFeature> => {
   if (!/^[A-Za-z0-9_-]{1,128}$/.test(featureId)) {
     throw new LoomUnavailableError("Invalid feature id.");

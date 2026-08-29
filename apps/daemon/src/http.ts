@@ -33,8 +33,17 @@ import {
   isLoomConfigured,
   listLoomEvents,
   listLoomFeatures,
+  listLoomRepos,
   LoomUnavailableError,
 } from "./loom.ts";
+import {
+  getRepoBlob,
+  LoomGitError,
+  listRepoCommits,
+  listRepoRefs,
+  listRepoTree,
+  REPO_ID_PATTERN,
+} from "./loom-git.ts";
 import { resolveContained } from "./files.ts";
 import { SESSION_COOKIE, djb2Hex, nextToken } from "./runtime.ts";
 
@@ -551,6 +560,105 @@ export const httpRoutesLayer = (daemon: Daemon) =>
           Effect.gen(function* () {
             yield* requireAuth(daemon);
             return json(200, yield* Effect.promise(() => getLoomStatus()));
+          }),
+        ),
+      );
+
+      // ——— Repo browser (read-only git over the Loom smart-HTTP gateway) ———
+      const loomGitResponse = <A>(effect: Effect.Effect<A, LoomGitError>) =>
+        effect.pipe(
+          Effect.match({
+            onFailure: (error) => json(error.status, { error: error.message }),
+            onSuccess: (response) => response as HttpServerResponse.HttpServerResponse,
+          }),
+        );
+      const decodeRepoId = (raw: string | undefined): string => {
+        const repoId = decodeURIComponent(raw ?? "");
+        if (!REPO_ID_PATTERN.test(repoId)) {
+          throw new LoomGitError("Invalid repository id.", 400);
+        }
+        return repoId;
+      };
+
+      yield* router.add(
+        "GET",
+        "/api/loom/repos",
+        recover(
+          Effect.gen(function* () {
+            yield* requireAuth(daemon);
+            return json(200, yield* Effect.promise(() => listLoomRepos()));
+          }),
+        ),
+      );
+
+      yield* router.add(
+        "GET",
+        "/api/loom/repos/:repoId/refs",
+        recover(
+          Effect.gen(function* () {
+            yield* requireAuth(daemon);
+            const params = yield* HttpRouter.params;
+            const repoId = decodeRepoId(params.repoId);
+            return loomGitResponse(Effect.try(() => listRepoRefs(daemon.options.dataDir, repoId)));
+          }),
+        ),
+      );
+
+      yield* router.add(
+        "GET",
+        "/api/loom/repos/:repoId/tree",
+        recover(
+          Effect.gen(function* () {
+            yield* requireAuth(daemon);
+            const params = yield* HttpRouter.params;
+            const repoId = decodeRepoId(params.repoId);
+            const request = yield* HttpServerRequest.HttpServerRequest;
+            const query = new URL(request.url, "http://localhost").searchParams;
+            const ref = query.get("ref") ?? "main";
+            const path = (query.get("path") ?? "").replace(/^\.?\//, "").replace(/\/+$/, "");
+            return loomGitResponse(
+              Effect.try(() => listRepoTree(daemon.options.dataDir, repoId, ref, path)),
+            );
+          }),
+        ),
+      );
+
+      yield* router.add(
+        "GET",
+        "/api/loom/repos/:repoId/blob",
+        recover(
+          Effect.gen(function* () {
+            yield* requireAuth(daemon);
+            const params = yield* HttpRouter.params;
+            const repoId = decodeRepoId(params.repoId);
+            const request = yield* HttpServerRequest.HttpServerRequest;
+            const query = new URL(request.url, "http://localhost").searchParams;
+            const ref = query.get("ref") ?? "main";
+            const path = (query.get("path") ?? "").replace(/^\.?\//, "");
+            return loomGitResponse(
+              Effect.try(() => getRepoBlob(daemon.options.dataDir, repoId, ref, path)),
+            );
+          }),
+        ),
+      );
+
+      yield* router.add(
+        "GET",
+        "/api/loom/repos/:repoId/commits",
+        recover(
+          Effect.gen(function* () {
+            yield* requireAuth(daemon);
+            const params = yield* HttpRouter.params;
+            const repoId = decodeRepoId(params.repoId);
+            const request = yield* HttpServerRequest.HttpServerRequest;
+            const query = new URL(request.url, "http://localhost").searchParams;
+            const ref = query.get("ref") ?? "main";
+            const limitRaw = query.get("limit");
+            const limit =
+              limitRaw !== null && Number.isFinite(Number(limitRaw)) ? Number(limitRaw) : 30;
+            return loomGitResponse(
+              Effect.try(() => listRepoCommits(daemon.options.dataDir, repoId, ref, limit)),
+            );
           }),
         ),
       );

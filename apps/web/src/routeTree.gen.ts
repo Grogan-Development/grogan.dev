@@ -24,7 +24,9 @@ import { Route as SettingsSourceControlRouteImport } from './routes/settings.sou
 import { Route as ChatWWorkspaceIdIndexRouteImport } from './routes/_chat.w.$workspaceId.index'
 import { Route as ChatWWorkspaceIdThreadIdRouteImport } from './routes/_chat.w.$workspaceId.$threadId'
 import { Route as ChatWWorkspaceIdCiRouteImport } from './routes/_chat.w.$workspaceId.ci'
+import { Route as ChatWWorkspaceIdCodeMapRouteImport } from './routes/_chat.w.$workspaceId.code-map'
 import { Route as ChatWWorkspaceIdPullRequestsRouteImport } from './routes/_chat.w.$workspaceId.pull-requests'
+import { Route as ChatWWorkspaceIdReposRouteImport } from './routes/_chat.w.$workspaceId.repos'
 import { Route as ChatWWorkspaceIdDraftDraftIdRouteImport } from './routes/_chat.w.$workspaceId.draft.$draftId'
 
 const ChatRoute = ChatRouteImport.update({
@@ -102,12 +104,22 @@ const ChatWWorkspaceIdCiRoute = ChatWWorkspaceIdCiRouteImport.update({
   path: '/w/$workspaceId/ci',
   getParentRoute: () => ChatRoute,
 } as any)
+const ChatWWorkspaceIdCodeMapRoute = ChatWWorkspaceIdCodeMapRouteImport.update({
+  id: '/w/$workspaceId/code-map',
+  path: '/w/$workspaceId/code-map',
+  getParentRoute: () => ChatRoute,
+} as any)
 const ChatWWorkspaceIdPullRequestsRoute =
   ChatWWorkspaceIdPullRequestsRouteImport.update({
     id: '/w/$workspaceId/pull-requests',
     path: '/w/$workspaceId/pull-requests',
     getParentRoute: () => ChatRoute,
   } as any)
+const ChatWWorkspaceIdReposRoute = ChatWWorkspaceIdReposRouteImport.update({
+  id: '/w/$workspaceId/repos',
+  path: '/w/$workspaceId/repos',
+  getParentRoute: () => ChatRoute,
+} as any)
 const ChatWWorkspaceIdDraftDraftIdRoute =
   ChatWWorkspaceIdDraftDraftIdRouteImport.update({
     id: '/w/$workspaceId/draft/$draftId',
@@ -129,7 +141,9 @@ export interface FileRoutesByFullPath {
   '/settings/source-control': typeof SettingsSourceControlRoute
   '/w/$workspaceId/$threadId': typeof ChatWWorkspaceIdThreadIdRoute
   '/w/$workspaceId/ci': typeof ChatWWorkspaceIdCiRoute
+  '/w/$workspaceId/code-map': typeof ChatWWorkspaceIdCodeMapRoute
   '/w/$workspaceId/pull-requests': typeof ChatWWorkspaceIdPullRequestsRoute
+  '/w/$workspaceId/repos': typeof ChatWWorkspaceIdReposRoute
   '/w/$workspaceId/': typeof ChatWWorkspaceIdIndexRoute
   '/w/$workspaceId/draft/$draftId': typeof ChatWWorkspaceIdDraftDraftIdRoute
 }
@@ -147,7 +161,9 @@ export interface FileRoutesByTo {
   '/': typeof ChatIndexRoute
   '/w/$workspaceId/$threadId': typeof ChatWWorkspaceIdThreadIdRoute
   '/w/$workspaceId/ci': typeof ChatWWorkspaceIdCiRoute
+  '/w/$workspaceId/code-map': typeof ChatWWorkspaceIdCodeMapRoute
   '/w/$workspaceId/pull-requests': typeof ChatWWorkspaceIdPullRequestsRoute
+  '/w/$workspaceId/repos': typeof ChatWWorkspaceIdReposRoute
   '/w/$workspaceId': typeof ChatWWorkspaceIdIndexRoute
   '/w/$workspaceId/draft/$draftId': typeof ChatWWorkspaceIdDraftDraftIdRoute
 }
@@ -167,7 +183,9 @@ export interface FileRoutesById {
   '/_chat/': typeof ChatIndexRoute
   '/_chat/w/$workspaceId/$threadId': typeof ChatWWorkspaceIdThreadIdRoute
   '/_chat/w/$workspaceId/ci': typeof ChatWWorkspaceIdCiRoute
+  '/_chat/w/$workspaceId/code-map': typeof ChatWWorkspaceIdCodeMapRoute
   '/_chat/w/$workspaceId/pull-requests': typeof ChatWWorkspaceIdPullRequestsRoute
+  '/_chat/w/$workspaceId/repos': typeof ChatWWorkspaceIdReposRoute
   '/_chat/w/$workspaceId/': typeof ChatWWorkspaceIdIndexRoute
   '/_chat/w/$workspaceId/draft/$draftId': typeof ChatWWorkspaceIdDraftDraftIdRoute
 }
@@ -187,7 +205,9 @@ export interface FileRouteTypes {
     | '/settings/source-control'
     | '/w/$workspaceId/$threadId'
     | '/w/$workspaceId/ci'
+    | '/w/$workspaceId/code-map'
     | '/w/$workspaceId/pull-requests'
+    | '/w/$workspaceId/repos'
     | '/w/$workspaceId/'
     | '/w/$workspaceId/draft/$draftId'
   fileRoutesByTo: FileRoutesByTo
@@ -205,7 +225,9 @@ export interface FileRouteTypes {
     | '/'
     | '/w/$workspaceId/$threadId'
     | '/w/$workspaceId/ci'
+    | '/w/$workspaceId/code-map'
     | '/w/$workspaceId/pull-requests'
+    | '/w/$workspaceId/repos'
     | '/w/$workspaceId'
     | '/w/$workspaceId/draft/$draftId'
   id:
@@ -224,7 +246,9 @@ export interface FileRouteTypes {
     | '/_chat/'
     | '/_chat/w/$workspaceId/$threadId'
     | '/_chat/w/$workspaceId/ci'
+    | '/_chat/w/$workspaceId/code-map'
     | '/_chat/w/$workspaceId/pull-requests'
+    | '/_chat/w/$workspaceId/repos'
     | '/_chat/w/$workspaceId/'
     | '/_chat/w/$workspaceId/draft/$draftId'
   fileRoutesById: FileRoutesById
@@ -343,11 +367,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ChatWWorkspaceIdCiRouteImport
       parentRoute: typeof ChatRoute
     }
+    '/_chat/w/$workspaceId/code-map': {
+      id: '/_chat/w/$workspaceId/code-map'
+      path: '/w/$workspaceId/code-map'
+      fullPath: '/w/$workspaceId/code-map'
+      preLoaderRoute: typeof ChatWWorkspaceIdCodeMapRouteImport
+      parentRoute: typeof ChatRoute
+    }
     '/_chat/w/$workspaceId/pull-requests': {
       id: '/_chat/w/$workspaceId/pull-requests'
       path: '/w/$workspaceId/pull-requests'
       fullPath: '/w/$workspaceId/pull-requests'
       preLoaderRoute: typeof ChatWWorkspaceIdPullRequestsRouteImport
+      parentRoute: typeof ChatRoute
+    }
+    '/_chat/w/$workspaceId/repos': {
+      id: '/_chat/w/$workspaceId/repos'
+      path: '/w/$workspaceId/repos'
+      fullPath: '/w/$workspaceId/repos'
+      preLoaderRoute: typeof ChatWWorkspaceIdReposRouteImport
       parentRoute: typeof ChatRoute
     }
     '/_chat/w/$workspaceId/draft/$draftId': {
@@ -364,7 +402,9 @@ interface ChatRouteChildren {
   ChatIndexRoute: typeof ChatIndexRoute
   ChatWWorkspaceIdThreadIdRoute: typeof ChatWWorkspaceIdThreadIdRoute
   ChatWWorkspaceIdCiRoute: typeof ChatWWorkspaceIdCiRoute
+  ChatWWorkspaceIdCodeMapRoute: typeof ChatWWorkspaceIdCodeMapRoute
   ChatWWorkspaceIdPullRequestsRoute: typeof ChatWWorkspaceIdPullRequestsRoute
+  ChatWWorkspaceIdReposRoute: typeof ChatWWorkspaceIdReposRoute
   ChatWWorkspaceIdIndexRoute: typeof ChatWWorkspaceIdIndexRoute
   ChatWWorkspaceIdDraftDraftIdRoute: typeof ChatWWorkspaceIdDraftDraftIdRoute
 }
@@ -373,7 +413,9 @@ const ChatRouteChildren: ChatRouteChildren = {
   ChatIndexRoute: ChatIndexRoute,
   ChatWWorkspaceIdThreadIdRoute: ChatWWorkspaceIdThreadIdRoute,
   ChatWWorkspaceIdCiRoute: ChatWWorkspaceIdCiRoute,
+  ChatWWorkspaceIdCodeMapRoute: ChatWWorkspaceIdCodeMapRoute,
   ChatWWorkspaceIdPullRequestsRoute: ChatWWorkspaceIdPullRequestsRoute,
+  ChatWWorkspaceIdReposRoute: ChatWWorkspaceIdReposRoute,
   ChatWWorkspaceIdIndexRoute: ChatWWorkspaceIdIndexRoute,
   ChatWWorkspaceIdDraftDraftIdRoute: ChatWWorkspaceIdDraftDraftIdRoute,
 }

@@ -1,5 +1,5 @@
 import type { EnvironmentId } from "@t3tools/contracts";
-import { createFileRoute } from "@tanstack/react-router";
+import { Link, createFileRoute } from "@tanstack/react-router";
 import { GitPullRequestIcon, LoaderIcon, RefreshCwIcon } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 
@@ -29,9 +29,9 @@ const GATE_GROUPS: ReadonlyArray<{
   { gate: "Rejected", heading: "Rejected", blurb: "Candidate kept for diagnosis." },
 ];
 
-function FeatureRow(props: { readonly feature: LoomFeature }) {
+function FeatureRow(props: { readonly feature: LoomFeature; readonly workspaceId: string }) {
   const [expanded, setExpanded] = useState(false);
-  const { feature } = props;
+  const { feature, workspaceId } = props;
   const repoLabel =
     feature.bindings.length > 0
       ? feature.bindings.map((binding) => binding.repository).join(", ")
@@ -71,7 +71,14 @@ function FeatureRow(props: { readonly feature: LoomFeature }) {
         <div className="flex flex-col gap-3 border-t border-border/60 px-3 py-3 text-sm">
           {feature.bindings.map((binding) => (
             <div key={`${binding.repository}:${binding.targetRef}`} className="text-xs">
-              <span className="font-medium text-foreground">{binding.repository}</span>
+              <Link
+                to="/w/$workspaceId/repos"
+                params={{ workspaceId }}
+                search={{ repo: binding.repository }}
+                className="font-medium text-foreground underline-offset-2 hover:underline"
+              >
+                {binding.repository}
+              </Link>
               <span className="text-muted-foreground">
                 {" "}
                 → {binding.targetRef}
@@ -101,6 +108,7 @@ function FeatureRow(props: { readonly feature: LoomFeature }) {
 }
 
 function PullRequestsPage() {
+  const { workspaceId } = Route.useParams();
   const [features, setFeatures] = useState<ReadonlyArray<LoomFeature> | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -163,7 +171,7 @@ function PullRequestsPage() {
             <p className="text-xs text-muted-foreground">{group.blurb}</p>
             <div className="flex flex-col gap-2">
               {groupFeatures.map((feature) => (
-                <FeatureRow key={feature.id} feature={feature} />
+                <FeatureRow key={feature.id} feature={feature} workspaceId={workspaceId} />
               ))}
             </div>
           </section>
