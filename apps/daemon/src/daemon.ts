@@ -145,6 +145,59 @@ const neroModel = {
 const decodeSettings = (value: unknown): ServerSettings =>
   patchedSettings(Schema.decodeUnknownSync(ServerSettings)(value ?? {}));
 
+const TURN_PULSE_INTERVAL_MS = 30_000;
+
+/**
+ * While agent turns are live, tell the host control plane so it keeps the
+ * workspace awake (job-heartbeat, `NERO_HOST_TOKEN`) — an agent busy in a
+ * long turn must pin the workspace even with no browser attached. Ref-counted
+ * per turn; inert when the guest has no host wiring (local dev).
+ */
+class HostTurnPulse {
+  private readonly turnIds = new Set<string>();
+  private timer: ReturnType<typeof setInterval> | undefined;
+
+  constructor(private readonly options: DaemonOptions) {}
+
+  begin(turnId: string): void {
+    const { hostUrl, hostToken, workspaceId } = this.options;
+    if (hostUrl === undefined || hostToken === undefined || workspaceId === undefined) return;
+    const wasIdle = this.turnIds.size === 0;
+    this.turnIds.add(turnId);
+    if (wasIdle) {
+      void this.pulse(true);
+      this.timer = setInterval(() => void this.pulse(true), TURN_PULSE_INTERVAL_MS);
+    }
+  }
+
+  end(turnId: string): void {
+    if (!this.turnIds.delete(turnId)) return;
+    if (this.turnIds.size === 0 && this.timer !== undefined) {
+      clearInterval(this.timer);
+      this.timer = undefined;
+      void this.pulse(false);
+    }
+  }
+
+  private async pulse(running: boolean): Promise<void> {
+    const { hostUrl, hostToken, workspaceId } = this.options;
+    if (hostUrl === undefined || hostToken === undefined || workspaceId === undefined) return;
+    try {
+      await fetch(`${hostUrl}/api/workspaces/${workspaceId}/job-heartbeat`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          authorization: `Bearer ${hostToken}`,
+        },
+        body: JSON.stringify({ running }),
+      });
+    } catch {
+      // Transient host unreachability: the next tick (or the final false)
+      // re-syncs the host. The idle ticker's zombie-timer bounds the damage.
+    }
+  }
+}
+
 /**
  * Encode settings back through the schema before persisting: decoded
  * in-memory values carry Duration objects whose raw JSON shape does not
@@ -195,6 +248,7 @@ export class Daemon {
   readonly options: DaemonOptions;
   readonly terminals = new TerminalHub();
   readonly harness: PiHarness;
+  readonly turnPulse: HostTurnPulse;
   readonly shellHub = new Hub<OrchestrationShellStreamItem>();
   readonly threadHubs = new Map<string, Hub<OrchestrationThreadStreamItem>>();
   readonly configHub = new Hub<ServerConfigStreamEvent>();
@@ -222,6 +276,7 @@ export class Daemon {
     this.options = options;
     this.humanDriving = new HumanDrivingLock(options.seatLockPath, options.seatHoldBin);
     this.harness = new PiHarness(this);
+    this.turnPulse = new HostTurnPulse(options);
     this.settings = patchedSettings(DEFAULT_SERVER_SETTINGS);
     ensureDir(options.dataDir);
     ensureDir(Path.join(options.dataDir, "logs"));
@@ -1293,6 +1348,7 @@ export class Daemon {
       });
       return;
     }
+    this.turnPulse.begin(turnId);
     this.harness.start({
       threadId: next.id,
       turnId,
@@ -1678,6 +1734,7 @@ export class Daemon {
     readonly status: "ready" | "error" | "interrupted";
     readonly lastError: string | null;
   }): void {
+    this.turnPulse.end(input.turnId);
     const thread = this.threads.get(input.threadId);
     if (thread === undefined || thread.deletedAt !== null) return;
     const at = nowIso();

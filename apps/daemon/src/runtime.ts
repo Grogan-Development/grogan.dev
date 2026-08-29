@@ -41,6 +41,12 @@ export type DaemonOptions = {
   readonly openRouterBaseUrl: string;
   readonly openRouterTimeoutMs: number;
   readonly openRouterIdleMs: number;
+  /** Host control-plane base URL; set in guests for the keep-awake pulse. */
+  readonly hostUrl: string | undefined;
+  /** Guest→host shared secret for the job-heartbeat route. */
+  readonly hostToken: string | undefined;
+  /** This workspace's id on the host; required for the pulse. */
+  readonly workspaceId: string | undefined;
 };
 
 export const nowUtc = (): DateTime.Utc => DateTime.nowUnsafe();
@@ -114,6 +120,9 @@ export const loadOptionsFromEnv = (): DaemonOptions => {
     openRouterBaseUrl: Process.env.OPENROUTER_BASE_URL ?? OPENROUTER_BASE_URL,
     openRouterTimeoutMs: OPENROUTER_TIMEOUT_MS,
     openRouterIdleMs: OPENROUTER_IDLE_MS,
+    hostUrl: Process.env.NERO_HOST_URL,
+    hostToken: Process.env.NERO_HOST_TOKEN,
+    workspaceId: Process.env.NERO_WORKSPACE_ID,
   };
 };
 

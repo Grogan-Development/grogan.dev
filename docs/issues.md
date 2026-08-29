@@ -116,6 +116,16 @@ Law: "After adapt there is no T3 product left." Survivors at main:
 
 ## 7. Smaller debt
 
+- [ ] Keybindings: `server.upsertKeybinding`/`removeKeybinding` are daemon
+      no-ops — user edits reset on daemon restart. Needs a daemon persistence
+      decision (rpc.ts:83-86).
+- [ ] Source Control "Fetch interval" setting is inert: `subscribeVcsStatus`
+      polls at a fixed 2s regardless (rpc.ts:212-219).
+- [ ] `enableProviderUpdateChecks` / `enableLegacyTokenStreaming` have no UI
+      and no daemon consumer — remove from `ServerSettings` in a contracts pass.
+- [ ] Workspace datasets: no delete/destroy surface end-to-end (host has
+      DestroyDataset internally only); add API + UI action later.
+
 - [ ] Clerk catalog refs (23) in `pnpm-workspace.yaml`.
 - [ ] `assets/` web-favicon sources from `00-copy-set.md` never copied (cosmetic).
 - [ ] `debian:trixie` base unpinned (deliberate deferral).

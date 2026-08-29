@@ -3,7 +3,7 @@ import { useAtomValue } from "@effect/atom-react";
 import { useEffect, useMemo, useRef } from "react";
 
 import { isCommandPaletteOpen } from "../commandPaletteBus";
-import { useClientSettings, useLegacySidebarEnabled } from "../hooks/useSettings";
+import { useClientSettings } from "../hooks/useSettings";
 import { openCommandPalette } from "../commandPaletteBus";
 import { useProjects } from "../state/entities";
 import { usePrimaryEnvironmentId } from "../state/environments";
@@ -126,20 +126,9 @@ function ChatRouteGlobalShortcuts() {
   const { activeDraftThread, activeThread, defaultProjectRef, handleNewThread, routeThreadRef } =
     useHandleNewThread();
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
-  const legacySidebarEnabled = useLegacySidebarEnabled();
   const projectGroupingSettings = useClientSettings(selectProjectGroupingSettings);
   const projects = useProjects();
   const primaryEnvironmentId = usePrimaryEnvironmentId();
-  const projectGroupCount = useMemo(
-    () =>
-      buildSidebarProjectSnapshots({
-        projects,
-        settings: projectGroupingSettings,
-        primaryEnvironmentId,
-        resolveEnvironmentLabel: () => null,
-      }).length,
-    [primaryEnvironmentId, projectGroupingSettings, projects],
-  );
   const terminalOpen = useTerminalUiStateStore((state) =>
     routeThreadRef
       ? selectThreadTerminalUiState(state.terminalUiStateByThreadKey, routeThreadRef).terminalOpen
@@ -190,13 +179,8 @@ function ChatRouteGlobalShortcuts() {
       if (command === "chat.new") {
         event.preventDefault();
         event.stopPropagation();
-        // The default sidebar routes creation through the command palette
-        // whenever there is a real choice to make; the legacy sidebar (and
-        // single-project setups) keep the immediate contextual create.
-        if (!legacySidebarEnabled && projectGroupCount > 1) {
-          openCommandPalette({ open: "new-thread-in" });
-          return;
-        }
+        // Nero is single-project: new threads are created in the workspace
+        // project directly.
         void startNewThreadFromContext({
           activeDraftThread,
           activeThread: activeThread ?? undefined,
@@ -252,10 +236,8 @@ function ChatRouteGlobalShortcuts() {
     keybindings,
     defaultProjectRef,
     previewOpen,
-    projectGroupCount,
     routeThreadRef,
     selectedThreadKeysSize,
-    legacySidebarEnabled,
     terminalOpen,
   ]);
 
