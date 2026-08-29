@@ -8,6 +8,7 @@ import { Input } from "../components/ui/input";
 import { Spinner } from "../components/ui/spinner";
 import {
   createNeroWorkspace,
+  ensureNeroWorkspaceAwake,
   isNeroHostAuthError,
   listNeroWorkspaces,
   NERO_LOGIN_PATH,
@@ -18,31 +19,71 @@ import { readLastWorkspaceId } from "../workspaceIdentity";
 
 /**
  * `/` is no longer a management surface — workspace management lives in the
- * sidebar switcher. Landing here sends you straight back into your last
- * workspace; first-run users get a minimal create screen.
+ * sidebar switcher. Landing here sends you straight into a workspace;
+ * first-run users get a minimal create screen.
  */
 function ChatIndexRedirect() {
-  const [phase, setPhase] = useState<"loading" | "first-run" | "auth">("loading");
+  const [phase, setPhase] = useState<"loading" | "starting" | "first-run" | "auth">("loading");
+  const [startingName, setStartingName] = useState<string | null>(null);
   const [name, setName] = useState("");
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
 
-  const redirect = useCallback((workspaces: NeroWorkspace[]) => {
-    if (workspaces.length === 0) {
+  const start = useCallback(async (target: NeroWorkspace) => {
+    // Never navigate into a stopped workspace: the SPA shell would load but
+    // every daemon-bound call 502s (stopped workspaces have no proxy
+    // socket), which reads as "login is broken". Wake first; the host's wake
+    // blocks until the guest daemon is healthy.
+    setPhase("starting");
+    setStartingName(target.name);
+    setError(null);
+    try {
+      const awake = await ensureNeroWorkspaceAwake(target);
+      if (awake.state !== "running") {
+        setError(
+          `“${target.name}” is ${awake.state} — admission is waiting for another workspace to sleep. Try again shortly.`,
+        );
+        setPhase("first-run");
+        return;
+      }
+      window.location.assign(`/w/${awake.id}/`);
+    } catch (wakeError) {
+      if (isNeroHostAuthError(wakeError)) {
+        setPhase("auth");
+        return;
+      }
+      setError(neroHostErrorMessage(wakeError));
       setPhase("first-run");
-      return;
     }
-    const last = readLastWorkspaceId();
-    const target = workspaces.find((workspace) => workspace.id === last) ?? workspaces[0];
-    if (!target) {
-      setPhase("first-run");
-      return;
-    }
-    window.location.assign(`/w/${target.id}/`);
   }, []);
+
+  const redirect = useCallback(
+    (workspaces: NeroWorkspace[]) => {
+      if (workspaces.length === 0) {
+        setPhase("first-run");
+        return;
+      }
+      const last = readLastWorkspaceId();
+      const lastWorkspace = workspaces.find((workspace) => workspace.id === last) ?? null;
+      // Prefer an already-running workspace so a fresh login lands somewhere
+      // live; only pay the wake cost when nothing is running.
+      const target =
+        workspaces.find((workspace) => workspace.state === "running") ??
+        lastWorkspace ??
+        workspaces[0];
+      if (!target) {
+        setPhase("first-run");
+        return;
+      }
+      void start(target);
+    },
+    [start],
+  );
 
   useEffect(() => {
     let cancelled = false;
+    setPhase("loading");
     void (async () => {
       try {
         const workspaces = await listNeroWorkspaces();
@@ -60,7 +101,7 @@ function ChatIndexRedirect() {
     return () => {
       cancelled = true;
     };
-  }, [redirect]);
+  }, [redirect, reloadKey]);
 
   const create = useCallback(async () => {
     setCreating(true);
@@ -78,10 +119,21 @@ function ChatIndexRedirect() {
     }
   }, [name]);
 
+  const showCreateForm = phase === "first-run";
+
   return (
     <SidebarInset className="flex h-dvh flex-col items-center justify-center gap-4 bg-background p-6 text-foreground">
       <p className="text-sm font-medium text-muted-foreground">{APP_DISPLAY_NAME}</p>
-      {phase === "loading" ? <Spinner className="size-6" /> : null}
+      {phase === "loading" || phase === "starting" ? (
+        <>
+          <Spinner className="size-6" />
+          <p className="text-sm text-muted-foreground">
+            {phase === "starting"
+              ? `Starting “${startingName ?? "workspace"}” — this can take up to a minute.`
+              : "Loading…"}
+          </p>
+        </>
+      ) : null}
       {phase === "auth" ? (
         <>
           <p className="text-sm text-muted-foreground">Sign in to continue.</p>
@@ -90,7 +142,7 @@ function ChatIndexRedirect() {
           </a>
         </>
       ) : null}
-      {phase === "first-run" ? (
+      {showCreateForm ? (
         <>
           <p className="text-sm text-muted-foreground">Create your first workspace to start.</p>
           <form
@@ -112,9 +164,16 @@ function ChatIndexRedirect() {
               Create workspace
             </Button>
           </form>
+          {error ? (
+            <>
+              <p className="max-w-sm text-center text-xs text-destructive">{error}</p>
+              <Button variant="outline" size="sm" onClick={() => setReloadKey((key) => key + 1)}>
+                Try again
+              </Button>
+            </>
+          ) : null}
         </>
       ) : null}
-      {error ? <p className="text-xs text-destructive">{error}</p> : null}
     </SidebarInset>
   );
 }

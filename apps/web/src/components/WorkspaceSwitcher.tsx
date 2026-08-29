@@ -16,6 +16,7 @@ import { Button } from "./ui/button";
 import {
   createNeroWorkspace,
   deleteNeroWorkspace,
+  ensureNeroWorkspaceAwake,
   isNeroHostAuthError,
   listNeroWorkspaces,
   neroHostErrorMessage,
@@ -117,9 +118,36 @@ export function WorkspaceSwitcher() {
   const currentLabel = current?.name ?? currentId ?? "Workspaces";
   const currentState = current?.state ?? "stopped";
 
-  const openWorkspace = useCallback((id: string) => {
-    setOpen(false);
-    window.location.assign(`/w/${id}/`);
+  const openWorkspace = useCallback((workspace: NeroWorkspace) => {
+    // A stopped workspace must be woken before navigating: `/w/:id/` on a
+    // stopped workspace loads the SPA shell with no daemon behind it — every
+    // call 502s into an endless "Reconnecting…". The wake POST blocks until
+    // the daemon is healthy, so keep the row busy as feedback until then.
+    if (workspace.state === "running") {
+      setOpen(false);
+      window.location.assign(`/w/${workspace.id}/`);
+      return;
+    }
+    setBusyId(workspace.id);
+    void ensureNeroWorkspaceAwake(workspace)
+      .then((awake) => {
+        if (awake.state !== "running") {
+          setLoadError(
+            `“${workspace.name}” is ${awake.state} — admission is waiting for another workspace to sleep.`,
+          );
+          setBusyId(null);
+          return;
+        }
+        window.location.assign(`/w/${awake.id}/`);
+      })
+      .catch((error) => {
+        setBusyId(null);
+        if (isNeroHostAuthError(error)) {
+          setAuthExpired(true);
+        } else {
+          setLoadError(neroHostErrorMessage(error));
+        }
+      });
   }, []);
 
   const runAction = useCallback(
@@ -152,7 +180,10 @@ export function WorkspaceSwitcher() {
         newName.trim().length > 0 ? newName.trim() : null,
       );
       setNewName("");
-      openWorkspace(workspace.id);
+      // createNeroWorkspace blocks until the daemon is healthy, so the new
+      // workspace is already running — navigate straight in.
+      setOpen(false);
+      window.location.assign(`/w/${workspace.id}/`);
     } catch (error) {
       if (isNeroHostAuthError(error)) {
         setAuthExpired(true);
@@ -161,7 +192,7 @@ export function WorkspaceSwitcher() {
       }
       setBusyId(null);
     }
-  }, [newName, openWorkspace]);
+  }, [newName]);
 
   const confirmDelete = useCallback(async () => {
     if (pendingDelete === null) return;
@@ -264,8 +295,9 @@ export function WorkspaceSwitcher() {
                     >
                       <button
                         type="button"
-                        onClick={() => openWorkspace(workspace.id)}
-                        className="flex min-w-0 flex-1 cursor-pointer flex-col gap-0.5 rounded-md px-2 py-1.5 text-left"
+                        onClick={() => openWorkspace(workspace)}
+                        disabled={isBusy}
+                        className="flex min-w-0 flex-1 cursor-pointer flex-col gap-0.5 rounded-md px-2 py-1.5 text-left disabled:pointer-events-none"
                       >
                         <span className="flex min-w-0 items-center gap-1.5">
                           <span className="min-w-0 truncate text-sm font-medium">
@@ -278,7 +310,13 @@ export function WorkspaceSwitcher() {
                           ) : null}
                         </span>
                         <span className="flex items-center gap-1.5">
-                          <StateBadge state={workspace.state} />
+                          {isBusy && workspace.state !== "running" ? (
+                            <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-amber-500/40 bg-amber-500/10 px-1.5 py-px text-[10px] leading-4 font-medium text-amber-500">
+                              Waking…
+                            </span>
+                          ) : (
+                            <StateBadge state={workspace.state} />
+                          )}
                           {workspace.connected ? (
                             <span className="text-[10px] text-muted-foreground">Connected</span>
                           ) : null}
@@ -315,7 +353,7 @@ export function WorkspaceSwitcher() {
                             </MenuItem>
                           )}
                           {isCurrent ? null : (
-                            <MenuItem onClick={() => openWorkspace(workspace.id)}>Open</MenuItem>
+                            <MenuItem onClick={() => openWorkspace(workspace)}>Open</MenuItem>
                           )}
                           <MenuItem
                             className="text-destructive data-highlighted:text-destructive"

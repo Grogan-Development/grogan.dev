@@ -165,6 +165,24 @@ export function stopNeroWorkspace(workspaceId: string): Promise<NeroWorkspace> {
 }
 
 /**
+ * Open a workspace route only once its daemon can answer. Navigating into a
+ * stopped workspace loads the SPA shell (Caddy serves it statically) but every
+ * daemon-bound call 502s — an endless "Reconnecting…" with no recovery path —
+ * so callers must wake first. Running workspaces pass through untouched;
+ * anything else goes through the host's blocking wake, which returns only when
+ * the guest daemon is healthy (or with the still-not-running state, e.g. when
+ * admission queued it).
+ */
+export async function ensureNeroWorkspaceAwake(
+  workspace: Pick<NeroWorkspace, "id" | "state">,
+): Promise<Pick<NeroWorkspace, "id" | "state">> {
+  if (workspace.state === "running") {
+    return workspace;
+  }
+  return wakeNeroWorkspace(workspace.id);
+}
+
+/**
  * Permanently destroys the workspace: container and dataset (every thread and
  * file) are gone. `DELETE /api/workspaces/:id` — no body, 204 on success.
  */
