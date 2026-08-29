@@ -3,6 +3,9 @@ package auth
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -23,7 +26,7 @@ type User struct {
 
 // Client exchanges an AuthKit authorization_code for a user.
 type Client interface {
-	AuthenticateWithCode(ctx context.Context, code string) (User, error)
+	AuthenticateWithCode(ctx context.Context, code, codeVerifier string) (User, error)
 }
 
 // API is the WorkOS User Management HTTP client.
@@ -48,6 +51,7 @@ type authenticateRequest struct {
 	ClientSecret string `json:"client_secret"`
 	GrantType    string `json:"grant_type"`
 	Code         string `json:"code"`
+	CodeVerifier string `json:"code_verifier,omitempty"`
 }
 
 type authenticateResponse struct {
@@ -57,7 +61,7 @@ type authenticateResponse struct {
 	} `json:"user"`
 }
 
-func (c *API) AuthenticateWithCode(ctx context.Context, code string) (User, error) {
+func (c *API) AuthenticateWithCode(ctx context.Context, code, codeVerifier string) (User, error) {
 	if code == "" {
 		return User{}, fmt.Errorf("missing authorization code")
 	}
@@ -70,6 +74,7 @@ func (c *API) AuthenticateWithCode(ctx context.Context, code string) (User, erro
 		ClientSecret: c.APIKey,
 		GrantType:    "authorization_code",
 		Code:         code,
+		CodeVerifier: codeVerifier,
 	})
 	if err != nil {
 		return User{}, err
@@ -103,7 +108,7 @@ func (c *API) AuthenticateWithCode(ctx context.Context, code string) (User, erro
 }
 
 // AuthorizationURL is the AuthKit hosted UI start (provider=authkit).
-func AuthorizationURL(authKitURL, clientID, redirectURI, state string) (string, error) {
+func AuthorizationURL(authKitURL, clientID, redirectURI, state, codeChallenge string) (string, error) {
 	base := strings.TrimSpace(authKitURL)
 	if base == "" {
 		base = defaultAuthorizeURL
@@ -118,6 +123,22 @@ func AuthorizationURL(authKitURL, clientID, redirectURI, state string) (string, 
 	q.Set("response_type", "code")
 	q.Set("provider", "authkit")
 	q.Set("state", state)
+	if codeChallenge != "" {
+		q.Set("code_challenge", codeChallenge)
+		q.Set("code_challenge_method", "S256")
+	}
 	u.RawQuery = q.Encode()
 	return u.String(), nil
+}
+
+// RandomPKCE returns an S256 verifier and challenge (RFC 7636).
+func RandomPKCE() (verifier, challenge string, err error) {
+	var b [32]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return "", "", err
+	}
+	verifier = base64.RawURLEncoding.EncodeToString(b[:])
+	sum := sha256.Sum256([]byte(verifier))
+	challenge = base64.RawURLEncoding.EncodeToString(sum[:])
+	return verifier, challenge, nil
 }

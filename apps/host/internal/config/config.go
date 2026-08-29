@@ -1,10 +1,13 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"strings"
 	"time"
 )
+
+const MinCookiePasswordLen = 32
 
 type Config struct {
 	Listen         string
@@ -42,6 +45,26 @@ func FromEnv() Config {
 		MountRoot:      env("NERO_WS_MOUNT", "/var/lib/nero/ws"),
 		IdleTick:       tick,
 	}
+}
+
+func (c Config) AuthReady() error {
+	if c.DevBypass {
+		return nil
+	}
+	var missing []string
+	if c.WorkOSClientID == "" {
+		missing = append(missing, "WORKOS_CLIENT_ID")
+	}
+	if c.WorkOSAPIKey == "" {
+		missing = append(missing, "WORKOS_API_KEY")
+	}
+	if len(c.CookiePassword) < MinCookiePasswordLen {
+		missing = append(missing, "WORKOS_COOKIE_PASSWORD")
+	}
+	if len(missing) > 0 {
+		return fmt.Errorf("auth not configured: %s", strings.Join(missing, ", "))
+	}
+	return nil
 }
 
 func (c Config) EmailAllowed(email string) bool {

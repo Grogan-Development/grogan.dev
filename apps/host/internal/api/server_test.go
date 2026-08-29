@@ -78,7 +78,7 @@ func doHost(t *testing.T, client *http.Client, method, rawURL, host string, cook
 	return res
 }
 
-func startLogin(t *testing.T, ts *httptest.Server, host string) (state string, st *http.Cookie) {
+func startLogin(t *testing.T, ts *httptest.Server, host string) (state string, cookies []*http.Cookie) {
 	t.Helper()
 	res := doHost(t, noRedirect(ts), http.MethodGet, ts.URL+"/auth/login", host, nil, nil)
 	defer res.Body.Close()
@@ -89,11 +89,12 @@ func startLogin(t *testing.T, ts *httptest.Server, host string) (state string, s
 	if err != nil {
 		t.Fatal(err)
 	}
-	st = cookie(res, auth.StateCookieName)
-	if st == nil {
-		t.Fatal("no state cookie")
+	st := cookie(res, auth.StateCookieName)
+	pk := cookie(res, auth.PKCECookieName)
+	if st == nil || pk == nil {
+		t.Fatal("missing state/pkce cookies")
 	}
-	return loc.Query().Get("state"), st
+	return loc.Query().Get("state"), []*http.Cookie{st, pk}
 }
 
 func TestHealthz(t *testing.T) {
@@ -169,9 +170,16 @@ func TestLoginRedirectsToAuthKit(t *testing.T) {
 	if q.Get("state") == "" {
 		t.Fatal("missing state")
 	}
+	if q.Get("code_challenge") == "" || q.Get("code_challenge_method") != "S256" {
+		t.Fatalf("pkce query=%s", loc.RawQuery)
+	}
 	st := cookie(res, auth.StateCookieName)
 	if st == nil || st.Value != q.Get("state") {
 		t.Fatalf("state cookie=%v", st)
+	}
+	pk := cookie(res, auth.PKCECookieName)
+	if pk == nil || pk.Value == "" {
+		t.Fatal("missing pkce cookie")
 	}
 }
 
@@ -210,8 +218,9 @@ func TestCallbackSetsSessionAndRedirects(t *testing.T) {
 	}
 	loginRes.Body.Close()
 	st := cookie(loginRes, auth.StateCookieName)
-	if st == nil {
-		t.Fatal("no state cookie")
+	pk := cookie(loginRes, auth.PKCECookieName)
+	if st == nil || pk == nil {
+		t.Fatal("no login cookies")
 	}
 	loc, err := url.Parse(loginRes.Header.Get("Location"))
 	if err != nil {
@@ -223,11 +232,15 @@ func TestCallbackSetsSessionAndRedirects(t *testing.T) {
 	cb.Host = "grogan.dev"
 	cb.Header.Set("X-Forwarded-Proto", "https")
 	cb.AddCookie(st)
+	cb.AddCookie(pk)
 	cbRes, err := client.Do(cb)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer cbRes.Body.Close()
+	if cbRes.Header.Get("Cache-Control") != "no-store" {
+		t.Fatalf("cache-control=%s", cbRes.Header.Get("Cache-Control"))
+	}
 	if cbRes.StatusCode != http.StatusFound {
 		t.Fatal(cbRes.Status)
 	}
@@ -236,6 +249,9 @@ func TestCallbackSetsSessionAndRedirects(t *testing.T) {
 	}
 	if wo.LastCode != "ok" {
 		t.Fatalf("code=%s", wo.LastCode)
+	}
+	if wo.LastVerifier != pk.Value {
+		t.Fatalf("verifier=%s", wo.LastVerifier)
 	}
 	sess := cookie(cbRes, auth.CookieName)
 	if sess == nil || sess.Value == "" {
@@ -270,15 +286,15 @@ func TestCallbackRejectsBadCodeAndState(t *testing.T) {
 		t.Fatalf("missing code status=%d", res.StatusCode)
 	}
 
-	state, st := startLogin(t, ts, "grogan.dev")
+	state, cookies := startLogin(t, ts, "grogan.dev")
 
-	res = doHost(t, client, http.MethodGet, ts.URL+"/auth/callback?code=ok&state=nope", "grogan.dev", []*http.Cookie{st}, nil)
+	res = doHost(t, client, http.MethodGet, ts.URL+"/auth/callback?code=ok&state=nope", "grogan.dev", cookies, nil)
 	res.Body.Close()
 	if res.StatusCode != http.StatusBadRequest {
 		t.Fatalf("bad state status=%d", res.StatusCode)
 	}
 
-	res = doHost(t, client, http.MethodGet, ts.URL+"/auth/callback?code=nope&state="+url.QueryEscape(state), "grogan.dev", []*http.Cookie{st}, nil)
+	res = doHost(t, client, http.MethodGet, ts.URL+"/auth/callback?code=nope&state="+url.QueryEscape(state), "grogan.dev", cookies, nil)
 	res.Body.Close()
 	if res.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("bad code status=%d", res.StatusCode)
@@ -302,8 +318,8 @@ func TestAPIRejectsTamperedSession(t *testing.T) {
 func TestSessionAllowsCreate(t *testing.T) {
 	ts, _, rt, _ := testServer(t, false)
 	client := noRedirect(ts)
-	state, st := startLogin(t, ts, "grogan.dev")
-	cbRes := doHost(t, client, http.MethodGet, ts.URL+"/auth/callback?code=ok&state="+url.QueryEscape(state), "grogan.dev", []*http.Cookie{st}, nil)
+	state, cookies := startLogin(t, ts, "grogan.dev")
+	cbRes := doHost(t, client, http.MethodGet, ts.URL+"/auth/callback?code=ok&state="+url.QueryEscape(state), "grogan.dev", cookies, nil)
 	cbRes.Body.Close()
 	sess := cookie(cbRes, auth.CookieName)
 
@@ -461,8 +477,8 @@ func TestLoginWWWHost(t *testing.T) {
 func TestAllowlistRejectsOtherEmail(t *testing.T) {
 	ts, _, _, _ := testServer(t, false)
 	client := noRedirect(ts)
-	state, st := startLogin(t, ts, "grogan.dev")
-	res := doHost(t, client, http.MethodGet, ts.URL+"/auth/callback?code=other&state="+url.QueryEscape(state), "grogan.dev", []*http.Cookie{st}, nil)
+	state, cookies := startLogin(t, ts, "grogan.dev")
+	res := doHost(t, client, http.MethodGet, ts.URL+"/auth/callback?code=other&state="+url.QueryEscape(state), "grogan.dev", cookies, nil)
 	defer res.Body.Close()
 	if res.StatusCode != http.StatusForbidden {
 		t.Fatalf("status=%d", res.StatusCode)
@@ -502,8 +518,8 @@ func TestEmptyAllowlistFailClosed(t *testing.T) {
 	ts := httptest.NewServer(srv.Handler())
 	t.Cleanup(ts.Close)
 	client := noRedirect(ts)
-	state, st := startLogin(t, ts, "grogan.dev")
-	res := doHost(t, client, http.MethodGet, ts.URL+"/auth/callback?code=ok&state="+url.QueryEscape(state), "grogan.dev", []*http.Cookie{st}, nil)
+	state, cookies := startLogin(t, ts, "grogan.dev")
+	res := doHost(t, client, http.MethodGet, ts.URL+"/auth/callback?code=ok&state="+url.QueryEscape(state), "grogan.dev", cookies, nil)
 	defer res.Body.Close()
 	if res.StatusCode != http.StatusForbidden {
 		t.Fatalf("status=%d", res.StatusCode)
@@ -611,5 +627,52 @@ func TestJobHeartbeatUsesHostToken(t *testing.T) {
 	res.Body.Close()
 	if res.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("human heartbeat status=%d", res.StatusCode)
+	}
+}
+
+func TestUnauthedWorkspaceMutations(t *testing.T) {
+	ts, _, _, _ := testServer(t, false)
+	routes := []struct {
+		method, path string
+	}{
+		{http.MethodGet, "/api/workspaces"},
+		{http.MethodPost, "/api/workspaces"},
+		{http.MethodPost, "/api/workspaces/x/wake"},
+		{http.MethodPost, "/api/workspaces/x/stop"},
+		{http.MethodPost, "/api/workspaces/x/heartbeat"},
+	}
+	for _, tc := range routes {
+		req, err := http.NewRequest(tc.method, ts.URL+tc.path, strings.NewReader(`{}`))
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Header.Set("Content-Type", "application/json")
+		res, err := ts.Client().Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		res.Body.Close()
+		if res.StatusCode != http.StatusUnauthorized {
+			t.Errorf("%s %s status=%d", tc.method, tc.path, res.StatusCode)
+		}
+	}
+
+	sealed, err := auth.Seal(auth.Session{
+		UserID: "user_1",
+		Email:  "z@grogan.dev",
+		Exp:    time.Now().Add(-time.Minute).Unix(),
+	}, testCookiePW)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req, _ := http.NewRequest(http.MethodGet, ts.URL+"/api/workspaces", nil)
+	req.AddCookie(&http.Cookie{Name: auth.CookieName, Value: sealed})
+	res, err := ts.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("expired status=%d", res.StatusCode)
 	}
 }

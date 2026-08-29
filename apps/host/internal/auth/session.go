@@ -17,10 +17,12 @@ import (
 )
 
 const (
-	CookieName      = "wos-session"
-	StateCookieName = "wos-state"
-	sessionTTL      = 7 * 24 * time.Hour
-	stateTTL        = 10 * time.Minute
+	CookieName           = "wos-session"
+	StateCookieName      = "wos-state"
+	PKCECookieName       = "wos-pkce"
+	sessionTTL           = 7 * 24 * time.Hour
+	stateTTL             = 10 * time.Minute
+	MinCookiePasswordLen = 32
 )
 
 var (
@@ -46,7 +48,7 @@ func RandomState() (string, error) {
 }
 
 func Seal(s Session, password string) (string, error) {
-	if password == "" {
+	if len(password) < MinCookiePasswordLen {
 		return "", ErrCookiePassword
 	}
 	if s.Exp == 0 {
@@ -73,7 +75,7 @@ func Seal(s Session, password string) (string, error) {
 }
 
 func Unseal(blob, password string) (Session, error) {
-	if password == "" {
+	if len(password) < MinCookiePasswordLen {
 		return Session{}, ErrCookiePassword
 	}
 	if blob == "" {
@@ -149,6 +151,35 @@ func StateCookie(state string, r *http.Request) *http.Cookie {
 func ClearStateCookie(w http.ResponseWriter) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     StateCookieName,
+		Path:     "/",
+		MaxAge:   -1,
+		HttpOnly: true,
+	})
+}
+
+func PKCECookie(verifier string, r *http.Request) *http.Cookie {
+	return &http.Cookie{
+		Name:     PKCECookieName,
+		Value:    verifier,
+		Path:     "/",
+		MaxAge:   int(stateTTL.Seconds()),
+		HttpOnly: true,
+		Secure:   isHTTPS(r),
+		SameSite: http.SameSiteLaxMode,
+	}
+}
+
+func PKCEVerifier(r *http.Request) (string, error) {
+	c, err := r.Cookie(PKCECookieName)
+	if err != nil || c.Value == "" {
+		return "", ErrState
+	}
+	return c.Value, nil
+}
+
+func ClearPKCECookie(w http.ResponseWriter) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     PKCECookieName,
 		Path:     "/",
 		MaxAge:   -1,
 		HttpOnly: true,

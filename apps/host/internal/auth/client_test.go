@@ -2,6 +2,8 @@ package auth
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -32,7 +34,7 @@ func TestAPIAuthenticateWithCode(t *testing.T) {
 	defer ts.Close()
 
 	c := &API{APIKey: "sk_test", ClientID: "client_test", BaseURL: ts.URL, HTTP: ts.Client()}
-	u, err := c.AuthenticateWithCode(context.Background(), "abc123")
+	u, err := c.AuthenticateWithCode(context.Background(), "abc123", "verifier")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -51,6 +53,9 @@ func TestAPIAuthenticateWithCode(t *testing.T) {
 	if got["client_secret"] != "sk_test" {
 		t.Fatalf("client_secret=%v", got["client_secret"])
 	}
+	if got["code_verifier"] != "verifier" {
+		t.Fatalf("code_verifier=%v", got["code_verifier"])
+	}
 }
 
 func TestAPIAuthenticateWithCodeRejects(t *testing.T) {
@@ -59,13 +64,13 @@ func TestAPIAuthenticateWithCodeRejects(t *testing.T) {
 	}))
 	defer ts.Close()
 	c := &API{APIKey: "sk", ClientID: "c", BaseURL: ts.URL, HTTP: ts.Client()}
-	if _, err := c.AuthenticateWithCode(context.Background(), "bad"); err == nil {
+	if _, err := c.AuthenticateWithCode(context.Background(), "bad", "v"); err == nil {
 		t.Fatal("expected error")
 	}
 }
 
 func TestAuthorizationURL(t *testing.T) {
-	got, err := AuthorizationURL("https://authkit.example/start", "client_test", "https://grogan.dev/auth/callback", "st")
+	got, err := AuthorizationURL("https://authkit.example/start", "client_test", "https://grogan.dev/auth/callback", "st", "chal")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -92,10 +97,13 @@ func TestAuthorizationURL(t *testing.T) {
 	if q.Get("state") != "st" {
 		t.Fatalf("state=%s", q.Get("state"))
 	}
+	if q.Get("code_challenge") != "chal" || q.Get("code_challenge_method") != "S256" {
+		t.Fatalf("pkce=%s", u.RawQuery)
+	}
 }
 
 func TestAuthorizationURLDefault(t *testing.T) {
-	got, err := AuthorizationURL("", "client_test", "https://nero.grogan.dev/auth/callback", "st")
+	got, err := AuthorizationURL("", "client_test", "https://nero.grogan.dev/auth/callback", "st", "chal")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -108,5 +116,20 @@ func TestAuthorizationURLDefault(t *testing.T) {
 	}
 	if u.Query().Get("provider") != "authkit" {
 		t.Fatal(u.Query().Get("provider"))
+	}
+	if u.Query().Get("code_challenge_method") != "S256" {
+		t.Fatal(u.Query().Get("code_challenge_method"))
+	}
+}
+
+func TestRandomPKCE(t *testing.T) {
+	v, ch, err := RandomPKCE()
+	if err != nil || v == "" || ch == "" {
+		t.Fatalf("v=%q ch=%q err=%v", v, ch, err)
+	}
+	sum := sha256.Sum256([]byte(v))
+	want := base64.RawURLEncoding.EncodeToString(sum[:])
+	if ch != want {
+		t.Fatalf("challenge %s want %s", ch, want)
 	}
 }

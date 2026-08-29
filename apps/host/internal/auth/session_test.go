@@ -39,6 +39,15 @@ func TestUnsealRejectsTamperAndWrongPassword(t *testing.T) {
 	}
 }
 
+func TestSealRejectsShortPassword(t *testing.T) {
+	if _, err := Seal(Session{UserID: "user_1"}, "short"); err != ErrCookiePassword {
+		t.Fatalf("err=%v", err)
+	}
+	if _, err := Unseal("abc", "short"); err != ErrCookiePassword {
+		t.Fatalf("unseal err=%v", err)
+	}
+}
+
 func TestUnsealExpired(t *testing.T) {
 	sealed, err := Seal(Session{UserID: "user_1", Exp: time.Now().Add(-time.Minute).Unix()}, testPW)
 	if err != nil {

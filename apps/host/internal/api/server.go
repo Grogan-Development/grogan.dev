@@ -88,13 +88,19 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, "state")
 		return
 	}
+	verifier, challenge, err := auth.RandomPKCE()
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "pkce")
+		return
+	}
 	redirectURI := origin + "/auth/callback"
-	loc, err := auth.AuthorizationURL(s.cfg.AuthKitURL, s.cfg.WorkOSClientID, redirectURI, state)
+	loc, err := auth.AuthorizationURL(s.cfg.AuthKitURL, s.cfg.WorkOSClientID, redirectURI, state, challenge)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "authkit url")
 		return
 	}
 	http.SetCookie(w, auth.StateCookie(state, r))
+	http.SetCookie(w, auth.PKCECookie(verifier, r))
 	http.Redirect(w, r, loc, http.StatusFound)
 }
 
@@ -113,11 +119,16 @@ func (s *Server) callback(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "invalid state")
 		return
 	}
+	verifier, err := auth.PKCEVerifier(r)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid pkce")
+		return
+	}
 	if s.workos == nil {
 		writeErr(w, http.StatusInternalServerError, "workos not configured")
 		return
 	}
-	user, err := s.workos.AuthenticateWithCode(r.Context(), code)
+	user, err := s.workos.AuthenticateWithCode(r.Context(), code, verifier)
 	if err != nil {
 		writeErr(w, http.StatusUnauthorized, "unauthorized")
 		return
@@ -132,12 +143,14 @@ func (s *Server) callback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	auth.ClearStateCookie(w)
+	auth.ClearPKCECookie(w)
 	http.SetCookie(w, auth.SessionCookie(sealed, r))
 	http.Redirect(w, r, afterLoginURL, http.StatusFound)
 }
 
 func (s *Server) logout(w http.ResponseWriter, r *http.Request) {
 	auth.ClearStateCookie(w)
+	auth.ClearPKCECookie(w)
 	http.SetCookie(w, auth.ClearSessionCookie(r))
 	http.Redirect(w, r, afterLogoutURL, http.StatusFound)
 }

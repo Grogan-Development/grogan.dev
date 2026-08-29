@@ -32,7 +32,7 @@ Put values in `/etc/nero/host.env` (mode `0600`, **not in git**). systemd `Envir
 | `WORKOS_API_KEY` | empty | User Management API key (`client_secret` on `authorization_code` exchange). |
 | `WORKOS_CLIENT_ID` | empty | AuthKit / User Management client id. |
 | `WORKOS_AUTHKIT_URL` | `https://api.workos.com/user_management/authorize` | Hosted UI start URL. `/auth/login` redirects here with `provider=authkit`. |
-| `WORKOS_COOKIE_PASSWORD` | empty | Seals the `wos-session` cookie. **≥32 characters.** `openssl rand -base64 32`. |
+| `WORKOS_COOKIE_PASSWORD` | empty | Seals the `wos-session` cookie. **≥32 characters.** `openssl rand -base64 32`. Without `NERO_DEV_BYPASS`, nero-host will not listen if this, `WORKOS_CLIENT_ID`, or `WORKOS_API_KEY` is missing/short. |
 | `NERO_ALLOWED_EMAILS` | empty | Comma-separated allowlist (v1: your email). Empty + no bypass **fail closed** (callback 403, APIs 401). |
 | `NERO_HOST_TOKEN` | empty | Shared secret for guest `POST /api/workspaces/:id/job-heartbeat`. Injected into containers as `NERO_HOST_TOKEN`. Empty + no bypass → that route 401. |
 | `NERO_GUEST_IMAGE` | `nero-guest:v1` | Image from PR 2. `docker create` requires the image; failure rolls back the dataset. |
@@ -52,7 +52,7 @@ JSON. Path IDs are workspace ids.
 
 - `GET /healthz`
 - `GET /` — grogan.dev landing; portal starts AuthKit via `/auth/login`
-- `GET /auth/login` — redirect to AuthKit hosted UI (`provider=authkit`). `redirect_uri` host must be `grogan.dev`, `www.grogan.dev`, or `nero.grogan.dev` (default ports stripped). Always `https://`.
+- `GET /auth/login` — redirect to AuthKit hosted UI (`provider=authkit`, S256 PKCE). `redirect_uri` host must be `grogan.dev`, `www.grogan.dev`, or `nero.grogan.dev` (default ports stripped). Always `https://`.
 - `GET /auth/callback` — User Management `authorization_code` exchange; allowlist email; set session; redirect to `https://nero.grogan.dev/`
 - `GET /auth/logout` — expire `wos-session` (`Domain=grogan.dev`, Path=/, MaxAge=-1); redirect to `https://grogan.dev/`. WorkOS dashboard sign-out does **not** revoke this cookie.
 - `GET /api/workspaces`
