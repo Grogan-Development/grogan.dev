@@ -6,6 +6,7 @@ import type {
   ProviderApprovalDecision,
   ProviderInteractionMode,
   ProviderOptionDescriptor,
+  ProviderOptionSelection,
   ResolvedKeybindingsConfig,
   RuntimeMode,
   ScopedThreadRef,
@@ -64,6 +65,7 @@ import {
   useComposerThreadDraft,
   useEffectiveComposerModelState,
 } from "../../composerDraftStore";
+import { Menu, MenuGroup, MenuPopup, MenuRadioGroup, MenuRadioItem, MenuTrigger } from "../ui/menu";
 import {
   MAX_STASH_ENTRIES,
   partitionStashAttachments,
@@ -1310,40 +1312,38 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       ) ?? null
     );
   }, [selectedProviderModels, selectedModel, selectedProvider, settings.planModeEnabled]);
+  const [reasoningMenuOpen, setReasoningMenuOpen] = useState(false);
   const reasoningLevel = useMemo(() => {
     const raw = composerModelOptions?.[selectedInstanceId]?.find(
       (option) => option.id === "reasoningEffort",
     )?.value;
     return typeof raw === "string" ? raw : null;
   }, [composerModelOptions, selectedInstanceId]);
-  const cycleReasoning = useCallback(() => {
-    if (!reasoningDescriptor) return;
-    const levels = reasoningDescriptor.options.map((option) => option.id);
-    const next =
-      reasoningLevel === null
-        ? (levels[0] ?? null)
-        : (levels[(levels.indexOf(reasoningLevel) + 1) % (levels.length + 1)] ?? null);
-    setProviderModelOptions(
-      composerDraftTarget,
-      selectedProvider,
-      buildProviderOptionSelectionsFromDescriptors([
-        { ...reasoningDescriptor, ...(next === null ? {} : { currentValue: next }) },
-      ]),
-      {
+  const writeReasoning = useCallback(
+    (level: string | null) => {
+      // null = provider default: drop the selection instead of sending a value.
+      const current = composerModelOptions?.[selectedInstanceId] ?? [];
+      const next = [
+        ...current.filter((option) => option.id !== "reasoningEffort"),
+        ...(level === null
+          ? []
+          : [{ id: "reasoningEffort", value: level } satisfies ProviderOptionSelection]),
+      ];
+      setProviderModelOptions(composerDraftTarget, selectedProvider, next, {
         ...(selectedInstanceId ? { instanceId: selectedInstanceId } : {}),
         model: selectedModel,
         persistSticky: true,
-      },
-    );
-  }, [
-    composerDraftTarget,
-    reasoningDescriptor,
-    reasoningLevel,
-    selectedInstanceId,
-    selectedModel,
-    selectedProvider,
-    setProviderModelOptions,
-  ]);
+      });
+    },
+    [
+      composerDraftTarget,
+      composerModelOptions,
+      selectedInstanceId,
+      selectedModel,
+      selectedProvider,
+      setProviderModelOptions,
+    ],
+  );
 
   // Lightning-bolt speed toggle: the daemon advertises a `fastMode` boolean
   // descriptor on models with a fast route; flipping it writes the selection
@@ -3586,28 +3586,52 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     </button>
                   ) : null}
                   {reasoningDescriptor !== null && !isComposerFooterCompact ? (
-                    <button
-                      type="button"
-                      aria-label="Reasoning level"
-                      className={cn(
-                        "relative inline-flex h-7 min-h-7 cursor-pointer items-center justify-center gap-1 rounded-[var(--control-radius)] border border-transparent px-2 text-sm outline-none transition-none hover:bg-accent hover:text-foreground sm:h-6 sm:text-xs",
-                        reasoningLevel !== null ? "text-foreground" : "text-secondary-label",
-                      )}
-                      onClick={cycleReasoning}
-                    >
-                      <BrainIcon
-                        aria-hidden
-                        data-composer-control-icon="true"
-                        className="size-4 shrink-0"
+                    <Menu open={reasoningMenuOpen} onOpenChange={setReasoningMenuOpen}>
+                      <MenuTrigger
+                        render={
+                          <button
+                            type="button"
+                            aria-label="Reasoning level"
+                            className={cn(
+                              "relative inline-flex h-7 min-h-7 cursor-pointer items-center justify-center gap-1 rounded-[var(--control-radius)] border border-transparent px-2 text-sm outline-none transition-none hover:bg-accent hover:text-foreground sm:h-6 sm:text-xs",
+                              reasoningLevel !== null ? "text-foreground" : "text-secondary-label",
+                            )}
+                          >
+                            <BrainIcon
+                              aria-hidden
+                              data-composer-control-icon="true"
+                              className="size-4 shrink-0"
+                            />
+                            <span className="hidden @2xl/composer-controls:inline">
+                              {reasoningLevel === null
+                                ? "Reasoning"
+                                : (reasoningDescriptor.options.find(
+                                    (option) => option.id === reasoningLevel,
+                                  )?.label ?? reasoningLevel)}
+                            </span>
+                          </button>
+                        }
                       />
-                      <span className="hidden @2xl/composer-controls:inline">
-                        {reasoningLevel === null
-                          ? "Reasoning"
-                          : (reasoningDescriptor.options.find(
-                              (option) => option.id === reasoningLevel,
-                            )?.label ?? reasoningLevel)}
-                      </span>
-                    </button>
+                      <MenuPopup align="start" className="w-44">
+                        <MenuGroup>
+                          <MenuRadioGroup
+                            value={reasoningLevel ?? ""}
+                            onValueChange={(value: string) =>
+                              writeReasoning(value === "" ? null : value)
+                            }
+                          >
+                            <MenuRadioItem value="" closeOnClick>
+                              Default
+                            </MenuRadioItem>
+                            {reasoningDescriptor.options.map((option) => (
+                              <MenuRadioItem key={option.id} value={option.id} closeOnClick>
+                                {option.label}
+                              </MenuRadioItem>
+                            ))}
+                          </MenuRadioGroup>
+                        </MenuGroup>
+                      </MenuPopup>
+                    </Menu>
                   ) : null}
                   {isComposerFooterCompact ? (
                     <CompactComposerControlsMenu
