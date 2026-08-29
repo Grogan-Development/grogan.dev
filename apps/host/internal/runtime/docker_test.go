@@ -2,10 +2,15 @@ package runtime
 
 import (
 	"context"
+	"io"
+	"net"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
+	"time"
 )
 
 func TestCgroupRel(t *testing.T) {
@@ -55,6 +60,9 @@ func TestStartContainerWritesMemoryHigh(t *testing.T) {
 				return "", nil
 			}
 			if name == "docker" && len(args) > 0 && args[0] == "inspect" {
+				if strings.Contains(strings.Join(args, " "), "HostPort") {
+					return "32768", nil
+				}
 				return "42", nil
 			}
 			t.Fatalf("unexpected %s %v", name, args)
@@ -90,6 +98,9 @@ func TestStartContainerCgroupFailureDoesNotFailStart(t *testing.T) {
 				return "", nil
 			}
 			if name == "docker" && len(args) > 0 && args[0] == "inspect" {
+				if strings.Contains(strings.Join(args, " "), "HostPort") {
+					return "32768", nil
+				}
 				return "0", nil
 			}
 			return "", nil
@@ -97,5 +108,76 @@ func TestStartContainerCgroupFailureDoesNotFailStart(t *testing.T) {
 	}
 	if err := d.StartContainer(context.Background(), "abc"); err != nil {
 		t.Fatalf("start must succeed: %v", err)
+	}
+}
+
+func TestCreateContainerRequiresAccessToken(t *testing.T) {
+	d := &Docker{
+		Image: "nero-guest:v1",
+		run: func(_ context.Context, name string, args ...string) (string, error) {
+			t.Fatal("docker must not run without token")
+			return "", nil
+		},
+	}
+	if err := d.CreateContainer(context.Background(), WorkspaceSpec{ID: "0123456789abcdef", Name: "x"}); err == nil {
+		t.Fatal("expected error")
+	}
+}
+
+func TestWaitDaemonHealthz(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	mux := http.NewServeMux()
+	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = io.WriteString(w, "ok")
+	})
+	srv := &http.Server{Handler: mux, ReadHeaderTimeout: time.Second}
+	go func() { _ = srv.Serve(ln) }()
+	defer srv.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	if err := pingDaemonHealthz(ctx, ln.Addr().String()); err != nil {
+		t.Fatal(err)
+	}
+	if err := waitDaemon(ctx, func() error { return pingDaemonHealthz(ctx, ln.Addr().String()) }); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestEnsureProxyWaitsThenRecordsPort(t *testing.T) {
+	pings := 0
+	d := &Docker{
+		run: func(_ context.Context, name string, args ...string) (string, error) {
+			if name == "docker" && len(args) > 0 && args[0] == "inspect" {
+				return "32768", nil
+			}
+			t.Fatalf("unexpected %s %v", name, args)
+			return "", nil
+		},
+		pingDaemon: func(_ context.Context, addr string) error {
+			pings++
+			if addr != "127.0.0.1:32768" {
+				t.Fatalf("addr=%s", addr)
+			}
+			if pings < 2 {
+				return context.DeadlineExceeded
+			}
+			return nil
+		},
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	if err := d.EnsureProxy(ctx, "0123456789abcdef"); err != nil {
+		t.Fatal(err)
+	}
+	got, err := d.DialAddr("0123456789abcdef")
+	if err != nil || got != "127.0.0.1:32768" {
+		t.Fatalf("dial=%s err=%v", got, err)
+	}
+	if pings < 2 {
+		t.Fatalf("pings=%d", pings)
 	}
 }

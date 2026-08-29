@@ -82,6 +82,14 @@ export const SEAT_PREVIEW_TAB_ID = "seat";
 export const SEAT_VNC_URL = "/vnc/";
 export const SEAT_VNC_TITLE = "Agent seat";
 
+const headerToken = (value: string | undefined): string | undefined => {
+  if (value === undefined) return undefined;
+  const trimmed = value.trim();
+  if (trimmed.length === 0) return undefined;
+  if (trimmed.toLowerCase().startsWith("bearer ")) return trimmed.slice(7).trim();
+  return trimmed;
+};
+
 export class Hub<T> {
   readonly listeners = new Set<(item: T) => void>();
 
@@ -380,9 +388,12 @@ export class Daemon {
     cookies: Record<string, string | undefined>,
   ): boolean {
     if (this.options.devBypass) return true;
-    const authorization = headers.authorization ?? headers.Authorization;
-    if (authorization?.toLowerCase().startsWith("bearer ")) {
-      const token = authorization.slice(7).trim();
+    const candidates = [
+      headerToken(headers["x-nero-access"] ?? headers["X-Nero-Access"]),
+      headerToken(headers.authorization ?? headers.Authorization),
+    ];
+    for (const token of candidates) {
+      if (token === undefined) continue;
       if (this.options.accessToken !== undefined && token === this.options.accessToken) return true;
       for (const session of this.sessions.values()) {
         if (session.token === token && session.expiresAtMs > DateTime.toEpochMillis(nowUtc()))

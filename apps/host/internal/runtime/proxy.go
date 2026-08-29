@@ -5,10 +5,14 @@ import (
 	"io"
 	"net"
 	"os"
+	"os/user"
 	"path/filepath"
+	"strconv"
 	"sync"
 	"time"
 )
+
+const socketPerm = 0o660
 
 func SocketPath(dir, id string) string {
 	return filepath.Join(dir, id+".sock")
@@ -72,13 +76,29 @@ func (h *proxyHub) bind(id, port string) error {
 	if err != nil {
 		return err
 	}
-	if err := os.Chmod(path, 0o666); err != nil {
+	if err := tightenSocket(path); err != nil {
 		_ = ln.Close()
 		_ = os.Remove(path)
 		return err
 	}
 	h.m[id] = &boundProxy{ln: ln, port: port}
 	go serveUnixProxy(ln, HostDial(port))
+	return nil
+}
+
+func tightenSocket(path string) error {
+	if err := os.Chmod(path, socketPerm); err != nil {
+		return err
+	}
+	g, err := user.LookupGroup("caddy")
+	if err != nil {
+		return nil
+	}
+	gid, err := strconv.Atoi(g.Gid)
+	if err != nil {
+		return nil
+	}
+	_ = os.Chown(path, 0, gid)
 	return nil
 }
 
@@ -108,6 +128,18 @@ func serveUnixProxy(ln net.Listener, target string) {
 	}
 }
 
+type closeWriter interface {
+	CloseWrite() error
+}
+
+func closeWrite(c net.Conn) {
+	if cw, ok := c.(closeWriter); ok {
+		_ = cw.CloseWrite()
+		return
+	}
+	_ = c.Close()
+}
+
 func proxyConn(c net.Conn, target string) {
 	defer c.Close()
 	u, err := net.DialTimeout("tcp", target, 5*time.Second)
@@ -115,14 +147,13 @@ func proxyConn(c net.Conn, target string) {
 		return
 	}
 	defer u.Close()
-	errc := make(chan struct{}, 2)
+	done := make(chan struct{})
 	go func() {
 		_, _ = io.Copy(u, c)
-		errc <- struct{}{}
+		closeWrite(u)
+		close(done)
 	}()
-	go func() {
-		_, _ = io.Copy(c, u)
-		errc <- struct{}{}
-	}()
-	<-errc
+	_, _ = io.Copy(c, u)
+	closeWrite(c)
+	<-done
 }

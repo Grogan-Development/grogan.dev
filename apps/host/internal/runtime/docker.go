@@ -6,12 +6,14 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 )
 
 type DockerSettings struct {
@@ -35,6 +37,7 @@ type Docker struct {
 	run              func(ctx context.Context, name string, args ...string) (string, error)
 	readFile         func(name string) ([]byte, error)
 	writeFile        func(name string, data []byte, perm os.FileMode) error
+	pingDaemon       func(ctx context.Context, addr string) error
 
 	mu        sync.Mutex
 	hostPorts map[string]string
@@ -60,6 +63,7 @@ func NewDocker(cfg DockerSettings, log *slog.Logger) *Docker {
 		run:              runCmd,
 		readFile:         os.ReadFile,
 		writeFile:        os.WriteFile,
+		pingDaemon:       pingDaemonHealthz,
 		hostPorts:        make(map[string]string),
 		hub:              newProxyHub(dir),
 	}
@@ -92,6 +96,9 @@ func (d *Docker) DestroyDataset(ctx context.Context, id string) error {
 }
 
 func (d *Docker) CreateContainer(ctx context.Context, spec WorkspaceSpec) error {
+	if d.AccessToken == "" {
+		return fmt.Errorf("NERO_ACCESS_TOKEN is required")
+	}
 	mp := MountPath(d.MountRoot, spec.ID)
 	args := DockerCreateArgs(d.Image, spec.ID, spec.Name, mp, GuestEnv{
 		HostToken:        d.HostToken,
@@ -109,7 +116,13 @@ func (d *Docker) StartContainer(ctx context.Context, id string) error {
 	// Best-effort: --memory already set memory.max. Do not fail start if
 	// cgroupfs is missing (dev) or the path differs across Docker versions.
 	_ = d.ApplyCgroup(ctx, id)
-	_ = d.EnsureProxy(ctx, id)
+	if err := d.EnsureProxy(ctx, id); err != nil {
+		stopCtx, cancel := context.WithTimeout(context.Background(), time.Duration(StopTimeoutSec+5)*time.Second)
+		defer cancel()
+		_, _ = d.run(stopCtx, "docker", "stop", "-t", strconv.Itoa(StopTimeoutSec), ContainerName(id))
+		d.CloseProxy(id)
+		return err
+	}
 	return nil
 }
 
@@ -195,6 +208,12 @@ func (d *Docker) EnsureProxy(ctx context.Context, id string) error {
 		}
 		return err
 	}
+	addr := HostDial(port)
+	if d.pingDaemon != nil {
+		if err := waitDaemon(ctx, func() error { return d.pingDaemon(ctx, addr) }); err != nil {
+			return fmt.Errorf("daemon %s: %w", addr, err)
+		}
+	}
 	d.mu.Lock()
 	if d.hostPorts == nil {
 		d.hostPorts = make(map[string]string)
@@ -209,6 +228,49 @@ func (d *Docker) EnsureProxy(ctx context.Context, id string) error {
 			d.log.Warn("workspace unix socket bind failed", "id", id, "err", err)
 		}
 		return err
+	}
+	return nil
+}
+
+func waitDaemon(ctx context.Context, ping func() error) error {
+	var last error
+	if err := ping(); err == nil {
+		return nil
+	} else {
+		last = err
+	}
+	t := time.NewTicker(200 * time.Millisecond)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			if last == nil {
+				last = ctx.Err()
+			}
+			return last
+		case <-t.C:
+			if err := ping(); err == nil {
+				return nil
+			} else {
+				last = err
+			}
+		}
+	}
+}
+
+func pingDaemonHealthz(ctx context.Context, addr string) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://"+addr+"/healthz", nil)
+	if err != nil {
+		return err
+	}
+	client := &http.Client{Timeout: time.Second}
+	res, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		return fmt.Errorf("healthz status %s", res.Status)
 	}
 	return nil
 }
@@ -238,7 +300,7 @@ func (d *Docker) inspectHostPort(ctx context.Context, id string) (string, error)
 		return "", err
 	}
 	port := strings.TrimSpace(out)
-	if port == "" || !isDigits(port) {
+	if port == "" || port == "0" || !isDigits(port) {
 		return "", fmt.Errorf("container %s has no published %s/tcp port", id, DaemonPort)
 	}
 	return port, nil

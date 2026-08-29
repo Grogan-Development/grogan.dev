@@ -14,7 +14,7 @@ import (
 const (
 	caddyAuthPath      = "/internal/caddy-auth"
 	headerWorkspace    = "X-Nero-Workspace"
-	headerDial         = "X-Nero-Dial"
+	headerAccess       = "X-Nero-Access"
 	headerForwardedURI = "X-Forwarded-Uri"
 )
 
@@ -24,6 +24,10 @@ func (s *Server) caddyAuth(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !s.cfg.DevBypass {
+		if s.cfg.AccessToken == "" {
+			writeErr(w, http.StatusInternalServerError, "access token not configured")
+			return
+		}
 		sess, err := auth.FromRequest(r, s.cfg.CookiePassword)
 		if err != nil || !s.cfg.EmailAllowed(sess.Email) {
 			writeWorkspaceUnauthorized(w)
@@ -35,23 +39,17 @@ func (s *Server) caddyAuth(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusNotFound, "workspace not found")
 		return
 	}
-	addr, err := s.ll.DialAddr(id)
-	if err != nil {
+	if _, err := s.ll.DialAddr(id); err != nil {
 		if errors.Is(err, landlord.ErrNotFound) {
 			writeErr(w, http.StatusNotFound, err.Error())
 			return
 		}
-		if errors.Is(err, landlord.ErrNotRunning) {
-			writeErr(w, http.StatusServiceUnavailable, err.Error())
-			return
-		}
-		writeErr(w, http.StatusBadGateway, err.Error())
+		writeErr(w, http.StatusServiceUnavailable, err.Error())
 		return
 	}
 	if s.cfg.AccessToken != "" {
-		w.Header().Set("Authorization", "Bearer "+s.cfg.AccessToken)
+		w.Header().Set(headerAccess, s.cfg.AccessToken)
 	}
-	w.Header().Set(headerDial, addr)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -60,6 +58,9 @@ func workspaceIDFromCaddy(r *http.Request) string {
 		return id
 	}
 	if id := workspaceIDFromURI(r.Header.Get(headerForwardedURI)); id != "" {
+		return id
+	}
+	if id := workspaceIDFromURI(r.Header.Get("Referer")); id != "" {
 		return id
 	}
 	if c, err := r.Cookie(runtime.WSCookieName); err == nil {

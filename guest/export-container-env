@@ -15,6 +15,7 @@ KEYS = {
     "NERO_ENVIRONMENT_ID",
     "NERO_LABEL",
     "NERO_DEV_BYPASS",
+    "NERO_HOST_URL",
 }
 
 OUT = Path("/etc/nero/guest.env")

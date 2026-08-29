@@ -32,6 +32,30 @@ const DROP_FROM_UPSTREAM = new Set([
   "cross-origin-resource-policy",
 ]);
 
+const DROP_TO_KASM = new Set(["x-nero-access", "x-nero-workspace", "x-nero-dial"]);
+
+export const isBearerAuthorization = (value: string | string[] | undefined): boolean => {
+  const raw = Array.isArray(value) ? value[0] : value;
+  return typeof raw === "string" && raw.trim().toLowerCase().startsWith("bearer ");
+};
+
+export const stripCookieName = (
+  header: string | string[] | undefined,
+  name: string,
+): string | undefined => {
+  const raw = Array.isArray(header) ? header.join("; ") : header;
+  if (raw === undefined || raw.length === 0) return undefined;
+  const kept: string[] = [];
+  for (const part of raw.split(";")) {
+    const trimmed = part.trim();
+    if (trimmed.length === 0) continue;
+    const key = trimmed.slice(0, Math.max(0, trimmed.indexOf("="))).trim();
+    if (key.toLowerCase() === name.toLowerCase()) continue;
+    kept.push(trimmed);
+  }
+  return kept.length === 0 ? undefined : kept.join("; ");
+};
+
 export const pathnameOf = (url: string | undefined): string => {
   if (url === undefined || url.length === 0) return "/";
   const path = url.split("?")[0] ?? "/";
@@ -134,7 +158,14 @@ export const handleVncHttp = (daemon: Daemon, req: IncomingMessage, res: ServerR
   }
   const headers: Record<string, string | number | string[] | undefined> = {};
   for (const [key, value] of Object.entries(req.headers)) {
-    if (HOP_BY_HOP.has(key.toLowerCase())) continue;
+    const lower = key.toLowerCase();
+    if (HOP_BY_HOP.has(lower) || DROP_TO_KASM.has(lower)) continue;
+    if (lower === "authorization" && isBearerAuthorization(value)) continue;
+    if (lower === "cookie") {
+      const stripped = stripCookieName(value, "wos-session");
+      if (stripped !== undefined) headers[key] = stripped;
+      continue;
+    }
     headers[key] = value;
   }
   headers.host = target.host;
@@ -201,8 +232,16 @@ export const handleVncUpgrade = (
     let headBuf = `${req.method ?? "GET"} ${path} HTTP/${req.httpVersion}\r\n`;
     for (const [key, value] of Object.entries(req.headers)) {
       if (value === undefined) continue;
-      const rendered = Array.isArray(value) ? value.join(", ") : value;
-      if (key.toLowerCase() === "host") {
+      const lower = key.toLowerCase();
+      if (DROP_TO_KASM.has(lower)) continue;
+      if (lower === "authorization" && isBearerAuthorization(value)) continue;
+      let rendered = Array.isArray(value) ? value.join(", ") : value;
+      if (lower === "cookie") {
+        const stripped = stripCookieName(value, "wos-session");
+        if (stripped === undefined) continue;
+        rendered = stripped;
+      }
+      if (lower === "host") {
         headBuf += `Host: ${target.host}\r\n`;
         continue;
       }

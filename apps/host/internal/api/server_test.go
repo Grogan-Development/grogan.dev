@@ -799,11 +799,11 @@ func TestCaddyAuthIssuesDial(t *testing.T) {
 	if authRes.StatusCode != http.StatusNoContent {
 		t.Fatal(authRes.Status)
 	}
-	if got := authRes.Header.Get("Authorization"); got != "Bearer guest-token" {
-		t.Fatalf("authorization=%q", got)
+	if got := authRes.Header.Get(headerAccess); got != "guest-token" {
+		t.Fatalf("access=%q", got)
 	}
-	if got := authRes.Header.Get(headerDial); got != "127.0.0.1:8787" {
-		t.Fatalf("dial=%q", got)
+	if authRes.Header.Get("Authorization") != "" {
+		t.Fatal("must not set Authorization (clobbers Kasm Basic)")
 	}
 
 	req, _ = http.NewRequest(http.MethodGet, ts.URL+caddyAuthPath, nil)
@@ -869,12 +869,65 @@ func TestCaddyAuthRequiresSessionWithoutBypass(t *testing.T) {
 	}
 }
 
+func TestCaddyAuthSessionAndDial(t *testing.T) {
+	ts, ll, _, _ := testServer(t, false)
+	ws, err := ll.Create(context.Background(), "alpha")
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := noRedirect(ts)
+	state, cookies := startLogin(t, ts, "grogan.dev")
+	cb := doHost(t, client, http.MethodGet, ts.URL+"/auth/callback?code=ok&state="+url.QueryEscape(state), "grogan.dev", cookies, nil)
+	cb.Body.Close()
+	sess := cookie(cb, auth.CookieName)
+	if sess == nil {
+		t.Fatal("no session")
+	}
+
+	req, _ := http.NewRequest(http.MethodGet, ts.URL+caddyAuthPath, nil)
+	req.Header.Set(headerWorkspace, ws.ID)
+	req.AddCookie(sess)
+	res, err := client.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	res.Body.Close()
+	if res.StatusCode != http.StatusNoContent {
+		t.Fatal(res.Status)
+	}
+	if got := res.Header.Get(headerAccess); got != "guest-token" {
+		t.Fatalf("access=%q", got)
+	}
+}
+
+func TestCaddyAuthRejectsNonLoopback(t *testing.T) {
+	rt := runtime.NewFake()
+	ll := landlord.New(rt, landlord.NewFakeClock(time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)), slog.New(slog.NewTextHandler(io.Discard, nil)))
+	cfg := config.Config{
+		DevBypass:      true,
+		CookiePassword: testCookiePW,
+		AccessToken:    "guest-token",
+	}
+	h := New(cfg, ll, auth.NewFake(), slog.New(slog.NewTextHandler(io.Discard, nil))).Handler()
+	req := httptest.NewRequest(http.MethodGet, caddyAuthPath, nil)
+	req.RemoteAddr = "203.0.113.9:443"
+	req.Header.Set(headerWorkspace, "0123456789abcdef")
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+	if rr.Code != http.StatusForbidden {
+		t.Fatalf("status=%d", rr.Code)
+	}
+}
+
 func TestWorkspaceIDFromURI(t *testing.T) {
 	if got := workspaceIDFromURI("/w/0123456789abcdef/ws"); got != "0123456789abcdef" {
 		t.Fatalf("got %q", got)
 	}
 	if got := workspaceIDFromURI("/w/0123456789abcdef/vnc/?autoconnect=1"); got != "0123456789abcdef" {
 		t.Fatalf("query got %q", got)
+	}
+	if got := workspaceIDFromURI("https://nero.grogan.dev/w/0123456789abcdef/thread"); got != "0123456789abcdef" {
+		t.Fatalf("referer got %q", got)
 	}
 	if workspaceIDFromURI("/vnc/") != "" || workspaceIDFromURI("/w/../etc") != "" {
 		t.Fatal("should reject")

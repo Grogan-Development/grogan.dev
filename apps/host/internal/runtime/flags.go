@@ -47,6 +47,7 @@ func DockerCreateArgs(image, id, name, mount string, env GuestEnv) []string {
 		"--stop-signal", "SIGRTMIN+3",
 		"--hostname", "ws-" + id,
 		"--publish", "127.0.0.1::" + DaemonPort,
+		"--add-host", "host.docker.internal:host-gateway",
 		"--tmpfs", "/tmp:mode=1777",
 		"--tmpfs", "/run",
 		"--tmpfs", "/run/lock",
@@ -55,6 +56,7 @@ func DockerCreateArgs(image, id, name, mount string, env GuestEnv) []string {
 		"--env", "NERO_WORKSPACE_ID=" + id,
 		"--env", "NERO_ENVIRONMENT_ID=" + id,
 		"--env", "NERO_LABEL=" + name,
+		"--env", "NERO_HOST_URL=http://host.docker.internal:8080",
 	}
 	args = appendEnv(args, "NERO_HOST_TOKEN", env.HostToken)
 	args = appendEnv(args, "NERO_ACCESS_TOKEN", env.AccessToken)

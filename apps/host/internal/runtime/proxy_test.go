@@ -48,8 +48,12 @@ func TestUnixProxyForwardsHTTP(t *testing.T) {
 	defer hub.close(id)
 
 	sock := SocketPath(dir, id)
-	if _, err := os.Stat(sock); err != nil {
+	st, err := os.Stat(sock)
+	if err != nil {
 		t.Fatal(err)
+	}
+	if st.Mode().Perm() != 0o660 {
+		t.Fatalf("perm=%o want 0660", st.Mode().Perm())
 	}
 	client := &http.Client{
 		Transport: &http.Transport{

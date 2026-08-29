@@ -17,6 +17,7 @@ func TestAuthReady(t *testing.T) {
 		WorkOSClientID: "client",
 		WorkOSAPIKey:   "sk",
 		CookiePassword: "0123456789abcdef0123456789abcdef",
+		AccessToken:    "guest-token",
 	}
 	if err := ok.AuthReady(); err != nil {
 		t.Fatal(err)
@@ -31,5 +32,10 @@ func TestAuthReady(t *testing.T) {
 	short.CookiePassword = "too-short"
 	if err := short.AuthReady(); err == nil {
 		t.Fatal("short password")
+	}
+	noTok := ok
+	noTok.AccessToken = ""
+	if err := noTok.AuthReady(); err == nil {
+		t.Fatal("missing NERO_ACCESS_TOKEN")
 	}
 }

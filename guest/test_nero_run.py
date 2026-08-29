@@ -63,6 +63,12 @@ class NeroRunTests(unittest.TestCase):
         proc = run_dry("true", job_id="bake one")
         self.assertEqual(proc.returncode, 2)
 
+    def test_script_posts_job_heartbeat(self):
+        text = SCRIPT.read_text()
+        self.assertIn("job-heartbeat", text)
+        self.assertIn("NERO_HOST_TOKEN", text)
+        self.assertIn("host.docker.internal", text)
+
 
 if __name__ == "__main__":
     unittest.main()

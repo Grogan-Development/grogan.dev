@@ -130,8 +130,10 @@ func (f *Fake) ApplyCgroup(_ context.Context, id string) error {
 }
 
 func (f *Fake) EnsureProxy(_ context.Context, id string) error {
-	if _, err := f.InspectContainer(context.Background(), id); err != nil {
-		return err
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if _, ok := f.Containers[id]; !ok {
+		return fmt.Errorf("no container: %s", id)
 	}
 	return nil
 }

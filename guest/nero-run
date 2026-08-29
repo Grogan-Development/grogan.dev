@@ -58,6 +58,50 @@ if [ "${NERO_RUN_DRY:-}" = 1 ]; then
   exit 0
 fi
 
+load_guest_env() {
+  if [ -z "${NERO_HOST_TOKEN:-}" ] && [ -r /etc/nero/guest.env ]; then
+    # shellcheck disable=SC1091
+    set -a
+    . /etc/nero/guest.env
+    set +a
+  fi
+}
+
+job_heartbeat() {
+  running=$1
+  load_guest_env
+  [ -n "${NERO_HOST_TOKEN:-}" ] || return 0
+  [ -n "${NERO_WORKSPACE_ID:-}" ] || return 0
+  command -v curl >/dev/null 2>&1 || return 0
+  host="${NERO_HOST_URL:-http://host.docker.internal:8080}"
+  curl -fsS --max-time 5 \
+    -X POST \
+    -H "Authorization: Bearer ${NERO_HOST_TOKEN}" \
+    -H "Content-Type: application/json" \
+    -d "{\"running\":${running}}" \
+    "${host}/api/workspaces/${NERO_WORKSPACE_ID}/job-heartbeat" >/dev/null 2>&1 || true
+}
+
+hb_pid=""
+stop_heartbeat() {
+  trap - EXIT INT TERM
+  if [ -n "${hb_pid}" ]; then
+    kill "${hb_pid}" 2>/dev/null || true
+    wait "${hb_pid}" 2>/dev/null || true
+    hb_pid=""
+  fi
+  job_heartbeat false
+}
+
+job_heartbeat true
+(
+  while sleep 30; do
+    job_heartbeat true
+  done
+) &
+hb_pid=$!
+trap stop_heartbeat EXIT INT TERM
+
 # shellcheck disable=SC2086
-exec systemd-run --user --scope --slice=nero-job.slice \
+systemd-run --user --scope --slice=nero-job.slice \
   $resource_args --collect $unit_args -- "$cmd" "$@"

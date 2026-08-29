@@ -1,6 +1,13 @@
 import { describe, expect, it } from "@effect/vitest";
 
-import { isVncPath, pathnameOf, stripVncPrefix, cookiesFromHeader } from "./vnc-proxy.ts";
+import {
+  cookiesFromHeader,
+  isBearerAuthorization,
+  isVncPath,
+  pathnameOf,
+  stripCookieName,
+  stripVncPrefix,
+} from "./vnc-proxy.ts";
 
 describe("vnc proxy paths", () => {
   it("matches the Kasm HTML client and websocket helper paths", () => {
@@ -32,5 +39,14 @@ describe("vnc proxy paths", () => {
       nero_session: "abc",
       other: "1",
     });
+  });
+
+  it("does not forward host Bearer or wos-session to Kasm", () => {
+    expect(isBearerAuthorization("Bearer guest-token")).toBe(true);
+    expect(isBearerAuthorization("Basic bmVybzpuZXJv")).toBe(false);
+    expect(stripCookieName("wos-session=sealed; kasm_token=abc", "wos-session")).toBe(
+      "kasm_token=abc",
+    );
+    expect(stripCookieName("wos-session=sealed", "wos-session")).toBeUndefined();
   });
 });

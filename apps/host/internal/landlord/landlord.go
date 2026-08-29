@@ -396,6 +396,15 @@ func (l *Landlord) tryStart(id string) error {
 	l.mu.Unlock()
 	if err := l.rtEnsureProxy(id); err != nil {
 		l.log.Warn("host socket bind failed", "id", id, "err", err)
+		_ = l.rtStop(id)
+		l.rt.CloseProxy(id)
+		info, inspErr := l.rtInspect(id)
+		l.mu.Lock()
+		if w := l.workspaces[id]; w != nil && (inspErr == nil && !info.Running) {
+			w.State = StateStopped
+		}
+		l.mu.Unlock()
+		return err
 	}
 	return nil
 }

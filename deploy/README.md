@@ -29,7 +29,7 @@ WORKOS_AUTHKIT_URL=https://api.workos.com/user_management/authorize
 WORKOS_COOKIE_PASSWORD=  # openssl rand -base64 32  (≥32 chars)
 NERO_ALLOWED_EMAILS=you@grogan.dev
 NERO_HOST_TOKEN=         # openssl rand -hex 32  (guest job-heartbeat)
-NERO_ACCESS_TOKEN=       # openssl rand -hex 32  (Caddy → guest daemon Bearer)
+NERO_ACCESS_TOKEN=       # openssl rand -hex 32  (required; Caddy → guest as X-Nero-Access)
 OPENROUTER_API_KEY=      # harness; injected into guests at create
 NERO_GUEST_IMAGE=nero-guest:v1
 NERO_ZFS_POOL=grid
@@ -72,7 +72,7 @@ sudo systemctl enable --now nero-host
 sudo systemctl reload caddy
 ```
 
-Caddy must be able to dial `127.0.0.1:<workspace-port>` (loopback docker publish) and read `/run/nero/w/*.sock` (same mapping, unix).
+Caddy reverse-proxies to `/run/nero/w/<id>.sock` (group `caddy`, mode `0660`). Create/wake wait until that workspace’s `:8787` `/healthz` answers.
 
 ### 4. WorkOS dashboard
 
@@ -103,9 +103,13 @@ Each workspace container’s Nero daemon listens on **:8787**. On create the lan
 | --- | --- | --- |
 | `nero-ws-<id>` :8787 | `127.0.0.1:<ephemeral>` | `/run/nero/w/<id>.sock` |
 
-Caddy does **not** hard-code ports. For `/w/:id/{ws,vnc,api,…}` (and origin `/ws` `/vnc` `/api` after the `nero-ws` cookie) it `forward_auth`s to `http://127.0.0.1:8080/internal/caddy-auth` (loopback only). A valid `wos-session` on the allowlist gets `X-Nero-Dial: 127.0.0.1:<port>` and `Authorization: Bearer $NERO_ACCESS_TOKEN`. The guest hop **drops Cookie** so `wos-session` never reaches the daemon.
+Caddy reverse_proxies to `unix//run/nero/w/<id>.sock` (id from the `/w/:id` path, else `Referer`, else `nero-ws` cookie). `forward_auth` to loopback `GET /internal/caddy-auth` checks `wos-session` and sets **`X-Nero-Access`** (not `Authorization`) so KasmVNC HTTP Basic and Kasm cookies still reach `/vnc`. The guest hop strips only the `wos-session` cookie.
 
-Stopped / queued workspaces: Caddy auth returns 503. Wake via `POST /api/workspaces/:id/wake`.
+`nero-ws` is set with `Path=/w/<id>` and a `Path=/` fallback so origin-root `/ws` from the copied skin still routes. Two browser tabs on two awake workspaces can race the `Path=/` cookie; prefer `/w/:id/…` (the VNC iframe uses that prefix when the skin is on a workspace route).
+
+Stopped / queued / not-yet-healthy workspaces: Caddy auth returns 503. Wake via `POST /api/workspaces/:id/wake`. Create/wake block until `/healthz` on the published port succeeds (or fail).
+
+`nero-run` POSTs `/api/workspaces/:id/job-heartbeat` with `NERO_HOST_TOKEN` while the scope is alive (host is `host.docker.internal:8080`).
 
 ## Environment
 
@@ -118,10 +122,10 @@ Put values in `/etc/nero/host.env` (mode `0600`, **not in git**). systemd `Envir
 | `WORKOS_API_KEY` | empty | User Management API key (`client_secret` on `authorization_code` exchange). |
 | `WORKOS_CLIENT_ID` | empty | AuthKit / User Management client id. |
 | `WORKOS_AUTHKIT_URL` | `https://api.workos.com/user_management/authorize` | Hosted UI start URL. `/auth/login` redirects here with `provider=authkit`. |
-| `WORKOS_COOKIE_PASSWORD` | empty | Seals the `wos-session` cookie. **≥32 characters.** `openssl rand -base64 32`. Without `NERO_DEV_BYPASS`, nero-host will not listen if this, `WORKOS_CLIENT_ID`, or `WORKOS_API_KEY` is missing/short. |
+| `WORKOS_COOKIE_PASSWORD` | empty | Seals the `wos-session` cookie. **≥32 characters.** `openssl rand -base64 32`. Without `NERO_DEV_BYPASS`, nero-host will not listen if this, `WORKOS_CLIENT_ID`, `WORKOS_API_KEY`, or `NERO_ACCESS_TOKEN` is missing/short. |
 | `NERO_ALLOWED_EMAILS` | empty | Comma-separated allowlist (v1: your email). Empty + no bypass **fail closed** (callback 403, APIs 401). |
 | `NERO_HOST_TOKEN` | empty | Shared secret for guest `POST /api/workspaces/:id/job-heartbeat`. Injected into containers as `NERO_HOST_TOKEN`. Empty + no bypass → that route 401. |
-| `NERO_ACCESS_TOKEN` | empty | Injected into guests as `NERO_ACCESS_TOKEN`. Caddy `forward_auth` sends it as `Authorization: Bearer` to the daemon. Generate with `openssl rand -hex 32`. |
+| `NERO_ACCESS_TOKEN` | empty | **Required** unless `NERO_DEV_BYPASS`. Injected into guests. Caddy sends `X-Nero-Access` (never overwrites `Authorization`). `openssl rand -hex 32`. |
 | `OPENROUTER_API_KEY` | empty | Injected into guests at create. Harness streams GLM-5.3-Flash via OpenRouter (Baseten pin). **Not in git.** |
 | `NERO_GUEST_IMAGE` | `nero-guest:v1` | Image from `guest/Dockerfile` (daemon + seat). `docker create` requires the image; failure rolls back the dataset. |
 | `NERO_ZFS_POOL` | `grid` | Datasets at `{pool}/nero/{id}` |

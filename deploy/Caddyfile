@@ -11,18 +11,22 @@
 # Workspace mapping (host landlord):
 #   docker publish  127.0.0.1:<ephemeral>:8787  (container Nero daemon)
 #   unix socket     /run/nero/w/<id>.sock       (host forwarder → that port)
-# Caddy asks nero-host GET /internal/caddy-auth (loopback) which checks
-# wos-session and returns X-Nero-Dial=127.0.0.1:<port> plus Bearer NERO_ACCESS_TOKEN.
-# Cookie wos-session is stripped on the guest hop.
+# Caddy reverse_proxies to the unix socket (id from the path / cookie / Referer,
+# not from a client-supplied header). forward_auth checks wos-session and sets
+# X-Nero-Access (not Authorization) so KasmVNC Basic + cookies survive /vnc.
+# Cookie wos-session is stripped on the guest hop; other cookies pass through.
 
 (nero_daemon_proxy) {
+	vars dial unix//run/nero/w/{vars.workspace_id}.sock
+	request_header -X-Nero-Dial
+	request_header -X-Nero-Access
 	forward_auth 127.0.0.1:8080 {
 		uri /internal/caddy-auth
 		header_up X-Nero-Workspace {vars.workspace_id}
-		copy_headers Authorization X-Nero-Dial
+		copy_headers X-Nero-Access
 	}
-	reverse_proxy {http.request.header.X-Nero-Dial} {
-		header_up -Cookie
+	reverse_proxy {vars.dial} {
+		header_up Cookie "(?:^|;\\s*)wos-session=[^;]*;?\\s*" ""
 		header_up -X-Nero-Dial
 		header_up -X-Nero-Workspace
 		flush_interval -1
@@ -66,7 +70,8 @@ nero.grogan.dev {
 	handle @ws_daemon {
 		route {
 			vars workspace_id {re.ws_daemon.1}
-			header Set-Cookie "nero-ws={vars.workspace_id}; Path=/; Secure; HttpOnly; SameSite=Lax"
+			header Set-Cookie "nero-ws={vars.workspace_id}; Path=/w/{vars.workspace_id}; Secure; HttpOnly; SameSite=Lax"
+			header +Set-Cookie "nero-ws={vars.workspace_id}; Path=/; Secure; HttpOnly; SameSite=Lax"
 			rewrite * /{re.ws_daemon.2}{re.ws_daemon.3}
 			import nero_daemon_proxy
 		}
@@ -85,7 +90,8 @@ nero.grogan.dev {
 
 	@spa_ws path_regexp spa_ws ^/w/([0-9a-f]+)(/.*)?$
 	handle @spa_ws {
-		header Set-Cookie "nero-ws={re.spa_ws.1}; Path=/; Secure; HttpOnly; SameSite=Lax"
+		header Set-Cookie "nero-ws={re.spa_ws.1}; Path=/w/{re.spa_ws.1}; Secure; HttpOnly; SameSite=Lax"
+		header +Set-Cookie "nero-ws={re.spa_ws.1}; Path=/; Secure; HttpOnly; SameSite=Lax"
 		root * /var/lib/nero/web
 		try_files {path} /index.html
 		file_server

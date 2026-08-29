@@ -24,6 +24,8 @@ func TestDockerCreateArgsCgroupPolicy(t *testing.T) {
 		"--cpu-shares=1024",
 		"--stop-timeout 20",
 		"--publish 127.0.0.1::8787",
+		"--add-host host.docker.internal:host-gateway",
+		"NERO_HOST_URL=http://host.docker.internal:8080",
 		"--tmpfs /tmp:mode=1777",
 		"--tmpfs /run",
 		"--shm-size 1g",

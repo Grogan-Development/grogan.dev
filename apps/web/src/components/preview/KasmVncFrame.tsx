@@ -6,7 +6,6 @@ import { reportHumanDriving } from "~/lib/humanDriving";
 import { SEAT_VNC_TITLE, seatVncClientUrl } from "~/lib/seatVnc";
 
 const HEARTBEAT_MS = 5_000;
-const src = seatVncClientUrl();
 
 interface Props {
   visible: boolean;
@@ -14,10 +13,11 @@ interface Props {
 
 /**
  * Interactive KasmVNC HTML client. Stays mounted when hidden so the seat
- * websocket survives tab/route changes. Same-origin `/vnc/` (daemon proxy).
+ * websocket survives tab/route changes. Same-origin `/vnc/` or `/w/:id/vnc/`.
  */
 export function KasmVncFrame({ visible }: Props) {
   const rootRef = useRef<HTMLDivElement | null>(null);
+  const src = seatVncClientUrl();
 
   useEffect(() => {
     if (!visible) {

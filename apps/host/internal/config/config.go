@@ -67,6 +67,9 @@ func (c Config) AuthReady() error {
 	if len(c.CookiePassword) < MinCookiePasswordLen {
 		missing = append(missing, "WORKOS_COOKIE_PASSWORD")
 	}
+	if c.AccessToken == "" {
+		missing = append(missing, "NERO_ACCESS_TOKEN")
+	}
 	if len(missing) > 0 {
 		return fmt.Errorf("auth not configured: %s", strings.Join(missing, ", "))
 	}
