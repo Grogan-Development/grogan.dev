@@ -51,6 +51,8 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /api/workspaces/{id}/stop", s.authed(s.stop))
 	mux.Handle("POST /api/workspaces/{id}/heartbeat", s.authed(s.heartbeat))
 	mux.HandleFunc("POST /api/workspaces/{id}/job-heartbeat", s.jobHeartbeat)
+	mux.HandleFunc("GET "+caddyAuthPath, s.caddyAuth)
+	mux.HandleFunc("HEAD "+caddyAuthPath, s.caddyAuth)
 	return mux
 }
 

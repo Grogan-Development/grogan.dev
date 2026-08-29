@@ -1,0 +1,45 @@
+#!/usr/bin/env python3
+"""Copy docker --env secrets from PID 1 into /etc/nero/guest.env for systemd."""
+from __future__ import annotations
+
+import os
+import pwd
+import grp
+from pathlib import Path
+
+KEYS = {
+    "OPENROUTER_API_KEY",
+    "NERO_ACCESS_TOKEN",
+    "NERO_HOST_TOKEN",
+    "NERO_WORKSPACE_ID",
+    "NERO_ENVIRONMENT_ID",
+    "NERO_LABEL",
+    "NERO_DEV_BYPASS",
+}
+
+OUT = Path("/etc/nero/guest.env")
+
+
+def main() -> None:
+    raw = Path("/proc/1/environ").read_bytes()
+    lines: list[str] = []
+    for item in raw.split(b"\0"):
+        if not item or b"=" not in item:
+            continue
+        key_b, _, val_b = item.partition(b"=")
+        try:
+            key = key_b.decode("ascii")
+        except UnicodeDecodeError:
+            continue
+        if key not in KEYS:
+            continue
+        val = val_b.decode("utf-8", "surrogateescape")
+        lines.append(f"{key}={val}\n")
+    OUT.parent.mkdir(parents=True, exist_ok=True)
+    OUT.write_text("".join(lines), encoding="utf-8")
+    os.chown(OUT, pwd.getpwnam("root").pw_uid, grp.getgrnam("nero").gr_gid)
+    os.chmod(OUT, 0o640)
+
+
+if __name__ == "__main__":
+    main()

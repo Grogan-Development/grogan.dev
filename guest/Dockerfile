@@ -6,15 +6,14 @@
 # Xvfb). Chromium is nero-chromium.service; Blender is the official tarball
 # (see guest/install-blender.sh), not a git blob.
 #
-# Host run flags (landlord / later PRs):
-#   docker run -d --name ws-$id \
-#     --tmpfs /tmp --tmpfs /run --tmpfs /run/lock \
-#     --shm-size=1g \
-#     -v /sys/fs/cgroup:/sys/fs/cgroup:rw \
-#     --cgroupns=host \
-#     --stop-signal SIGRTMIN+3 \
-#     -v <zfs-dataset>:/home/nero \
-#     ... cgroup memory/cpu from workspace-lifecycle.md
+# Host landlord (PR 10) docker create:
+#   --publish 127.0.0.1::8787
+#   --tmpfs /tmp --tmpfs /run --tmpfs /run/lock
+#   --shm-size=1g
+#   --stop-signal SIGRTMIN+3
+#   --mount type=bind,source=/var/lib/nero/ws/<id>,target=/home/nero
+#   cgroup memory/cpu from workspace-lifecycle.md
+# Host then binds /run/nero/w/<id>.sock → 127.0.0.1:<published>:8787 for Caddy.
 #
 # Build from repo root: docker build -f guest/Dockerfile .
 # Skip the Blender fetch: --build-arg INSTALL_BLENDER=0
@@ -22,6 +21,33 @@
 # debian:trixie is left unpinned so trixie security updates flow; pin a
 # digest on Grid-01 when the landlord freezes the image. KasmVNC and
 # Blender tarball SHAs are pinned below.
+
+FROM node:24-bookworm AS daemon
+ENV PNPM_HOME=/pnpm
+ENV PATH=$PNPM_HOME:$PATH
+RUN corepack enable && corepack prepare pnpm@11.10.0 --activate \
+ && apt-get update \
+ && apt-get install -y --no-install-recommends python3 make g++ \
+ && rm -rf /var/lib/apt/lists/*
+WORKDIR /src
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json vite.config.ts ./
+COPY patches ./patches
+COPY packages ./packages
+COPY apps/daemon ./apps/daemon
+COPY apps/web/package.json ./apps/web/package.json
+COPY scripts ./scripts
+RUN pnpm install --filter @nero/daemon... --frozen-lockfile --ignore-scripts \
+ && pnpm --filter @nero/daemon rebuild node-pty \
+ && pnpm --filter @nero/daemon build \
+ && mkdir -p /out/node_modules \
+ && cp apps/daemon/dist/main.js /out/main.js \
+ && node --input-type=module -e "\
+import { createRequire } from 'node:module';\
+import fs from 'node:fs';\
+import path from 'node:path';\
+const require = createRequire('/src/apps/daemon/package.json');\
+const pkg = path.dirname(require.resolve('node-pty/package.json'));\
+fs.cpSync(pkg, '/out/node_modules/node-pty', { recursive: true });"
 
 FROM debian:trixie
 
@@ -46,7 +72,7 @@ RUN apt-get update \
       libx11-6 libxext6 libxi6 libxrender1 libxfixes3 libxxf86vm1 \
       libxkbcommon0 libsm6 libice6 \
       ca-certificates curl xz-utils \
-      procps ssl-cert util-linux \
+      procps ssl-cert util-linux libstdc++6 \
  && rm -rf /var/lib/apt/lists/*
 
 # Units that fight the container (udev, getty, resolved overwriting Docker DNS).
@@ -116,7 +142,13 @@ COPY guest/systemd/kasmvnc.service /etc/systemd/system/kasmvnc.service
 COPY guest/systemd/nero-seat.service /etc/systemd/system/nero-seat.service
 COPY guest/systemd/nero-chromium.service /etc/systemd/system/nero-chromium.service
 COPY guest/systemd/nero-daemon.service /etc/systemd/system/nero-daemon.service
+COPY guest/systemd/nero-container-env.service /etc/systemd/system/nero-container-env.service
 COPY guest/systemd/user/nero-job.slice /etc/systemd/user/nero-job.slice
+COPY guest/export-container-env /usr/lib/nero/export-container-env
+COPY guest/nero-daemon /usr/local/bin/nero-daemon
+COPY --from=daemon /usr/local/bin/node /usr/local/bin/node
+COPY --from=daemon /out/main.js /usr/lib/nero/daemon/main.js
+COPY --from=daemon /out/node_modules /usr/lib/nero/daemon/node_modules
 
 RUN chmod 0755 \
       /usr/lib/nero/wait-for-display \
@@ -124,8 +156,11 @@ RUN chmod 0755 \
       /usr/lib/nero/openbox-startup \
       /usr/local/bin/nero-desktop \
       /usr/local/bin/nero-run \
- && systemctl enable kasmvnc.service nero-seat.service nero-chromium.service user@1000.service \
- && systemctl disable nero-daemon.service \
+      /usr/local/bin/nero-daemon \
+      /usr/local/bin/node \
+      /usr/lib/nero/export-container-env \
+ && find /usr/lib/nero/daemon/node_modules/node-pty -type f -name 'spawn-helper' -exec chmod 0755 {} + \
+ && systemctl enable kasmvnc.service nero-seat.service nero-chromium.service nero-container-env.service nero-daemon.service user@1000.service \
  && rm -f /etc/machine-id \
  && touch /etc/machine-id
 

@@ -1,10 +1,9 @@
 [Unit]
 Description=Nero workspace daemon
-# Node ESM entry copied to /usr/local/bin/nero-daemon (shebang). The image
-# install in a later PR copies apps/daemon/dist/main.js to that path.
 ConditionPathExists=/usr/local/bin/nero-daemon
-After=network.target user@1000.service
+After=network.target user@1000.service nero-container-env.service
 Wants=user@1000.service
+Requires=nero-container-env.service
 
 [Service]
 Type=simple
@@ -20,7 +19,11 @@ Environment=NERO_HOME=/home/nero
 Environment=NERO_WORKSPACE=/home/nero
 Environment=NERO_DATA_DIR=/home/nero/.nero
 Environment=NERO_SEAT_LOCK=/run/nero/seat.lock
+Environment=NERO_HOST=0.0.0.0
 Environment=PORT=8787
+Environment=NODE_PATH=/usr/lib/nero/daemon/node_modules
+EnvironmentFile=-/etc/nero/guest.env
+PassEnvironment=OPENROUTER_API_KEY NERO_ACCESS_TOKEN NERO_HOST_TOKEN NERO_WORKSPACE_ID NERO_ENVIRONMENT_ID NERO_LABEL NERO_DEV_BYPASS
 ExecStart=/usr/local/bin/nero-daemon
 Restart=on-failure
 RestartSec=2

@@ -11,32 +11,57 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 )
 
-type Docker struct {
-	Image     string
-	Pool      string
-	MountRoot string
-	HostToken string
-	log       *slog.Logger
-	run       func(ctx context.Context, name string, args ...string) (string, error)
-	readFile  func(name string) ([]byte, error)
-	writeFile func(name string, data []byte, perm os.FileMode) error
+type DockerSettings struct {
+	Image            string
+	Pool             string
+	MountRoot        string
+	HostToken        string
+	AccessToken      string
+	OpenRouterAPIKey string
+	SocketDir        string
 }
 
-func NewDocker(image, pool, mountRoot, hostToken string, log *slog.Logger) *Docker {
+type Docker struct {
+	Image            string
+	Pool             string
+	MountRoot        string
+	HostToken        string
+	AccessToken      string
+	OpenRouterAPIKey string
+	log              *slog.Logger
+	run              func(ctx context.Context, name string, args ...string) (string, error)
+	readFile         func(name string) ([]byte, error)
+	writeFile        func(name string, data []byte, perm os.FileMode) error
+
+	mu        sync.Mutex
+	hostPorts map[string]string
+	hub       *proxyHub
+}
+
+func NewDocker(cfg DockerSettings, log *slog.Logger) *Docker {
 	if log == nil {
 		log = slog.Default()
 	}
+	dir := cfg.SocketDir
+	if dir == "" {
+		dir = DefaultSocketDir
+	}
 	return &Docker{
-		Image:     image,
-		Pool:      pool,
-		MountRoot: mountRoot,
-		HostToken: hostToken,
-		log:       log,
-		run:       runCmd,
-		readFile:  os.ReadFile,
-		writeFile: os.WriteFile,
+		Image:            cfg.Image,
+		Pool:             cfg.Pool,
+		MountRoot:        cfg.MountRoot,
+		HostToken:        cfg.HostToken,
+		AccessToken:      cfg.AccessToken,
+		OpenRouterAPIKey: cfg.OpenRouterAPIKey,
+		log:              log,
+		run:              runCmd,
+		readFile:         os.ReadFile,
+		writeFile:        os.WriteFile,
+		hostPorts:        make(map[string]string),
+		hub:              newProxyHub(dir),
 	}
 }
 
@@ -68,7 +93,11 @@ func (d *Docker) DestroyDataset(ctx context.Context, id string) error {
 
 func (d *Docker) CreateContainer(ctx context.Context, spec WorkspaceSpec) error {
 	mp := MountPath(d.MountRoot, spec.ID)
-	args := DockerCreateArgs(d.Image, spec.ID, spec.Name, mp, d.HostToken)
+	args := DockerCreateArgs(d.Image, spec.ID, spec.Name, mp, GuestEnv{
+		HostToken:        d.HostToken,
+		AccessToken:      d.AccessToken,
+		OpenRouterAPIKey: d.OpenRouterAPIKey,
+	})
 	_, err := d.run(ctx, "docker", args...)
 	return err
 }
@@ -80,11 +109,15 @@ func (d *Docker) StartContainer(ctx context.Context, id string) error {
 	// Best-effort: --memory already set memory.max. Do not fail start if
 	// cgroupfs is missing (dev) or the path differs across Docker versions.
 	_ = d.ApplyCgroup(ctx, id)
+	_ = d.EnsureProxy(ctx, id)
 	return nil
 }
 
 func (d *Docker) StopContainer(ctx context.Context, id string) error {
 	_, err := d.run(ctx, "docker", "stop", "-t", strconv.Itoa(StopTimeoutSec), ContainerName(id))
+	if err == nil {
+		d.CloseProxy(id)
+	}
 	return err
 }
 
@@ -150,6 +183,77 @@ func (d *Docker) applyCgroup(ctx context.Context, id string) (string, error) {
 		return dir, err
 	}
 	return dir, nil
+}
+
+const hostPortFormat = `{{with (index .NetworkSettings.Ports "8787/tcp")}}{{with (index . 0)}}{{.HostPort}}{{end}}{{end}}`
+
+func (d *Docker) EnsureProxy(ctx context.Context, id string) error {
+	port, err := d.inspectHostPort(ctx, id)
+	if err != nil {
+		if d.log != nil {
+			d.log.Warn("workspace host port inspect failed", "id", id, "err", err)
+		}
+		return err
+	}
+	d.mu.Lock()
+	if d.hostPorts == nil {
+		d.hostPorts = make(map[string]string)
+	}
+	d.hostPorts[id] = port
+	d.mu.Unlock()
+	if d.hub == nil {
+		return nil
+	}
+	if err := d.hub.bind(id, port); err != nil {
+		if d.log != nil {
+			d.log.Warn("workspace unix socket bind failed", "id", id, "err", err)
+		}
+		return err
+	}
+	return nil
+}
+
+func (d *Docker) CloseProxy(id string) {
+	d.mu.Lock()
+	delete(d.hostPorts, id)
+	d.mu.Unlock()
+	if d.hub != nil {
+		d.hub.close(id)
+	}
+}
+
+func (d *Docker) DialAddr(id string) (string, error) {
+	d.mu.Lock()
+	port := d.hostPorts[id]
+	d.mu.Unlock()
+	if port == "" {
+		return "", fmt.Errorf("no host port for %s", id)
+	}
+	return HostDial(port), nil
+}
+
+func (d *Docker) inspectHostPort(ctx context.Context, id string) (string, error) {
+	out, err := d.run(ctx, "docker", "inspect", "--format", hostPortFormat, ContainerName(id))
+	if err != nil {
+		return "", err
+	}
+	port := strings.TrimSpace(out)
+	if port == "" || !isDigits(port) {
+		return "", fmt.Errorf("container %s has no published %s/tcp port", id, DaemonPort)
+	}
+	return port, nil
+}
+
+func isDigits(s string) bool {
+	if s == "" {
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		if s[i] < '0' || s[i] > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 func cgroupRel(procCgroup string) string {

@@ -1,0 +1,13 @@
+[Unit]
+Description=Export container env for Nero daemon
+DefaultDependencies=no
+After=systemd-tmpfiles-setup.service
+Before=nero-daemon.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/lib/nero/export-container-env
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

@@ -9,7 +9,7 @@ v1 is one allowlisted human. Nero does not provision users. AuthKit account crea
 Resource (Nero APIs): `https://nero.grogan.dev/`
 
 - Control plane: `https://nero.grogan.dev/api/workspaces` (list, create, wake, stop, heartbeat)
-- Workspace daemon (once wired): `https://nero.grogan.dev/w/{workspaceId}/`
+- Workspace daemon: `https://nero.grogan.dev/w/{workspaceId}/` (Caddy reverse_proxy to that container; AuthKit session required; the guest never sees `wos-session`)
 
 ## Step 1 — Discover
 

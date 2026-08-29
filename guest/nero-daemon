@@ -1,0 +1,3 @@
+#!/bin/sh
+export NODE_PATH="${NODE_PATH:-/usr/lib/nero/daemon/node_modules}"
+exec /usr/local/bin/node /usr/lib/nero/daemon/main.js "$@"

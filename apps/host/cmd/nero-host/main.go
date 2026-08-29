@@ -24,7 +24,15 @@ func main() {
 		os.Exit(1)
 	}
 
-	rt := runtime.NewDocker(cfg.GuestImage, cfg.ZFSPool, cfg.MountRoot, cfg.HostToken, log)
+	rt := runtime.NewDocker(runtime.DockerSettings{
+		Image:            cfg.GuestImage,
+		Pool:             cfg.ZFSPool,
+		MountRoot:        cfg.MountRoot,
+		HostToken:        cfg.HostToken,
+		AccessToken:      cfg.AccessToken,
+		OpenRouterAPIKey: cfg.OpenRouterAPIKey,
+		SocketDir:        cfg.SocketDir,
+	}, log)
 	ll := landlord.New(rt, landlord.RealClock{}, log)
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()

@@ -8,6 +8,7 @@ Requires=docker.service
 Type=simple
 User=root
 EnvironmentFile=-/etc/nero/host.env
+ExecStartPre=/bin/mkdir -p /run/nero/w
 ExecStart=/usr/local/bin/nero-host
 # docker.service restart SIGTERMs us (exit 0). always bring the landlord back.
 Restart=always

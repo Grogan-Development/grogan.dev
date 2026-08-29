@@ -129,6 +129,22 @@ func (f *Fake) ApplyCgroup(_ context.Context, id string) error {
 	return nil
 }
 
+func (f *Fake) EnsureProxy(_ context.Context, id string) error {
+	if _, err := f.InspectContainer(context.Background(), id); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (f *Fake) CloseProxy(_ string) {}
+
+func (f *Fake) DialAddr(id string) (string, error) {
+	if !f.Running(id) {
+		return "", fmt.Errorf("no host port for %s", id)
+	}
+	return HostDial("8787"), nil
+}
+
 func (f *Fake) Running(id string) bool {
 	f.mu.Lock()
 	defer f.mu.Unlock()

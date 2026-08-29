@@ -3,9 +3,36 @@
 #
 # grogan.dev      landing + AuthKit start (GET /auth/login, /auth/callback, /auth/logout)
 # www.grogan.dev  → grogan.dev
-# nero.grogan.dev control plane + AuthKit callback + GET /auth.md (nero-host :8080)
-# /auth.md        public skill (canonical on this host; humans stay AuthKit-only)
-# /w/*            placeholder until PR 10; strip Cookie wos-session on that proxy
+# nero.grogan.dev skin + control plane + workspace proxy
+#   /                 adapted web (file_server of /var/lib/nero/web)
+#   /w/:id/           SPA; daemon prefixes reverse_proxy to the workspace
+#   /auth.md          public skill (canonical on this host; humans stay AuthKit-only)
+#
+# Workspace mapping (host landlord):
+#   docker publish  127.0.0.1:<ephemeral>:8787  (container Nero daemon)
+#   unix socket     /run/nero/w/<id>.sock       (host forwarder → that port)
+# Caddy asks nero-host GET /internal/caddy-auth (loopback) which checks
+# wos-session and returns X-Nero-Dial=127.0.0.1:<port> plus Bearer NERO_ACCESS_TOKEN.
+# Cookie wos-session is stripped on the guest hop.
+
+(nero_daemon_proxy) {
+	forward_auth 127.0.0.1:8080 {
+		uri /internal/caddy-auth
+		header_up X-Nero-Workspace {vars.workspace_id}
+		copy_headers Authorization X-Nero-Dial
+	}
+	reverse_proxy {http.request.header.X-Nero-Dial} {
+		header_up -Cookie
+		header_up -X-Nero-Dial
+		header_up -X-Nero-Workspace
+		flush_interval -1
+		transport http {
+			read_timeout 0
+			write_timeout 0
+			dial_timeout 10s
+		}
+	}
+}
 
 www.grogan.dev {
 	redir https://grogan.dev{uri} permanent
@@ -23,12 +50,50 @@ nero.grogan.dev {
 		reverse_proxy 127.0.0.1:8080
 	}
 
-	handle /w/* {
-		# PR 10: reverse_proxy to the workspace Nero daemon
-		respond "workspace proxy not wired yet" 501
+	handle /auth/* {
+		reverse_proxy 127.0.0.1:8080
+	}
+
+	handle /healthz {
+		reverse_proxy 127.0.0.1:8080
+	}
+
+	handle /api/workspaces* {
+		reverse_proxy 127.0.0.1:8080
+	}
+
+	@ws_daemon path_regexp ws_daemon ^/w/([0-9a-f]+)/(ws|vnc|websockify|api|oauth|\.well-known)(/.*)?$
+	handle @ws_daemon {
+		route {
+			vars workspace_id {re.ws_daemon.1}
+			header Set-Cookie "nero-ws={vars.workspace_id}; Path=/; Secure; HttpOnly; SameSite=Lax"
+			rewrite * /{re.ws_daemon.2}{re.ws_daemon.3}
+			import nero_daemon_proxy
+		}
+	}
+
+	@root_daemon {
+		path /ws /ws/* /vnc /vnc/* /websockify /websockify/* /oauth /oauth/* /.well-known /.well-known/* /api /api/*
+		not path /api/workspaces /api/workspaces/*
+	}
+	handle @root_daemon {
+		route {
+			vars workspace_id {http.request.cookie.nero-ws}
+			import nero_daemon_proxy
+		}
+	}
+
+	@spa_ws path_regexp spa_ws ^/w/([0-9a-f]+)(/.*)?$
+	handle @spa_ws {
+		header Set-Cookie "nero-ws={re.spa_ws.1}; Path=/; Secure; HttpOnly; SameSite=Lax"
+		root * /var/lib/nero/web
+		try_files {path} /index.html
+		file_server
 	}
 
 	handle {
-		reverse_proxy 127.0.0.1:8080
+		root * /var/lib/nero/web
+		try_files {path} /index.html
+		file_server
 	}
 }

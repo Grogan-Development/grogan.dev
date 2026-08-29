@@ -2,6 +2,16 @@ package config
 
 import "testing"
 
+func TestFromEnvSecretsAndSocketDir(t *testing.T) {
+	t.Setenv("NERO_ACCESS_TOKEN", "access")
+	t.Setenv("OPENROUTER_API_KEY", "sk-or")
+	t.Setenv("NERO_SOCK_DIR", "/tmp/nero-w")
+	cfg := FromEnv()
+	if cfg.AccessToken != "access" || cfg.OpenRouterAPIKey != "sk-or" || cfg.SocketDir != "/tmp/nero-w" {
+		t.Fatalf("%+v", cfg)
+	}
+}
+
 func TestAuthReady(t *testing.T) {
 	ok := Config{
 		WorkOSClientID: "client",

@@ -23,4 +23,8 @@ type Runtime interface {
 	InspectContainer(ctx context.Context, id string) (ContainerInfo, error)
 	ListContainers(ctx context.Context) ([]ContainerInfo, error)
 	ApplyCgroup(ctx context.Context, id string) error
+	EnsureProxy(ctx context.Context, id string) error
+	CloseProxy(id string)
+	// DialAddr is the host address Caddy reverse_proxies to (127.0.0.1:<port>).
+	DialAddr(id string) (string, error)
 }

@@ -37,6 +37,7 @@ func testServer(t *testing.T, bypass bool) (*httptest.Server, *landlord.Landlord
 		CookiePassword: testCookiePW,
 		AllowedEmails:  []string{"z@grogan.dev"},
 		HostToken:      "host-token-test",
+		AccessToken:    "guest-token",
 	}
 	srv := New(cfg, ll, wo, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	ts := httptest.NewServer(srv.Handler())
@@ -770,5 +771,112 @@ func TestUnauthedWorkspaceMutations(t *testing.T) {
 	defer res.Body.Close()
 	if res.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("expired status=%d", res.StatusCode)
+	}
+}
+
+func TestCaddyAuthIssuesDial(t *testing.T) {
+	ts, _, rt, _ := testServer(t, true)
+	res, err := http.Post(ts.URL+"/api/workspaces", "application/json", strings.NewReader(`{"name":"alpha"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var ws landlord.Workspace
+	if err := json.NewDecoder(res.Body).Decode(&ws); err != nil {
+		t.Fatal(err)
+	}
+	res.Body.Close()
+	if !rt.Running(ws.ID) {
+		t.Fatal("not running")
+	}
+
+	req, _ := http.NewRequest(http.MethodGet, ts.URL+caddyAuthPath, nil)
+	req.Header.Set(headerWorkspace, ws.ID)
+	authRes, err := ts.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	authRes.Body.Close()
+	if authRes.StatusCode != http.StatusNoContent {
+		t.Fatal(authRes.Status)
+	}
+	if got := authRes.Header.Get("Authorization"); got != "Bearer guest-token" {
+		t.Fatalf("authorization=%q", got)
+	}
+	if got := authRes.Header.Get(headerDial); got != "127.0.0.1:8787" {
+		t.Fatalf("dial=%q", got)
+	}
+
+	req, _ = http.NewRequest(http.MethodGet, ts.URL+caddyAuthPath, nil)
+	req.Header.Set(headerForwardedURI, "/w/"+ws.ID+"/ws")
+	authRes, err = ts.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	authRes.Body.Close()
+	if authRes.StatusCode != http.StatusNoContent {
+		t.Fatal(authRes.Status)
+	}
+
+	req, _ = http.NewRequest(http.MethodGet, ts.URL+caddyAuthPath, nil)
+	req.Header.Set(headerForwardedURI, "/vnc/")
+	req.AddCookie(&http.Cookie{Name: runtime.WSCookieName, Value: ws.ID})
+	authRes, err = ts.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	authRes.Body.Close()
+	if authRes.StatusCode != http.StatusNoContent {
+		t.Fatal(authRes.Status)
+	}
+
+	req, _ = http.NewRequest(http.MethodGet, ts.URL+caddyAuthPath, nil)
+	req.Header.Set(headerWorkspace, "deadbeefdeadbeef")
+	authRes, err = ts.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	authRes.Body.Close()
+	if authRes.StatusCode != http.StatusNotFound {
+		t.Fatalf("unknown id status=%d", authRes.StatusCode)
+	}
+
+	stop, err := http.Post(ts.URL+"/api/workspaces/"+ws.ID+"/stop", "application/json", http.NoBody)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stop.Body.Close()
+	req, _ = http.NewRequest(http.MethodGet, ts.URL+caddyAuthPath, nil)
+	req.Header.Set(headerWorkspace, ws.ID)
+	authRes, err = ts.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	authRes.Body.Close()
+	if authRes.StatusCode != http.StatusServiceUnavailable {
+		t.Fatalf("stopped status=%d", authRes.StatusCode)
+	}
+}
+
+func TestCaddyAuthRequiresSessionWithoutBypass(t *testing.T) {
+	ts, _, _, _ := testServer(t, false)
+	res, err := http.Get(ts.URL + caddyAuthPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	res.Body.Close()
+	if res.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("status=%d", res.StatusCode)
+	}
+}
+
+func TestWorkspaceIDFromURI(t *testing.T) {
+	if got := workspaceIDFromURI("/w/0123456789abcdef/ws"); got != "0123456789abcdef" {
+		t.Fatalf("got %q", got)
+	}
+	if got := workspaceIDFromURI("/w/0123456789abcdef/vnc/?autoconnect=1"); got != "0123456789abcdef" {
+		t.Fatalf("query got %q", got)
+	}
+	if workspaceIDFromURI("/vnc/") != "" || workspaceIDFromURI("/w/../etc") != "" {
+		t.Fatal("should reject")
 	}
 }

@@ -18,6 +18,7 @@ import (
 var (
 	ErrNotFound    = errors.New("workspace not found")
 	ErrInvalidName = errors.New("invalid name")
+	ErrNotRunning  = errors.New("workspace not running")
 )
 
 // opTimeout covers docker stop -t 20 plus inspect. Detached from HTTP cancel
@@ -126,6 +127,7 @@ func (l *Landlord) Restore(_ context.Context) error {
 	}
 	l.mu.Unlock()
 	l.enforceBudget()
+	l.ensureProxies()
 	l.log.Info("restored workspaces", "n", len(l.List()))
 	return nil
 }
@@ -285,6 +287,7 @@ func (l *Landlord) ReconcileIdle(_ context.Context) []string {
 	}
 
 	l.reapplyCgroups()
+	l.ensureProxies()
 
 	now := l.clock.Now()
 	l.mu.Lock()
@@ -391,6 +394,9 @@ func (l *Landlord) tryStart(id string) error {
 	}
 	l.removeFromQueueLocked(id)
 	l.mu.Unlock()
+	if err := l.rtEnsureProxy(id); err != nil {
+		l.log.Warn("host socket bind failed", "id", id, "err", err)
+	}
 	return nil
 }
 
@@ -418,6 +424,7 @@ func (l *Landlord) stopOp(id string, queueAfter bool) (Workspace, error) {
 			}
 			return Workspace{}, fmt.Errorf("container %s still running after stop", id)
 		}
+		l.rt.CloseProxy(id)
 	}
 
 	l.mu.Lock()
@@ -572,19 +579,54 @@ func (l *Landlord) enforceBudget() {
 }
 
 func (l *Landlord) reapplyCgroups() {
+	for _, id := range l.runningIDs() {
+		if err := l.rtApplyCgroup(id); err != nil {
+			l.log.Warn("cgroup reapply failed", "id", id, "err", err)
+		}
+	}
+}
+
+func (l *Landlord) ensureProxies() {
+	for _, id := range l.runningIDs() {
+		if err := l.rtEnsureProxy(id); err != nil {
+			l.log.Warn("host socket bind failed", "id", id, "err", err)
+		}
+	}
+}
+
+func (l *Landlord) runningIDs() []string {
 	l.mu.Lock()
+	defer l.mu.Unlock()
 	var ids []string
 	for id, ws := range l.workspaces {
 		if ws.State == StateRunning {
 			ids = append(ids, id)
 		}
 	}
-	l.mu.Unlock()
-	for _, id := range ids {
-		if err := l.rtApplyCgroup(id); err != nil {
-			l.log.Warn("cgroup reapply failed", "id", id, "err", err)
-		}
+	sort.Strings(ids)
+	return ids
+}
+
+func (l *Landlord) DialAddr(id string) (string, error) {
+	l.mu.Lock()
+	ws, ok := l.workspaces[id]
+	if !ok {
+		l.mu.Unlock()
+		return "", ErrNotFound
 	}
+	if ws.State != StateRunning {
+		l.mu.Unlock()
+		return "", ErrNotRunning
+	}
+	l.mu.Unlock()
+	addr, err := l.rt.DialAddr(id)
+	if err != nil {
+		return "", err
+	}
+	if addr == "" {
+		return "", ErrNotRunning
+	}
+	return addr, nil
 }
 
 func (l *Landlord) rtStart(id string) error {
@@ -615,6 +657,12 @@ func (l *Landlord) rtApplyCgroup(id string) error {
 	ctx, cancel := opContext()
 	defer cancel()
 	return l.rt.ApplyCgroup(ctx, id)
+}
+
+func (l *Landlord) rtEnsureProxy(id string) error {
+	ctx, cancel := opContext()
+	defer cancel()
+	return l.rt.EnsureProxy(ctx, id)
 }
 
 func (l *Landlord) rtCreateDataset(id string) error {
