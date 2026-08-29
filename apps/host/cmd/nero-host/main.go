@@ -20,7 +20,7 @@ func main() {
 	log := slog.New(slog.NewTextHandler(os.Stdout, nil))
 	cfg := config.FromEnv()
 
-	rt := runtime.NewDocker(cfg.GuestImage, cfg.ZFSPool, cfg.MountRoot, log)
+	rt := runtime.NewDocker(cfg.GuestImage, cfg.ZFSPool, cfg.MountRoot, cfg.HostToken, log)
 	ll := landlord.New(rt, landlord.RealClock{}, log)
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()

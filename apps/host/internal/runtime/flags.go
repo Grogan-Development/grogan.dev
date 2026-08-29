@@ -24,8 +24,8 @@ func DatasetName(pool, id string) string { return pool + "/nero/" + id }
 
 func MountPath(mountRoot, id string) string { return mountRoot + "/" + id }
 
-func DockerCreateArgs(image, id, name, mount string) []string {
-	return []string{
+func DockerCreateArgs(image, id, name, mount, hostToken string) []string {
+	args := []string{
 		"create",
 		"--name", ContainerName(id),
 		"--label", "nero.workspace.id=" + id,
@@ -36,6 +36,10 @@ func DockerCreateArgs(image, id, name, mount string) []string {
 		"--stop-timeout", fmt.Sprintf("%d", StopTimeoutSec),
 		"--hostname", "ws-" + id,
 		"--mount", "type=bind,source=" + mount + ",target=/home/nero",
-		image,
+		"--env", "NERO_WORKSPACE_ID=" + id,
 	}
+	if hostToken != "" {
+		args = append(args, "--env", "NERO_HOST_TOKEN="+hostToken)
+	}
+	return append(args, image)
 }

@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"crypto/hmac"
 	"encoding/json"
 	"errors"
 	"io"
@@ -16,6 +17,7 @@ import (
 )
 
 const afterLoginURL = "https://nero.grogan.dev/"
+const afterLogoutURL = "https://grogan.dev/"
 
 type Server struct {
 	cfg    config.Config
@@ -37,11 +39,13 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /{$}", s.landing)
 	mux.HandleFunc("GET /auth/login", s.login)
 	mux.HandleFunc("GET /auth/callback", s.callback)
+	mux.HandleFunc("GET /auth/logout", s.logout)
 	mux.Handle("GET /api/workspaces", s.authed(s.list))
 	mux.Handle("POST /api/workspaces", s.authed(s.create))
 	mux.Handle("POST /api/workspaces/{id}/wake", s.authed(s.wake))
 	mux.Handle("POST /api/workspaces/{id}/stop", s.authed(s.stop))
 	mux.Handle("POST /api/workspaces/{id}/heartbeat", s.authed(s.heartbeat))
+	mux.HandleFunc("POST /api/workspaces/{id}/job-heartbeat", s.jobHeartbeat)
 	return mux
 }
 
@@ -51,7 +55,8 @@ func (s *Server) authed(next http.HandlerFunc) http.Handler {
 			next(w, r)
 			return
 		}
-		if _, err := auth.FromRequest(r, s.cfg.CookiePassword); err != nil {
+		sess, err := auth.FromRequest(r, s.cfg.CookiePassword)
+		if err != nil || !s.cfg.EmailAllowed(sess.Email) {
 			writeErr(w, http.StatusUnauthorized, "unauthorized")
 			return
 		}
@@ -73,12 +78,17 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, "workos not configured")
 		return
 	}
+	origin, err := auth.RedirectOrigin(r)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid host")
+		return
+	}
 	state, err := auth.RandomState()
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "state")
 		return
 	}
-	redirectURI := requestOrigin(r) + "/auth/callback"
+	redirectURI := origin + "/auth/callback"
 	loc, err := auth.AuthorizationURL(s.cfg.AuthKitURL, s.cfg.WorkOSClientID, redirectURI, state)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "authkit url")
@@ -89,6 +99,11 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) callback(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
+	if _, err := auth.RedirectOrigin(r); err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid host")
+		return
+	}
 	code := r.URL.Query().Get("code")
 	if code == "" {
 		writeErr(w, http.StatusBadRequest, "missing code")
@@ -107,6 +122,10 @@ func (s *Server) callback(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
+	if !s.cfg.DevBypass && !s.cfg.EmailAllowed(user.Email) {
+		writeErr(w, http.StatusForbidden, "forbidden")
+		return
+	}
 	sealed, err := auth.Seal(auth.Session{UserID: user.ID, Email: user.Email}, s.cfg.CookiePassword)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "session")
@@ -115,6 +134,12 @@ func (s *Server) callback(w http.ResponseWriter, r *http.Request) {
 	auth.ClearStateCookie(w)
 	http.SetCookie(w, auth.SessionCookie(sealed, r))
 	http.Redirect(w, r, afterLoginURL, http.StatusFound)
+}
+
+func (s *Server) logout(w http.ResponseWriter, r *http.Request) {
+	auth.ClearStateCookie(w)
+	http.SetCookie(w, auth.ClearSessionCookie(r))
+	http.Redirect(w, r, afterLogoutURL, http.StatusFound)
 }
 
 func (s *Server) list(w http.ResponseWriter, _ *http.Request) {
@@ -185,12 +210,48 @@ func (s *Server) heartbeat(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, ws)
 }
 
-func requestOrigin(r *http.Request) string {
-	proto := "http"
-	if r.TLS != nil || strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https") {
-		proto = "https"
+type jobHeartbeatBody struct {
+	Running    *bool `json:"running"`
+	JobRunning *bool `json:"jobRunning"`
+}
+
+func (s *Server) jobHeartbeat(w http.ResponseWriter, r *http.Request) {
+	if !s.cfg.DevBypass && !hostTokenOK(r, s.cfg.HostToken) {
+		writeErr(w, http.StatusUnauthorized, "unauthorized")
+		return
 	}
-	return proto + "://" + r.Host
+	var body jobHeartbeatBody
+	if err := decodeOptional(r, &body); err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid json")
+		return
+	}
+	running := true
+	switch {
+	case body.Running != nil:
+		running = *body.Running
+	case body.JobRunning != nil:
+		running = *body.JobRunning
+	}
+	ws, err := s.ll.Heartbeat(r.PathValue("id"), landlord.Heartbeat{JobRunning: &running})
+	if err != nil {
+		writeLandlordErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, ws)
+}
+
+func hostTokenOK(r *http.Request, token string) bool {
+	if token == "" {
+		return false
+	}
+	got := ""
+	if a := r.Header.Get("Authorization"); len(a) >= 7 && strings.EqualFold(a[:7], "bearer ") {
+		got = strings.TrimSpace(a[7:])
+	}
+	if got == "" {
+		got = r.Header.Get("X-Nero-Host-Token")
+	}
+	return hmac.Equal([]byte(got), []byte(token))
 }
 
 func writeLandlordErr(w http.ResponseWriter, err error) {

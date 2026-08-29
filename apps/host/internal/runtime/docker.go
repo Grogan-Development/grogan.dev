@@ -17,13 +17,14 @@ type Docker struct {
 	Image     string
 	Pool      string
 	MountRoot string
+	HostToken string
 	log       *slog.Logger
 	run       func(ctx context.Context, name string, args ...string) (string, error)
 	readFile  func(name string) ([]byte, error)
 	writeFile func(name string, data []byte, perm os.FileMode) error
 }
 
-func NewDocker(image, pool, mountRoot string, log *slog.Logger) *Docker {
+func NewDocker(image, pool, mountRoot, hostToken string, log *slog.Logger) *Docker {
 	if log == nil {
 		log = slog.Default()
 	}
@@ -31,6 +32,7 @@ func NewDocker(image, pool, mountRoot string, log *slog.Logger) *Docker {
 		Image:     image,
 		Pool:      pool,
 		MountRoot: mountRoot,
+		HostToken: hostToken,
 		log:       log,
 		run:       runCmd,
 		readFile:  os.ReadFile,
@@ -66,7 +68,7 @@ func (d *Docker) DestroyDataset(ctx context.Context, id string) error {
 
 func (d *Docker) CreateContainer(ctx context.Context, spec WorkspaceSpec) error {
 	mp := MountPath(d.MountRoot, spec.ID)
-	args := DockerCreateArgs(d.Image, spec.ID, spec.Name, mp)
+	args := DockerCreateArgs(d.Image, spec.ID, spec.Name, mp, d.HostToken)
 	_, err := d.run(ctx, "docker", args...)
 	return err
 }

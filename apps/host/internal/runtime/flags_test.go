@@ -6,8 +6,11 @@ import (
 )
 
 func TestDockerCreateArgsCgroupPolicy(t *testing.T) {
-	args := DockerCreateArgs("nero-guest:v1", "abc", "ws", "/var/lib/nero/ws/abc")
+	args := DockerCreateArgs("nero-guest:v1", "abc", "ws", "/var/lib/nero/ws/abc", "tok")
 	joined := strings.Join(args, " ")
+	if !strings.Contains(joined, "NERO_HOST_TOKEN=tok") || !strings.Contains(joined, "NERO_WORKSPACE_ID=abc") {
+		t.Fatalf("guest env missing: %s", joined)
+	}
 	want := []string{
 		"--memory=64g",
 		"--memory-swap=64g",

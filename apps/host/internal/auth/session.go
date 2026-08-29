@@ -172,11 +172,31 @@ func sessionKey(password string) []byte {
 	return sum[:]
 }
 
+func ClearSessionCookie(r *http.Request) *http.Cookie {
+	return &http.Cookie{
+		Name:     CookieName,
+		Value:    "",
+		Path:     "/",
+		Domain:   cookieDomain(r.Host),
+		MaxAge:   -1,
+		HttpOnly: true,
+		Secure:   isHTTPS(r),
+		SameSite: http.SameSiteLaxMode,
+	}
+}
+
 func isHTTPS(r *http.Request) bool {
 	if r.TLS != nil {
 		return true
 	}
-	return strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https")
+	// App hosts are TLS-terminated at Caddy.
+	if cookieDomain(r.Host) == "grogan.dev" {
+		return true
+	}
+	if RemoteLoopback(r) && strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https") {
+		return true
+	}
+	return false
 }
 
 func cookieDomain(host string) string {
