@@ -20,6 +20,9 @@ import (
 const afterLoginURL = "https://nero.grogan.dev/"
 const afterLogoutURL = "https://grogan.dev/"
 
+// Canonical skill URL for 401 WWW-Authenticate on workspace APIs.
+const authMDURL = "https://nero.grogan.dev/auth.md"
+
 type Server struct {
 	cfg    config.Config
 	ll     *landlord.Landlord
@@ -59,7 +62,7 @@ func (s *Server) authed(next http.HandlerFunc) http.Handler {
 		}
 		sess, err := auth.FromRequest(r, s.cfg.CookiePassword)
 		if err != nil || !s.cfg.EmailAllowed(sess.Email) {
-			writeErr(w, http.StatusUnauthorized, "unauthorized")
+			writeWorkspaceUnauthorized(w)
 			return
 		}
 		next(w, r)
@@ -304,4 +307,9 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 
 func writeErr(w http.ResponseWriter, status int, msg string) {
 	writeJSON(w, status, map[string]string{"error": msg})
+}
+
+func writeWorkspaceUnauthorized(w http.ResponseWriter) {
+	w.Header().Set("WWW-Authenticate", `Bearer resource_metadata="`+authMDURL+`"`)
+	writeErr(w, http.StatusUnauthorized, "unauthorized")
 }

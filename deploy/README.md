@@ -44,7 +44,7 @@ WorkOS keys, allowlist, host token, and AuthKit cookie material belong in that e
 
 In the WorkOS dashboard: **Authentication → disable Sign up** (email+password sign-up is on by default). v1 is one human; the app still fail-closes on `NERO_ALLOWED_EMAILS`.
 
-Human `GET/POST /api/workspaces*` (list/create/wake/stop/heartbeat) requires a valid `wos-session` whose email is on the allowlist, unless `NERO_DEV_BYPASS=1`. Guest job keep-awake is `POST /api/workspaces/:id/job-heartbeat` with `Authorization: Bearer $NERO_HOST_TOKEN` (or `X-Nero-Host-Token`) — not the human cookie. Healthz, landing, `/auth.md`, `/auth/login`, `/auth/callback`, and `/auth/logout` are public. Humans still AuthKit-only: agentic registration is the `auth.md` skill for agents, not a substitute for `wos-session`.
+Human `GET/POST /api/workspaces*` (list/create/wake/stop/heartbeat) requires a valid `wos-session` whose email is on the allowlist, unless `NERO_DEV_BYPASS=1`. Guest job keep-awake is `POST /api/workspaces/:id/job-heartbeat` with `Authorization: Bearer $NERO_HOST_TOKEN` (or `X-Nero-Host-Token`) — not the human cookie. Healthz, landing, `/auth.md`, `/auth/login`, `/auth/callback`, and `/auth/logout` are public. Humans still AuthKit-only. `GET /auth.md` describes that fact; it is not an OAuth AS. Unauthenticated `/api/workspaces*` returns `WWW-Authenticate: Bearer resource_metadata="https://nero.grogan.dev/auth.md"`.
 
 ## API
 
@@ -52,7 +52,7 @@ JSON. Path IDs are workspace ids.
 
 - `GET /healthz`
 - `GET /` — grogan.dev landing; portal starts AuthKit via `/auth/login`
-- `GET /auth.md` — WorkOS agentic registration skill (public markdown). Resource is `https://nero.grogan.dev/` (control plane `/api/workspaces`, workspace `/w/:id/`). Humans still use AuthKit.
+- `GET /auth.md` — public markdown skill. Discover is AuthKit hosted UI (`/auth/login`). `/api/workspaces*` requires a human `wos-session`. This host does not run token/identity endpoints.
 - `GET /auth/login` — redirect to AuthKit hosted UI (`provider=authkit`, S256 PKCE). `redirect_uri` host must be `grogan.dev`, `www.grogan.dev`, or `nero.grogan.dev` (default ports stripped). Always `https://`.
 - `GET /auth/callback` — User Management `authorization_code` exchange; allowlist email; set session; redirect to `https://nero.grogan.dev/`
 - `GET /auth/logout` — expire `wos-session` (`Domain=grogan.dev`, Path=/, MaxAge=-1); redirect to `https://grogan.dev/`. WorkOS dashboard sign-out does **not** revoke this cookie.

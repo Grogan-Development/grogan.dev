@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"nero-host/authmd"
 	"nero-host/internal/auth"
 	"nero-host/internal/config"
 	"nero-host/internal/landlord"
@@ -119,15 +120,17 @@ func TestAuthMD(t *testing.T) {
 	if res.StatusCode != 200 {
 		t.Fatal(res.Status)
 	}
-	ct := res.Header.Get("Content-Type")
-	if !strings.HasPrefix(ct, "text/markdown") {
-		t.Fatalf("content-type=%s", ct)
+	if got := res.Header.Get("Content-Type"); got != "text/markdown; charset=utf-8" {
+		t.Fatalf("content-type=%s", got)
 	}
 	b, err := io.ReadAll(res.Body)
 	if err != nil {
 		t.Fatal(err)
 	}
 	body := string(b)
+	if body != authmd.Markdown {
+		t.Fatal("handler body != embedded auth.md")
+	}
 	for _, heading := range []string{
 		"# auth.md",
 		"## Step 1 — Discover",
@@ -139,14 +142,37 @@ func TestAuthMD(t *testing.T) {
 			t.Errorf("missing heading %q", heading)
 		}
 	}
-	if !strings.Contains(body, "https://nero.grogan.dev/") {
-		t.Fatal("missing Nero resource host")
+	for _, want := range []string{
+		"https://nero.grogan.dev/",
+		"https://nero.grogan.dev/api/workspaces",
+		"https://nero.grogan.dev/auth/login",
+		"https://grogan.dev/auth/login",
+		"wos-session",
+		"AuthKit hosted UI",
+		"requires that session",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("missing %q", want)
+		}
 	}
-	if !strings.Contains(body, "https://nero.grogan.dev/api/workspaces") {
-		t.Fatal("missing Nero API resource")
+	if strings.Contains(strings.ToLower(body), "sign up") {
+		t.Fatal("must not tell agents to sign up")
 	}
-	if !strings.Contains(body, "AuthKit") {
-		t.Fatal("must tell agents humans stay on AuthKit")
+	for _, leak := range []string{
+		"/.well-known/oauth-protected-resource",
+		"/.well-known/oauth-authorization-server",
+		"/oauth2/token",
+		"/oauth2/revoke",
+		"/agent/identity",
+		"token_endpoint",
+		"identity_endpoint",
+		"pre_claim_scopes",
+		"jwt-bearer",
+		"login_hint",
+	} {
+		if strings.Contains(body, leak) {
+			t.Errorf("must not describe undeployed AS surface %q", leak)
+		}
 	}
 }
 
@@ -159,6 +185,31 @@ func TestAuthRequiredWithoutBypass(t *testing.T) {
 	defer res.Body.Close()
 	if res.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("status=%d", res.StatusCode)
+	}
+	want := `Bearer resource_metadata="https://nero.grogan.dev/auth.md"`
+	if got := res.Header.Get("WWW-Authenticate"); got != want {
+		t.Fatalf("www-authenticate=%q", got)
+	}
+}
+
+func TestBearerDoesNotUnlockWorkspaces(t *testing.T) {
+	ts, _, _, _ := testServer(t, false)
+	req, err := http.NewRequest(http.MethodGet, ts.URL+"/api/workspaces", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Authorization", "Bearer anything")
+	res, err := ts.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("status=%d", res.StatusCode)
+	}
+	want := `Bearer resource_metadata="https://nero.grogan.dev/auth.md"`
+	if got := res.Header.Get("WWW-Authenticate"); got != want {
+		t.Fatalf("www-authenticate=%q", got)
 	}
 }
 
@@ -692,10 +743,14 @@ func TestUnauthedWorkspaceMutations(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		res.Body.Close()
 		if res.StatusCode != http.StatusUnauthorized {
 			t.Errorf("%s %s status=%d", tc.method, tc.path, res.StatusCode)
 		}
+		want := `Bearer resource_metadata="https://nero.grogan.dev/auth.md"`
+		if got := res.Header.Get("WWW-Authenticate"); got != want {
+			t.Errorf("%s %s www-authenticate=%q", tc.method, tc.path, got)
+		}
+		res.Body.Close()
 	}
 
 	sealed, err := auth.Seal(auth.Session{
