@@ -207,8 +207,8 @@ import {
 const SETTLED_TAIL_INITIAL_COUNT = 10;
 const SETTLED_TAIL_PAGE_COUNT = 25;
 // Keep the v2 key so existing preferences survive the v2-to-default rename.
-const SETTLED_SHELF_EXPANDED_KEY = "t3code:sidebar-v2:settled-expanded";
-const SNOOZED_SHELF_EXPANDED_KEY = "t3code:sidebar-v2:snoozed-expanded";
+const SETTLED_SHELF_EXPANDED_KEY = "nero:sidebar-v2:settled-expanded";
+const SNOOZED_SHELF_EXPANDED_KEY = "nero:sidebar-v2:snoozed-expanded";
 
 function compactSidebarTimeLabel(label: string): string {
   if (label === "just now") return "now";
@@ -800,7 +800,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
   const terminalStatus = terminalStatusFromRunningIds(runningTerminalIds);
   const terminalProcessCount = runningTerminalIds.length;
 
-  const gitCwd = thread.worktreePath ?? props.projectCwd;
+  const gitCwd = props.projectCwd;
   const linkedPullRequestStatus = useLinkedThreadPullRequest(
     thread.environmentId,
     thread.linkedPullRequest,
@@ -1642,7 +1642,7 @@ const SidebarSearchResultRow = memo(function SidebarSearchResultRow(props: {
   const { thread } = props;
   // Same details tooltip as the regular rows: a search hit is still a thread,
   // and the hover card is how you disambiguate identically-titled results.
-  const gitCwd = thread.worktreePath ?? props.projectCwd;
+  const gitCwd = props.projectCwd;
   const gitStatus = useEnvironmentQuery(
     (thread.branch != null || thread.worktreePath !== null) && gitCwd !== null
       ? vcsEnvironment.status({
@@ -2380,7 +2380,7 @@ export default function Sidebar() {
         setOpenMobile(false);
       }
       void router.navigate({
-        to: "/$environmentId/$threadId",
+        to: "/w/$workspaceId/$threadId",
         params: buildThreadRouteParams(threadRef),
       });
     },
@@ -2397,7 +2397,14 @@ export default function Sidebar() {
       if (isMobile) {
         setOpenMobile(false);
       }
-      void router.navigate({ to: "/draft/$draftId", params: { draftId } });
+      const session = useComposerDraftStore.getState().getDraftSession(draftId);
+      if (!session) {
+        return;
+      }
+      void router.navigate({
+        to: "/w/$workspaceId/draft/$draftId",
+        params: { workspaceId: session.environmentId, draftId },
+      });
     },
     [clearSelection, isMobile, router, setOpenMobile],
   );
@@ -3107,9 +3114,7 @@ export default function Sidebar() {
         const thread = threadByKeyRef.current.get(threadKey);
         if (!thread) return;
         const threadWorkspacePath =
-          thread.worktreePath ??
-          projectCwdByKey.get(`${thread.environmentId}:${thread.projectId}`) ??
-          null;
+          projectCwdByKey.get(`${thread.environmentId}:${thread.projectId}`) ?? null;
         // Un-settle works on every settled row: for explicit settles it
         // clears the override, for auto-settled rows it pins the thread
         // active until real activity clears the pin. Environments without

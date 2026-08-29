@@ -234,7 +234,7 @@ export function useThreadActionMenu(input: {
             markThreadUnread(scopedThreadKey(threadRef), thread.latestTurn?.completedAt);
             return;
           case "copy-path": {
-            const workspacePath = thread.worktreePath ?? projectCwd;
+            const workspacePath = projectCwd;
             if (!workspacePath) {
               toastManager.add(
                 stackedThreadToast({

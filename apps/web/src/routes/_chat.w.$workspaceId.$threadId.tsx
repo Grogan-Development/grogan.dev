@@ -5,6 +5,7 @@ import ChatView from "../components/ChatView";
 import { threadHasStarted } from "../components/ChatView.logic";
 import { finalizePromotedDraftThreadByRef, useComposerDraftStore } from "../composerDraftStore";
 import { resolveThreadRouteRef, resolveThreadRouteRenderState } from "../threadRoutes";
+import { writeLastWorkspaceId } from "../workspaceIdentity";
 import { resolveThreadSyncPhase } from "../threadSync";
 import { SidebarInset } from "~/components/ui/sidebar";
 import {
@@ -19,7 +20,8 @@ import { environmentShell } from "../state/shell";
 function ChatThreadRouteView() {
   const navigate = useNavigate();
   const threadRef = Route.useParams({
-    select: (params) => resolveThreadRouteRef(params),
+    select: (params) =>
+      resolveThreadRouteRef({ workspaceId: params.workspaceId, threadId: params.threadId }),
   });
   const shell = useEnvironmentQuery(
     threadRef === null ? null : environmentShell.stateAtom(threadRef.environmentId),
@@ -58,6 +60,12 @@ function ChatThreadRouteView() {
   const environmentHasAnyThreads = environmentHasServerThreads || environmentHasDraftThreads;
 
   useEffect(() => {
+    if (threadRef) {
+      writeLastWorkspaceId(threadRef.environmentId);
+    }
+  }, [threadRef]);
+
+  useEffect(() => {
     if (!threadRef || !bootstrapComplete) {
       return;
     }
@@ -92,6 +100,6 @@ function ChatThreadRouteView() {
   );
 }
 
-export const Route = createFileRoute("/_chat/$environmentId/$threadId")({
+export const Route = createFileRoute("/_chat/w/$workspaceId/$threadId")({
   component: ChatThreadRouteView,
 });

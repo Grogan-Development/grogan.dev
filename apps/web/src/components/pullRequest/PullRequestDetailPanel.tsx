@@ -807,7 +807,7 @@ export function PullRequestDetailPanel({
     // A worktree leaves whatever is open alone, which is why it is the default. Checking out in
     // the repository itself is what you want when the point is to run the thing where you
     // already work — and it moves the branch under everything else that is open there.
-    mode: "worktree" | "local" = "worktree",
+    mode: "worktree" | "local" = "local",
   ) => {
     if (!detail || handoff !== null) return;
     if (attachTarget !== null && task !== null) {
@@ -1242,15 +1242,6 @@ export function PullRequestDetailPanel({
                     }
                   />
                   <MenuPopup align="end" side="bottom" className="min-w-72">
-                    <MenuItem onClick={() => startCheckout("worktree")}>
-                      <GitBranchIcon className="mt-0.5 size-3.5 shrink-0 self-start" />
-                      <span className="flex min-w-0 flex-col">
-                        <span>In a separate worktree</span>
-                        <span className="text-xs text-muted-foreground">
-                          Its own folder and thread. Nothing you have open moves.
-                        </span>
-                      </span>
-                    </MenuItem>
                     <MenuItem onClick={() => startCheckout("local")}>
                       <FolderGit2Icon className="mt-0.5 size-3.5 shrink-0 self-start" />
                       <span className="flex min-w-0 flex-col">

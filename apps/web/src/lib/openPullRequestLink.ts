@@ -307,7 +307,8 @@ export function useOpenChangeRequestLink(
         return true;
       }
       void navigate({
-        to: "/pull-requests",
+        to: "/w/$workspaceId/pull-requests",
+        params: { workspaceId: project.environmentId },
         search: {
           involvement: "all",
           // Every state, so the pull request being opened is also in the list behind it whether

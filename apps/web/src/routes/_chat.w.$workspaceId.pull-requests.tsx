@@ -182,7 +182,7 @@ const EMPTY_PREVIEW_DESKTOP_STATE = {};
 const EMPTY_TERMINAL_LABELS = new Map<string, string>();
 const EMPTY_PENDING_SURFACES = new Set<string>();
 
-export const Route = createFileRoute("/_chat/pull-requests")({
+export const Route = createFileRoute("/_chat/w/$workspaceId/pull-requests")({
   validateSearch: (raw: Record<string, unknown>): PullRequestsSearch => ({
     involvement:
       raw.involvement === "reviewing" || raw.involvement === "authored" ? raw.involvement : "all",
@@ -1332,7 +1332,7 @@ function PullRequestsRouteView() {
       ) : !pullRequestsSupported ? (
         <PullRequestsUnavailableState
           title="Pull requests unavailable"
-          error="Update your T3 Code servers to browse pull requests."
+          error="This workspace cannot browse pull requests yet."
         />
       ) : firstLoad ? (
         <PullRequestListGhost rows={7} />
@@ -1556,7 +1556,7 @@ function PullRequestsRouteView() {
         {rightPanelState.isOpen && activePullRequestSurface && panelEnvironmentId !== null ? (
           <RightPanelTabs
             mode="inline"
-            widthStorageKey="t3code:pull-request-panel-width"
+            widthStorageKey="nero:pull-request-panel-width"
             // Default to roughly half the viewport: the PR list needs more
             // room than a chat, so the 540px chat-preview default squashes
             // it. SSR has no window, so fall back to a reasonable width.

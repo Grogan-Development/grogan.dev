@@ -202,7 +202,7 @@ export function PullRequestThreadDialog({
           </DialogTitle>
           <DialogDescription>
             Resolve a {sourceControlPresentation.providerName} {terminology.singular}, then create
-            the draft thread in the main repo or in a dedicated worktree.
+            the draft thread in the workspace checkout.
           </DialogDescription>
         </DialogHeader>
         <DialogPanel className="space-y-4">
@@ -269,7 +269,6 @@ export function PullRequestThreadDialog({
           <Button
             type="button"
             size="sm"
-            variant="outline"
             onClick={() => {
               void handleConfirm("local");
             }}
@@ -280,22 +279,7 @@ export function PullRequestThreadDialog({
               preparePullRequestThreadAction.isPending
             }
           >
-            {preparingMode === "local" ? "Preparing local..." : "Local"}
-          </Button>
-          <Button
-            type="button"
-            size="sm"
-            onClick={() => {
-              void handleConfirm("worktree");
-            }}
-            disabled={
-              !cwd ||
-              !resolvedPullRequest ||
-              isResolving ||
-              preparePullRequestThreadAction.isPending
-            }
-          >
-            {preparingMode === "worktree" ? "Preparing worktree..." : "Worktree"}
+            {preparingMode === "local" ? "Preparing..." : "Checkout"}
           </Button>
         </DialogFooter>
       </DialogPopup>

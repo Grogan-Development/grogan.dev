@@ -16,12 +16,12 @@ const ITEMS: ReadonlyArray<SettingsSearchItem> = [
   {
     id: "network-access",
     title: "Network access",
-    to: "/settings/connections",
+    to: "/settings/archived",
   },
   {
     id: "providers",
     title: "Providers",
-    to: "/settings/providers",
+    to: "/settings/general",
   },
   {
     id: "provider-updates",

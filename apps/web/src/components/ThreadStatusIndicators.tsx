@@ -19,7 +19,7 @@ import { useUiStateStore } from "../uiStateStore";
 import { resolveChangeRequestPresentation } from "../sourceControlPresentation";
 import { resolveThreadStatusPill, type ThreadStatusPill } from "./Sidebar.logic";
 import type { SidebarThreadSummary } from "../types";
-import { formatWorktreePathForDisplay } from "../worktreeCleanup";
+
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
 
 export interface PrStatusIndicator {
@@ -430,37 +430,11 @@ export function terminalStatusFromRunningIds(
 }
 
 export function ThreadWorktreeIndicator({
-  thread,
+  thread: _thread,
 }: {
   thread: Pick<SidebarThreadSummary, "id" | "branch" | "worktreePath">;
 }) {
-  const worktreePath = thread.worktreePath?.trim();
-  if (!worktreePath) {
-    return null;
-  }
-
-  const displayPath = formatWorktreePathForDisplay(worktreePath);
-  const tooltip = thread.branch
-    ? `Worktree: ${displayPath} (${thread.branch})`
-    : `Worktree: ${displayPath}`;
-
-  return (
-    <Tooltip>
-      <TooltipTrigger
-        render={
-          <span
-            role="img"
-            aria-label={tooltip}
-            data-testid={`thread-worktree-${thread.id}`}
-            className="inline-flex items-center justify-center"
-          />
-        }
-      >
-        <FolderGit2Icon className="size-3 text-muted-foreground/40" />
-      </TooltipTrigger>
-      <TooltipPopup side="top">{tooltip}</TooltipPopup>
-    </Tooltip>
-  );
+  return null;
 }
 
 export function ThreadStatusLabel({
@@ -531,7 +505,7 @@ export function ThreadRowLeadingStatus({ thread }: { thread: SidebarThreadSummar
     ),
   );
   const threadProjectCwd = threadProject?.workspaceRoot ?? null;
-  const gitCwd = thread.worktreePath ?? threadProjectCwd;
+  const gitCwd = threadProjectCwd;
   const linkedPullRequest = useLinkedThreadPullRequest(
     thread.environmentId,
     thread.linkedPullRequest,

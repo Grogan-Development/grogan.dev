@@ -97,8 +97,8 @@ describe("projectScripts helpers", () => {
 
     expect(env).toMatchObject({
       T3CODE_PROJECT_ROOT: "/repo",
-      T3CODE_WORKTREE_PATH: "/repo/worktree-a",
     });
+    expect(env.T3CODE_WORKTREE_PATH).toBeUndefined();
   });
 
   it("allows overriding runtime env values", () => {
@@ -115,13 +115,13 @@ describe("projectScripts helpers", () => {
     expect(env.T3CODE_WORKTREE_PATH).toBeUndefined();
   });
 
-  it("prefers the worktree path for script cwd resolution", () => {
+  it("always uses the project cwd for script resolution", () => {
     expect(
       projectScriptCwd({
         project: { cwd: "/repo" },
         worktreePath: "/repo/worktree-a",
       }),
-    ).toBe("/repo/worktree-a");
+    ).toBe("/repo");
     expect(
       projectScriptCwd({
         project: { cwd: "/repo" },

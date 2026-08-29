@@ -163,10 +163,10 @@ describe("ClientSettings sidebar", () => {
 });
 
 describe("ServerSettings.providerInstances (slice-2 invariant)", () => {
-  it("defaults text generation to Luna at low reasoning effort", () => {
+  it("defaults text generation to Nero", () => {
     expect(DEFAULT_SERVER_SETTINGS.textGenerationModelSelection).toEqual({
-      instanceId: ProviderInstanceId.make("codex"),
-      model: "gpt-5.6-luna",
+      instanceId: ProviderInstanceId.make("nero"),
+      model: "z-ai/glm-5.3-flash",
       options: [{ id: "reasoningEffort", value: "low" }],
     });
   });
