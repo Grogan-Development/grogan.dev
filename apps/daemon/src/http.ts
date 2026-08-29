@@ -565,13 +565,16 @@ export const httpRoutesLayer = (daemon: Daemon) =>
       );
 
       // ——— Repo browser (read-only git over the Loom smart-HTTP gateway) ———
-      const loomGitResponse = <A>(effect: Effect.Effect<A, LoomGitError>) =>
-        effect.pipe(
-          Effect.match({
-            onFailure: (error) => json(error.status, { error: error.message }),
-            onSuccess: (response) => response as HttpServerResponse.HttpServerResponse,
-          }),
-        );
+      const loomGitResponse = <A>(fn: () => A) => {
+        try {
+          return json(200, fn());
+        } catch (error) {
+          const status = error instanceof LoomGitError ? error.status : 500;
+          return json(status, {
+            error: error instanceof Error ? error.message : "git request failed.",
+          });
+        }
+      };
       const decodeRepoId = (raw: string | undefined): string => {
         const repoId = decodeURIComponent(raw ?? "");
         if (!REPO_ID_PATTERN.test(repoId)) {
@@ -599,9 +602,7 @@ export const httpRoutesLayer = (daemon: Daemon) =>
             yield* requireAuth(daemon);
             const params = yield* HttpRouter.params;
             const repoId = decodeRepoId(params.repoId);
-            return yield* loomGitResponse(
-              Effect.try(() => listRepoRefs(daemon.options.dataDir, repoId)),
-            );
+            return loomGitResponse(() => listRepoRefs(daemon.options.dataDir, repoId));
           }),
         ),
       );
@@ -618,9 +619,7 @@ export const httpRoutesLayer = (daemon: Daemon) =>
             const query = new URL(request.url, "http://localhost").searchParams;
             const ref = query.get("ref") ?? "main";
             const path = (query.get("path") ?? "").replace(/^\.?\//, "").replace(/\/+$/, "");
-            return yield* loomGitResponse(
-              Effect.try(() => listRepoTree(daemon.options.dataDir, repoId, ref, path)),
-            );
+            return loomGitResponse(() => listRepoTree(daemon.options.dataDir, repoId, ref, path));
           }),
         ),
       );
@@ -637,9 +636,7 @@ export const httpRoutesLayer = (daemon: Daemon) =>
             const query = new URL(request.url, "http://localhost").searchParams;
             const ref = query.get("ref") ?? "main";
             const path = (query.get("path") ?? "").replace(/^\.?\//, "");
-            return yield* loomGitResponse(
-              Effect.try(() => getRepoBlob(daemon.options.dataDir, repoId, ref, path)),
-            );
+            return loomGitResponse(() => getRepoBlob(daemon.options.dataDir, repoId, ref, path));
           }),
         ),
       );
@@ -658,8 +655,8 @@ export const httpRoutesLayer = (daemon: Daemon) =>
             const limitRaw = query.get("limit");
             const limit =
               limitRaw !== null && Number.isFinite(Number(limitRaw)) ? Number(limitRaw) : 30;
-            return yield* loomGitResponse(
-              Effect.try(() => listRepoCommits(daemon.options.dataDir, repoId, ref, limit)),
+            return loomGitResponse(() =>
+              listRepoCommits(daemon.options.dataDir, repoId, ref, limit),
             );
           }),
         ),
