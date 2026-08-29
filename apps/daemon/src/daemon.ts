@@ -54,7 +54,7 @@ import {
 import * as DateTime from "effect/DateTime";
 import * as Schema from "effect/Schema";
 
-import { gitRepoRoot, turnWorkspaceDiff } from "./git.ts";
+import { CheckpointStore } from "./checkpoints.ts";
 import { PiHarness } from "./harness.ts";
 import type { DaemonOptions } from "./runtime.ts";
 import {
@@ -182,7 +182,7 @@ export class Daemon {
   private readonly pairing = new Map<string, PairingRecord>();
   private readonly previews = new Map<string, PreviewSession>();
   private readonly liveTurns = new Map<string, string>();
-  private readonly turnDiffs = new Map<string, string>();
+  private readonly checkpoints: CheckpointStore;
   private previewRevision = 0;
   readonly serverEpoch = nextToken("epoch");
   private persistTimer: ReturnType<typeof setTimeout> | undefined;
@@ -194,6 +194,7 @@ export class Daemon {
     ensureDir(options.dataDir);
     ensureDir(Path.join(options.dataDir, "logs"));
     ensureDir(Path.join(options.dataDir, "attachments"));
+    this.checkpoints = new CheckpointStore(options.dataDir, options.workspaceRoot);
     this.restore();
     if (this.projects.size === 0) {
       this.seedWorkspace();
@@ -1238,6 +1239,7 @@ export class Daemon {
     };
     this.emitThreadEvent(next, startEvent);
     this.emitSession(next.id, command.commandId, session);
+    this.checkpoints.ensureBaseline(next.id);
     const apiKey = this.options.openRouterApiKey;
     if (apiKey === undefined || apiKey.length === 0) {
       const assistantId = this.completeAssistant({
@@ -1639,11 +1641,9 @@ export class Daemon {
       this.schedulePersist();
       return;
     }
-    const diff = turnWorkspaceDiff(this.options.workspaceRoot);
-    const isRepo = gitRepoRoot(this.options.workspaceRoot) !== undefined;
     const turnCount = thread.messages.filter((message) => message.role === "user").length;
-    this.turnDiffs.set(`${thread.id}:${turnCount}`, diff.diff);
-    this.turnDiffs.set(thread.id, diff.diff);
+    const snapshot = this.checkpoints.capture(thread.id, turnCount);
+    const checkpointReady = snapshot.tree !== undefined;
     const turnState = input.status === "ready" ? ("completed" as const) : input.status;
     const session: OrchestrationSession = {
       threadId: thread.id,
@@ -1673,9 +1673,9 @@ export class Daemon {
         {
           turnId: input.turnId,
           checkpointTurnCount: turnCount,
-          checkpointRef: CheckpointRef.make(nextToken("ckpt")),
-          status: isRepo ? "ready" : "missing",
-          files: diff.files.map((file) => ({
+          checkpointRef: CheckpointRef.make(snapshot.tree ?? nextToken("ckpt")),
+          status: checkpointReady ? "ready" : "missing",
+          files: snapshot.files.map((file) => ({
             path: file.path,
             kind: file.kind,
             additions: file.additions,
@@ -1705,7 +1705,7 @@ export class Daemon {
         checkpointRef:
           next.checkpoints[next.checkpoints.length - 1]?.checkpointRef ??
           CheckpointRef.make(nextToken("ckpt")),
-        status: isRepo ? "ready" : "missing",
+        status: checkpointReady ? "ready" : "missing",
         files: next.checkpoints[next.checkpoints.length - 1]?.files ?? [],
         assistantMessageId: input.assistantMessageId,
         completedAt: at,
@@ -1716,20 +1716,32 @@ export class Daemon {
   }
 
   getTurnDiff(input: OrchestrationGetTurnDiffInput) {
+    const range = this.checkpoints.rangeDiff(
+      input.threadId,
+      input.fromTurnCount,
+      input.toTurnCount,
+      input.ignoreWhitespace === true,
+    );
     return {
       fromTurnCount: input.fromTurnCount,
       toTurnCount: input.toTurnCount,
       threadId: input.threadId,
-      diff: this.turnDiffs.get(`${input.threadId}:${input.toTurnCount}`) ?? "",
+      diff: range.diff,
     };
   }
 
   getFullThreadDiff(input: OrchestrationGetFullThreadDiffInput) {
+    const range = this.checkpoints.rangeDiff(
+      input.threadId,
+      0,
+      input.toTurnCount,
+      input.ignoreWhitespace === true,
+    );
     return {
       fromTurnCount: 0,
       toTurnCount: input.toTurnCount,
       threadId: input.threadId,
-      diff: this.turnDiffs.get(input.threadId) ?? "",
+      diff: range.diff,
     };
   }
 
