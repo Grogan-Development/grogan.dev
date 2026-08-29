@@ -1,0 +1,46 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "types": ["node"],
+    "plugins": [
+      {
+        "name": "@effect/language-service",
+        "namespaceImportPackages": ["@effect/platform-node", "effect"],
+        "diagnosticSeverity": {
+          "importFromBarrel": "error",
+          "anyUnknownInErrorContext": "off",
+          "unsafeEffectTypeAssertion": "off",
+          "instanceOfSchema": "off",
+          "deterministicKeys": "error",
+          "strictEffectProvide": "off",
+          "missingEffectServiceDependency": "error",
+          "leakingRequirements": "off",
+          "globalErrorInEffectCatch": "error",
+          "globalErrorInEffectFailure": "error",
+          "unknownInEffectCatch": "off",
+          "strictBooleanExpressions": "off",
+          "lazyEffect": "off",
+          "preferSchemaOverJson": "off",
+          "schemaSyncInEffect": "off",
+          "cryptoRandomUUID": "error",
+          "cryptoRandomUUIDInEffect": "error",
+          "nodeBuiltinImport": "off",
+          "globalDate": "off",
+          "globalDateInEffect": "off",
+          "globalConsole": "off",
+          "globalConsoleInEffect": "off",
+          "globalRandom": "off",
+          "globalRandomInEffect": "off",
+          "globalTimers": "off",
+          "globalTimersInEffect": "off",
+          "globalFetch": "off",
+          "globalFetchInEffect": "off",
+          "missingEffectError": "off",
+          "returnEffectInGen": "off",
+          "unnecessaryTypeofType": "off"
+        }
+      }
+    ]
+  },
+  "include": ["src"]
+}

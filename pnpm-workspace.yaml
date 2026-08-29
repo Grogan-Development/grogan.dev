@@ -1,5 +1,6 @@
 packages:
   - apps/web
+  - apps/daemon
   - packages/client-runtime
   - packages/contracts
   - packages/shared
@@ -14,6 +15,7 @@ allowBuilds:
   esbuild: true
   msgpackr-extract: true
   msw: false
+  node-pty: true
   utf-8-validate: false
 
 catalog:

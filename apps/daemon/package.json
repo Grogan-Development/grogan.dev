@@ -1,0 +1,27 @@
+{
+  "name": "@nero/daemon",
+  "version": "0.0.1",
+  "private": true,
+  "bin": {
+    "nero-daemon": "./dist/main.js"
+  },
+  "type": "module",
+  "scripts": {
+    "dev": "node --experimental-strip-types --disable-warning=ExperimentalWarning src/main.ts",
+    "start": "node dist/main.js",
+    "build": "vp build && node -e \"const fs=require('node:fs'); const p='dist/main.js'; const s=fs.readFileSync(p,'utf8'); if(!s.startsWith('#!')) fs.writeFileSync(p, '#!/usr/bin/env node\\n'+s); fs.chmodSync(p, 0o755);\"",
+    "typecheck": "tsgo --noEmit",
+    "test": "vp test run"
+  },
+  "dependencies": {
+    "@effect/platform-node": "catalog:",
+    "@t3tools/contracts": "workspace:*",
+    "effect": "catalog:",
+    "node-pty": "^1.0.0"
+  },
+  "devDependencies": {
+    "@effect/vitest": "catalog:",
+    "@types/node": "catalog:",
+    "vite-plus": "catalog:"
+  }
+}

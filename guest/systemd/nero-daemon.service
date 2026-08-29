@@ -1,7 +1,7 @@
 [Unit]
 Description=Nero workspace daemon
-# Binary lands in a later PR (apps/daemon). Condition keeps the unit inert
-# until that file exists; leave this disabled in the image.
+# Node ESM entry copied to /usr/local/bin/nero-daemon (shebang). The image
+# install in a later PR copies apps/daemon/dist/main.js to that path.
 ConditionPathExists=/usr/local/bin/nero-daemon
 After=network.target user@1000.service
 Wants=user@1000.service
@@ -16,6 +16,10 @@ Environment=USER=nero
 Environment=DISPLAY=:1
 Environment=XDG_RUNTIME_DIR=/run/user/1000
 Environment=DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus
+Environment=NERO_HOME=/home/nero
+Environment=NERO_WORKSPACE=/home/nero
+Environment=NERO_DATA_DIR=/home/nero/.nero
+Environment=PORT=8787
 ExecStart=/usr/local/bin/nero-daemon
 Restart=on-failure
 RestartSec=2
