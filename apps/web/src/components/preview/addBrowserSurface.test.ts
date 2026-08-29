@@ -21,13 +21,13 @@ const threadRef = {
   threadId: "thread-1" as ScopedThreadRef["threadId"],
 };
 
-const snapshot = (tabId: string): PreviewSessionSnapshot => ({
+const seat = (): PreviewSessionSnapshot => ({
   threadId: threadRef.threadId,
-  tabId,
-  navStatus: { _tag: "Idle" },
+  tabId: "seat",
+  navStatus: { _tag: "Success", url: "/vnc/", title: "Agent seat" },
   canGoBack: false,
   canGoForward: false,
-  updatedAt: `2026-06-18T19:00:0${tabId.at(-1) ?? "0"}.000Z`,
+  updatedAt: "2026-06-18T19:00:00.000Z",
 });
 
 beforeEach(() => {
@@ -36,12 +36,10 @@ beforeEach(() => {
 });
 
 describe("addBrowserSurface", () => {
-  it("creates another preview session when a browser tab is already active", async () => {
-    const first = snapshot("tab-1");
-    const second = snapshot("tab-2");
-    applyPreviewServerSnapshot(threadRef, first);
-    useRightPanelStore.getState().openBrowser(threadRef, first.tabId);
-    const openPreview = vi.fn(async (_input: PreviewOpenInput) => AsyncResult.success(second));
+  it("reuses the seat tab instead of minting a second URL preview", async () => {
+    applyPreviewServerSnapshot(threadRef, seat());
+    useRightPanelStore.getState().openBrowser(threadRef, "seat");
+    const openPreview = vi.fn(async (_input: PreviewOpenInput) => AsyncResult.success(seat()));
 
     await addBrowserSurface({ threadRef, openPreview: ({ input }) => openPreview(input) });
 
@@ -49,12 +47,12 @@ describe("addBrowserSurface", () => {
       threadId: "thread-1",
       viewport: FILL_PREVIEW_VIEWPORT,
     });
-    expect(Object.keys(readThreadPreviewState(threadRef).sessions)).toEqual(["tab-1", "tab-2"]);
+    expect(Object.keys(readThreadPreviewState(threadRef).sessions)).toEqual(["seat"]);
     expect(
       selectThreadRightPanelState(
         useRightPanelStore.getState().byThreadKey,
         threadRef,
       ).surfaces.map((surface) => surface.id),
-    ).toEqual(["browser:tab-1", "browser:tab-2"]);
+    ).toEqual(["browser:seat"]);
   });
 });

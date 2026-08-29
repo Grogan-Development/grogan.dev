@@ -1,27 +1,19 @@
-/** Daemon path (and Caddy-later same-origin path) for the KasmVNC HTML client. */
+/** Daemon path for the Kasm HTML client. Vite/Caddy proxy origin `/vnc` (and `/w/:id/vnc`). */
 export const SEAT_VNC_PATH = "/vnc/";
 
 export const SEAT_VNC_TITLE = "Agent seat";
 
-const WORKSPACE_PREFIX = /^(\/w\/[^/]+)/;
+export const HUMAN_DRIVING_PATH = "/api/seat/human-driving";
 
-export function workspacePrefix(pathname: string): string {
-  return pathname.match(WORKSPACE_PREFIX)?.[1] ?? "";
-}
+/** noVNC connects to `ws(s)://host[:port]/${path}` — keep that under origin `/vnc/`. */
+export const SEAT_VNC_WEBSOCKET_PATH = "vnc/websockify";
 
-/** noVNC connects to `ws(s)://host[:port]/${path}`. Keep that under `/vnc/`. */
-export function seatVncWebsocketPath(pathname: string): string {
-  return `${workspacePrefix(pathname)}${SEAT_VNC_PATH}websockify`.replace(/^\//, "");
-}
-
-export function seatVncClientUrl(pathname = "/"): string {
-  const path = `${workspacePrefix(pathname)}${SEAT_VNC_PATH}`;
+export function seatVncClientUrl(): string {
   const params = new URLSearchParams({
     autoconnect: "1",
-    resize: "remote",
-    path: seatVncWebsocketPath(pathname),
+    // Scale in the iframe; do not resize the 1920×1080 Xvnc seat.
+    resize: "scale",
+    path: SEAT_VNC_WEBSOCKET_PATH,
   });
-  return `${path}?${params.toString()}`;
+  return `${SEAT_VNC_PATH}?${params.toString()}`;
 }
-
-export const HUMAN_DRIVING_PATH = "/api/seat/human-driving";

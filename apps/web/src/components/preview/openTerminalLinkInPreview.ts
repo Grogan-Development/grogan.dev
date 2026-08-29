@@ -84,7 +84,7 @@ export async function openTerminalLinkInPreview<E>(
   if (choice === "open-in-preview") {
     const result = await input.openPreview({
       environmentId: input.threadRef.environmentId,
-      input: { threadId: input.threadRef.threadId, url: input.url },
+      input: { threadId: input.threadRef.threadId },
     });
     if (result._tag === "Failure") {
       if (isAtomCommandInterrupted(result)) {

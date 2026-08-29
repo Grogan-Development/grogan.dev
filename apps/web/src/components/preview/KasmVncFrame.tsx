@@ -1,27 +1,23 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 
 import { reportHumanDriving } from "~/lib/humanDriving";
 import { SEAT_VNC_TITLE, seatVncClientUrl } from "~/lib/seatVnc";
 
 const HEARTBEAT_MS = 5_000;
+const src = seatVncClientUrl();
 
 interface Props {
   visible: boolean;
 }
 
 /**
- * Interactive KasmVNC HTML client for the agent seat. Same-origin `/vnc/`
- * (daemon reverse-proxies 127.0.0.1:8444; Caddy will later strip `/w/:id`).
+ * Interactive KasmVNC HTML client. Stays mounted when hidden so the seat
+ * websocket survives tab/route changes. Same-origin `/vnc/` (daemon proxy).
  */
 export function KasmVncFrame({ visible }: Props) {
   const rootRef = useRef<HTMLDivElement | null>(null);
-  const [src] = useState(() =>
-    typeof window === "undefined"
-      ? seatVncClientUrl("/")
-      : seatVncClientUrl(window.location.pathname),
-  );
 
   useEffect(() => {
     if (!visible) {
@@ -40,6 +36,8 @@ export function KasmVncFrame({ visible }: Props) {
       setFocused(true);
     };
     const onFocusOut = (event: FocusEvent) => {
+      // relatedTarget is null when focus moves into the iframe.
+      if (event.relatedTarget === null) return;
       const next = event.relatedTarget;
       if (next instanceof Node && root.contains(next)) return;
       setFocused(false);
@@ -64,10 +62,15 @@ export function KasmVncFrame({ visible }: Props) {
     };
   }, [visible]);
 
-  if (!visible) return null;
-
   return (
-    <div ref={rootRef} className="relative flex min-h-0 flex-1 flex-col" data-seat-vnc tabIndex={0}>
+    <div
+      ref={rootRef}
+      className={
+        visible ? "relative flex h-full min-h-0 flex-1 flex-col" : "pointer-events-none hidden"
+      }
+      data-seat-vnc
+      aria-hidden={!visible}
+    >
       <iframe
         title={SEAT_VNC_TITLE}
         src={src}

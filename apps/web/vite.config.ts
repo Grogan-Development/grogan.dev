@@ -10,7 +10,7 @@ import "vite-plus/test/config";
 import { defineConfig, type Connect, type Plugin } from "vite-plus";
 import pkg from "./package.json" with { type: "json" };
 
-import { DEV_PROXIED_PATH_PREFIXES } from "@t3tools/shared/devProxy";
+import { DEV_PROXIED_PATH_PREFIXES, stripWorkspaceDaemonPrefix } from "@t3tools/shared/devProxy";
 
 import { loadRepoEnv } from "../../scripts/lib/public-config";
 
@@ -118,6 +118,21 @@ const devProxyTarget = resolveDevProxyTarget(process.env.T3CODE_PORT, configured
 // both machines sit idle. Compressing turns it into a few seconds of CPU.
 // Brotli quality 5 keeps encode time in the hundreds of ms; the default
 // (quality 11) would trade the transfer stall for an equally long encode stall.
+/** Rewrite `/w/:id/vnc` and `/w/:id/api` to origin-root daemon paths before the proxy. */
+function workspaceDaemonPrefixPlugin(): Plugin {
+  return {
+    name: "nero:workspace-daemon-prefix",
+    configureServer(server) {
+      server.middlewares.use((req, _res, next) => {
+        if (req.url !== undefined) {
+          req.url = stripWorkspaceDaemonPrefix(req.url);
+        }
+        next();
+      });
+    },
+  };
+}
+
 function devCompressionPlugin(): Plugin {
   return {
     name: "nero:dev-compression",
@@ -148,6 +163,7 @@ export default defineConfig(() => {
   return {
     assetsInclude: ["**/*.wasm"],
     plugins: [
+      workspaceDaemonPrefixPlugin(),
       devCompressionPlugin(),
       tanstackRouter(),
       react(),
@@ -215,7 +231,9 @@ export default defineConfig(() => {
                 {
                   target: devProxyTarget,
                   changeOrigin: true,
-                  ...(prefix === "/ws" || prefix === "/vnc" ? { ws: true } : {}),
+                  ...(prefix === "/ws" || prefix === "/vnc" || prefix === "/websockify"
+                    ? { ws: true }
+                    : {}),
                 },
               ]),
             ),

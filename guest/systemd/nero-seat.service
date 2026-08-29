@@ -15,6 +15,7 @@ Environment=USER=nero
 Environment=DISPLAY=:1
 Environment=XAUTHORITY=/home/nero/.Xauthority
 Environment=XDG_RUNTIME_DIR=/run/user/1000
+Environment=NERO_SEAT_LOCK=/run/nero/seat.lock
 Environment=DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus
 ExecStartPre=/usr/lib/nero/wait-for-display
 ExecStart=/usr/bin/openbox --startup /usr/lib/nero/openbox-startup

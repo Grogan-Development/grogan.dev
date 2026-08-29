@@ -1,11 +1,12 @@
 # KasmVNC serves the agent seat. Bind loopback only. The workspace daemon
-# reverse-proxies same-origin /vnc/ to 127.0.0.1:8444; Caddy on the host
-# will strip /w/:id later. TLS stays off inside the container.
+# reverse-proxies same-origin /vnc/ to 127.0.0.1:8444. Vite (and later Caddy)
+# rewrite /w/:id/vnc and /w/:id/api onto those origin-root paths.
+# TLS stays off inside the container. Geometry stays 1920x1080 (no remote resize).
 desktop:
   resolution:
     width: 1920
     height: 1080
-  allow_resize: true
+  allow_resize: false
   pixel_depth: 24
   gpu:
     hw3d: false

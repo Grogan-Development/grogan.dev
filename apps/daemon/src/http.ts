@@ -290,18 +290,13 @@ export const httpRoutesLayer = (daemon: Daemon) =>
         ),
       );
 
-      const seatDriving = (driving: boolean) => json(200, daemon.setHumanDriving(driving));
-
       yield* router.add(
         "GET",
         "/api/seat/human-driving",
         recover(
           Effect.gen(function* () {
             yield* requireAuth(daemon);
-            return json(200, {
-              driving: daemon.humanDriving.driving,
-              lockPath: daemon.humanDriving.lockPath,
-            });
+            return json(200, { driving: daemon.humanDriving.driving });
           }),
         ),
       );
@@ -319,7 +314,8 @@ export const httpRoutesLayer = (daemon: Daemon) =>
               typeof body === "object" &&
               "driving" in body &&
               body.driving === true;
-            return seatDriving(driving);
+            const result = yield* Effect.promise(() => daemon.setHumanDriving(driving));
+            return json(200, result);
           }),
         ),
       );

@@ -1,14 +1,14 @@
 "use client";
 
 import type { PreviewAnnotationPayload, ScopedThreadRef } from "@t3tools/contracts";
-import { useEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useRef } from "react";
 
 import type { ComposerImageAttachment } from "~/composerDraftStore";
 import { useThreadPreviewState } from "~/previewStateStore";
+import { useSeatVncStore } from "~/seatVncStore";
 import { previewEnvironment } from "~/state/preview";
 import { useAtomCommand } from "~/state/use-atom-command";
 
-import { KasmVncFrame } from "./KasmVncFrame";
 import { openPreviewSession } from "./openPreviewSession";
 import { PreviewPanelShell, type PreviewPanelMode } from "./PreviewPanelShell";
 import { usePreviewSession } from "./usePreviewSession";
@@ -30,6 +30,15 @@ export function PreviewPanel({ mode, threadRef, tabId, visible }: Props) {
   const previewState = useThreadPreviewState(threadRef);
   const open = useAtomCommand(previewEnvironment.open);
   const openedForThread = useRef<string | null>(null);
+  const slotRef = useRef<HTMLDivElement | null>(null);
+
+  useLayoutEffect(() => {
+    if (!visible) return;
+    useSeatVncStore.getState().setSlot(slotRef.current);
+    return () => {
+      useSeatVncStore.getState().setSlot(null);
+    };
+  }, [visible]);
 
   useEffect(() => {
     if (!visible) return;
@@ -58,7 +67,7 @@ export function PreviewPanel({ mode, threadRef, tabId, visible }: Props) {
 
   return (
     <PreviewPanelShell mode={mode}>
-      <KasmVncFrame visible={visible} />
+      <div ref={slotRef} className="min-h-0 flex-1" data-seat-vnc-slot />
     </PreviewPanelShell>
   );
 }

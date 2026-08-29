@@ -25,6 +25,8 @@ export type DaemonOptions = {
   readonly accessToken: string | undefined;
   /** Exclusive flock path shared with `nero-desktop` click/type/key. */
   readonly seatLockPath: string;
+  /** Binary for `nero-desktop hold` (same flock as agent inject). */
+  readonly seatHoldBin: string;
   /** KasmVNC loopback origin, reverse-proxied at `/vnc/`. */
   readonly vncOrigin: string;
 };
@@ -94,6 +96,7 @@ export const loadOptionsFromEnv = (): DaemonOptions => {
     devBypass: envFlag("NERO_DEV_BYPASS"),
     accessToken: Process.env.NERO_ACCESS_TOKEN,
     seatLockPath: Process.env.NERO_SEAT_LOCK ?? "/run/nero/seat.lock",
+    seatHoldBin: Process.env.NERO_DESKTOP ?? "nero-desktop",
     vncOrigin: Process.env.NERO_VNC_ORIGIN ?? "http://127.0.0.1:8444",
   };
 };

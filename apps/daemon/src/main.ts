@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+import * as Process from "node:process";
+
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import { NodeRuntime } from "@effect/platform-node";
@@ -7,7 +9,10 @@ import { daemonLayer } from "./app.ts";
 import { loadOptionsFromEnv } from "./runtime.ts";
 
 const options = loadOptionsFromEnv();
-const { layer } = daemonLayer(options);
+const { layer, daemon } = daemonLayer(options);
+Process.on("exit", () => {
+  daemon.dispose();
+});
 
 NodeRuntime.runMain(
   Effect.gen(function* () {

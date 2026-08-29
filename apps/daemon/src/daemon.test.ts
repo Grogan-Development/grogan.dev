@@ -4,6 +4,7 @@ import * as Http from "node:http";
 import * as Net from "node:net";
 import * as Os from "node:os";
 import * as Path from "node:path";
+import { fileURLToPath } from "node:url";
 
 import {
   AuthAccessTokenType,
@@ -205,6 +206,10 @@ const launch = (options: DaemonOptions) =>
     return fiber;
   });
 
+const NERO_DESKTOP = Path.resolve(
+  fileURLToPath(new URL("../../../guest/seat/nero-desktop", import.meta.url)),
+);
+
 const tmpDaemon = (port: number, extra: Partial<DaemonOptions> = {}) => {
   const root = Fs.mkdtempSync(Path.join(Os.tmpdir(), "nero-daemon-"));
   const workspaceRoot = Path.join(root, "workspace");
@@ -225,6 +230,7 @@ const tmpDaemon = (port: number, extra: Partial<DaemonOptions> = {}) => {
       devBypass: false,
       accessToken: undefined,
       seatLockPath: Path.join(root, "seat.lock"),
+      seatHoldBin: NERO_DESKTOP,
       vncOrigin: "http://127.0.0.1:8444",
       ...extra,
     } satisfies DaemonOptions,
@@ -553,6 +559,16 @@ describe("nero daemon", () => {
       expect(listed.sessions[0]?.tabId).toBe(SEAT_PREVIEW_TAB_ID);
       expect(listed.sessions[0]?.navStatus.url).toBe(SEAT_VNC_URL);
 
+      const urlTab = (yield* Effect.promise(() =>
+        rpcCall(wsUrl, WS_METHODS.previewOpen, {
+          threadId: "thread-seat",
+          url: "https://example.com/app",
+        }),
+      )) as { tabId: string; navStatus: { url?: string; title?: string } };
+      expect(urlTab.tabId).toBe(SEAT_PREVIEW_TAB_ID);
+      expect(urlTab.navStatus.url).toBe(SEAT_VNC_URL);
+      expect(urlTab.navStatus.title).toBe(SEAT_VNC_TITLE);
+
       yield* Fiber.interrupt(fiber);
     }),
   );
@@ -591,6 +607,10 @@ describe("nero daemon", () => {
       const asset = yield* Effect.promise(() => httpRequest(port, "GET", "/vnc/index.html"));
       expect(asset.text).toBe("kasm:/index.html");
 
+      const prefixed = yield* Effect.promise(() => httpRequest(port, "GET", "/w/abc/vnc/"));
+      expect(prefixed.status).toBe(200);
+      expect(prefixed.text).toBe("kasm:/");
+
       const upgraded = yield* Effect.promise(
         () =>
           new Promise<string>((resolve, reject) => {
@@ -628,6 +648,17 @@ describe("nero daemon", () => {
     }),
   );
 
+  it.live("rejects unauthenticated /vnc/", () =>
+    Effect.gen(function* () {
+      const port = yield* Effect.promise(allocatePort);
+      const tmp = tmpDaemon(port, { devBypass: false });
+      const fiber = yield* launch(tmp.options);
+      const page = yield* Effect.promise(() => httpRequest(port, "GET", "/vnc/"));
+      expect(page.status).toBe(401);
+      yield* Fiber.interrupt(fiber);
+    }),
+  );
+
   it.live("human driving holds the seat flock so agent inject queues", () =>
     Effect.gen(function* () {
       const port = yield* Effect.promise(allocatePort);
@@ -638,7 +669,8 @@ describe("nero daemon", () => {
         httpRequest(port, "POST", "/api/seat/human-driving", { json: { driving: true } }),
       );
       expect(on.status).toBe(200);
-      expect(on.json).toMatchObject({ driving: true, lockPath: tmp.options.seatLockPath });
+      expect(on.json).toMatchObject({ driving: true });
+      expect(on.json).not.toHaveProperty("lockPath");
 
       const busy = yield* Effect.promise(async () => {
         const deadline = Date.now() + 3_000;

@@ -14,12 +14,7 @@ import * as Cause from "effect/Cause";
 import * as Data from "effect/Data";
 import { AsyncResult } from "effect/unstable/reactivity";
 
-import { resolveAssetUrl } from "~/assets/assetUrls";
-import {
-  applyPreviewServerSnapshot,
-  isPreviewSupportedInRuntime,
-  rememberPreviewUrl,
-} from "~/previewStateStore";
+import { applyPreviewServerSnapshot, isPreviewSupportedInRuntime } from "~/previewStateStore";
 import { useRightPanelStore } from "~/rightPanelStore";
 
 export const isBrowserPreviewFile = (path: string): boolean =>
@@ -43,11 +38,10 @@ export async function openUrlInPreview<E>(input: {
 }): Promise<AtomCommandResult<void, E>> {
   const result = await input.openPreview({
     environmentId: input.threadRef.environmentId,
-    input: { threadId: input.threadRef.threadId, url: input.url },
+    input: { threadId: input.threadRef.threadId },
   });
   return mapAtomCommandResult(result, (snapshot) => {
     applyPreviewServerSnapshot(input.threadRef, snapshot);
-    rememberPreviewUrl(input.threadRef, input.url);
     useRightPanelStore.getState().openBrowser(input.threadRef, snapshot.tabId);
   });
 }
@@ -71,28 +65,9 @@ export async function openFileInPreview<AssetError, PreviewError>(input: {
       ),
     );
   }
-  const assetResult = await input.createAssetUrl({
-    environmentId: input.threadRef.environmentId,
-    input: {
-      resource: {
-        _tag: "workspace-file",
-        threadId: input.threadRef.threadId,
-        path: input.filePath,
-      },
-    },
-  });
-  if (assetResult._tag === "Failure") {
-    return AsyncResult.failure(assetResult.cause);
-  }
-  const assetUrl = resolveAssetUrl(input.httpBaseUrl, assetResult.value.relativeUrl);
-  if (assetUrl === null) {
-    return AsyncResult.failure(
-      Cause.die(new Error("The environment returned an invalid asset URL.")),
-    );
-  }
   return openUrlInPreview({
     threadRef: input.threadRef,
-    url: assetUrl,
+    url: input.filePath,
     openPreview: input.openPreview,
   });
 }

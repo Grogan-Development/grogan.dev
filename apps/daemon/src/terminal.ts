@@ -94,6 +94,7 @@ const spawnPty = (
     if (value !== undefined) env[key] = value;
   }
   env.TERM = env.TERM ?? "xterm-256color";
+  env.NERO_SEAT_LOCK = env.NERO_SEAT_LOCK ?? "/run/nero/seat.lock";
   if (extraEnv !== undefined) Object.assign(env, extraEnv);
   const pty = loadNodePty();
   if (pty !== null) {

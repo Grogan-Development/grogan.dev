@@ -9,8 +9,11 @@ describe("vnc proxy paths", () => {
     expect(isVncPath("/vnc/index.html")).toBe(true);
     expect(isVncPath("/vnc/websockify")).toBe(true);
     expect(isVncPath("/websockify")).toBe(true);
+    expect(isVncPath("/w/abc/vnc/")).toBe(true);
+    expect(isVncPath("/w/abc/vnc/websockify")).toBe(true);
     expect(isVncPath("/ws")).toBe(false);
     expect(isVncPath("/api/seat/human-driving")).toBe(false);
+    expect(isVncPath("/w/abc/thread-1")).toBe(false);
   });
 
   it("strips /vnc so Kasm sees its own document root", () => {
@@ -19,6 +22,8 @@ describe("vnc proxy paths", () => {
     expect(stripVncPrefix("/vnc/index.html")).toBe("/index.html");
     expect(stripVncPrefix("/vnc/websockify?token=a")).toBe("/websockify?token=a");
     expect(stripVncPrefix("/websockify")).toBe("/websockify");
+    expect(stripVncPrefix("/w/abc/vnc/")).toBe("/");
+    expect(stripVncPrefix("/w/abc/vnc/index.html")).toBe("/index.html");
   });
 
   it("parses Cookie headers for same-origin iframe auth", () => {

@@ -1,6 +1,7 @@
 import * as Http from "node:http";
 import * as Https from "node:https";
 import * as Net from "node:net";
+import * as Tls from "node:tls";
 import type { IncomingMessage, Server, ServerResponse } from "node:http";
 import type { Socket } from "node:net";
 
@@ -26,6 +27,9 @@ const DROP_FROM_UPSTREAM = new Set([
   "content-security-policy",
   "content-length",
   "transfer-encoding",
+  "cross-origin-embedder-policy",
+  "cross-origin-opener-policy",
+  "cross-origin-resource-policy",
 ]);
 
 export const pathnameOf = (url: string | undefined): string => {
@@ -34,8 +38,16 @@ export const pathnameOf = (url: string | undefined): string => {
   return path.length === 0 ? "/" : path;
 };
 
+/** `/w/:id/vnc` → `/vnc` when Caddy has not yet stripped the workspace prefix. */
+export const stripWorkspacePrefix = (path: string): string => {
+  const match = path.match(/^\/w\/[^/]+(\/.*)?$/);
+  if (match === null) return path;
+  const rest = match[1];
+  return rest === undefined || rest.length === 0 ? "/" : rest;
+};
+
 export const isVncPath = (url: string | undefined): boolean => {
-  const path = pathnameOf(url);
+  const path = stripWorkspacePrefix(pathnameOf(url));
   return (
     path === VNC_PATH_PREFIX ||
     path.startsWith(`${VNC_PATH_PREFIX}/`) ||
@@ -46,8 +58,9 @@ export const isVncPath = (url: string | undefined): boolean => {
 
 export const stripVncPrefix = (url: string): string => {
   const q = url.indexOf("?");
-  const path = q < 0 ? url : url.slice(0, q);
+  const rawPath = q < 0 ? url : url.slice(0, q);
   const search = q < 0 ? "" : url.slice(q);
+  const path = stripWorkspacePrefix(rawPath);
   let stripped = path;
   if (path === VNC_PATH_PREFIX) stripped = "/";
   else if (path.startsWith(`${VNC_PATH_PREFIX}/`)) stripped = path.slice(VNC_PATH_PREFIX.length);
@@ -94,6 +107,18 @@ const targetFromOrigin = (origin: string): URL => new URL(origin);
 const requestModule = (target: URL): typeof Http | typeof Https =>
   target.protocol === "https:" ? Https : Http;
 
+const rewriteLocation = (value: string | string[] | undefined, target: URL): string | undefined => {
+  if (typeof value !== "string") return undefined;
+  if (value.startsWith("/") && !value.startsWith("//")) return `/vnc${value}`;
+  try {
+    const loc = new URL(value, target.origin);
+    if (loc.origin === target.origin) return `/vnc${loc.pathname}${loc.search}`;
+  } catch {
+    return undefined;
+  }
+  return undefined;
+};
+
 export const handleVncHttp = (daemon: Daemon, req: IncomingMessage, res: ServerResponse): void => {
   if (!authorized(daemon, req)) {
     unauthorized(res);
@@ -126,6 +151,13 @@ export const handleVncHttp = (daemon: Daemon, req: IncomingMessage, res: ServerR
       const outHeaders: Record<string, string | number | string[] | undefined> = {};
       for (const [key, value] of Object.entries(upstream.headers)) {
         if (DROP_FROM_UPSTREAM.has(key.toLowerCase())) continue;
+        if (key.toLowerCase() === "location") {
+          const rewritten = rewriteLocation(value, target);
+          if (rewritten !== undefined) {
+            outHeaders[key] = rewritten;
+            continue;
+          }
+        }
         outHeaders[key] = value;
       }
       res.writeHead(upstream.statusCode ?? 502, outHeaders);
@@ -163,7 +195,8 @@ export const handleVncUpgrade = (
   }
   const port =
     target.port.length > 0 ? Number(target.port) : target.protocol === "https:" ? 443 : 80;
-  const upstream = Net.connect(port, target.hostname, () => {
+  let upstream: Socket;
+  const onConnect = () => {
     const path = stripVncPrefix(req.url ?? "/");
     let headBuf = `${req.method ?? "GET"} ${path} HTTP/${req.httpVersion}\r\n`;
     for (const [key, value] of Object.entries(req.headers)) {
@@ -181,7 +214,11 @@ export const handleVncUpgrade = (
     if (head.length > 0) upstream.write(head);
     upstream.pipe(socket);
     socket.pipe(upstream);
-  });
+  };
+  upstream =
+    target.protocol === "https:"
+      ? Tls.connect({ port, host: target.hostname, servername: target.hostname }, onConnect)
+      : Net.connect(port, target.hostname, onConnect);
   upstream.on("error", () => {
     socket.destroy();
   });

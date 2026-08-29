@@ -19,6 +19,7 @@ Environment=DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus
 Environment=NERO_HOME=/home/nero
 Environment=NERO_WORKSPACE=/home/nero
 Environment=NERO_DATA_DIR=/home/nero/.nero
+Environment=NERO_SEAT_LOCK=/run/nero/seat.lock
 Environment=PORT=8787
 ExecStart=/usr/local/bin/nero-daemon
 Restart=on-failure

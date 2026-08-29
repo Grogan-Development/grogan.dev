@@ -113,6 +113,27 @@ class ParseTests(unittest.TestCase):
         self.assertIn("xdotool", plan)
         self.assertIn("mousemove", plan)
 
+    def test_lock_path_is_run_nero_even_with_xdg(self):
+        old_lock = os.environ.pop("NERO_SEAT_LOCK", None)
+        old_xdg = os.environ.get("XDG_RUNTIME_DIR")
+        os.environ["XDG_RUNTIME_DIR"] = "/tmp/xdg-nero-test"
+        try:
+            args = self.m.parse_args(["shot"])
+            self.assertEqual(args.lock_file, "/run/nero/seat.lock")
+        finally:
+            if old_lock is None:
+                os.environ.pop("NERO_SEAT_LOCK", None)
+            else:
+                os.environ["NERO_SEAT_LOCK"] = old_lock
+            if old_xdg is None:
+                os.environ.pop("XDG_RUNTIME_DIR", None)
+            else:
+                os.environ["XDG_RUNTIME_DIR"] = old_xdg
+
+    def test_default_lock_timeout_queues_forever(self):
+        args = self.m.parse_args(["click", "1", "2"])
+        self.assertEqual(args.lock_timeout, 0.0)
+
     def test_display_env_fallback(self):
         old = os.environ.get("NERO_SEAT_DISPLAY")
         os.environ["NERO_SEAT_DISPLAY"] = ":7"

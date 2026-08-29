@@ -73,20 +73,6 @@ export const SEAT_PREVIEW_TAB_ID = "seat";
 export const SEAT_VNC_URL = "/vnc/";
 export const SEAT_VNC_TITLE = "Agent seat";
 
-export const isSeatVncUrl = (url: string | undefined): boolean => {
-  if (url === undefined || url.length === 0) return true;
-  const path = url.startsWith("/")
-    ? (url.split("?")[0] ?? url)
-    : (() => {
-        try {
-          return new URL(url, "http://nero.local").pathname;
-        } catch {
-          return url;
-        }
-      })();
-  return path === "/vnc" || path === "/vnc/" || path.startsWith("/vnc/");
-};
-
 export class Hub<T> {
   readonly listeners = new Set<(item: T) => void>();
 
@@ -199,7 +185,7 @@ export class Daemon {
 
   constructor(options: DaemonOptions) {
     this.options = options;
-    this.humanDriving = new HumanDrivingLock(options.seatLockPath);
+    this.humanDriving = new HumanDrivingLock(options.seatLockPath, options.seatHoldBin);
     this.settings = patchedSettings(DEFAULT_SERVER_SETTINGS);
     ensureDir(options.dataDir);
     ensureDir(Path.join(options.dataDir, "logs"));
@@ -1268,44 +1254,34 @@ export class Daemon {
   }
 
   previewOpen(input: PreviewOpenInput): PreviewSessionSnapshot {
-    if (isSeatVncUrl(input.url)) {
-      const existing = this.previews.get(`${input.threadId}:${SEAT_PREVIEW_TAB_ID}`);
-      if (existing !== undefined) {
-        if (input.viewport !== undefined && existing.viewport !== input.viewport) {
-          return this.previewResize({
-            threadId: input.threadId,
-            tabId: SEAT_PREVIEW_TAB_ID,
-            viewport: input.viewport,
-          });
-        }
-        return existing;
+    // One seat: never mint URL/file preview tabs the panel would still render as Kasm.
+    const existing = this.previews.get(`${input.threadId}:${SEAT_PREVIEW_TAB_ID}`);
+    if (existing !== undefined) {
+      if (input.viewport !== undefined && existing.viewport !== input.viewport) {
+        return this.previewResize({
+          threadId: input.threadId,
+          tabId: SEAT_PREVIEW_TAB_ID,
+          viewport: input.viewport,
+        });
       }
+      return existing;
     }
-    const tabId = isSeatVncUrl(input.url) ? SEAT_PREVIEW_TAB_ID : nextToken("tab");
     const at = nowIso();
-    const url = isSeatVncUrl(input.url) ? SEAT_VNC_URL : input.url;
     const snapshot: PreviewSessionSnapshot = {
       threadId: input.threadId,
-      tabId,
-      navStatus:
-        url === undefined
-          ? { _tag: "Idle" }
-          : {
-              _tag: "Success",
-              url,
-              title: isSeatVncUrl(url) ? SEAT_VNC_TITLE : url,
-            },
+      tabId: SEAT_PREVIEW_TAB_ID,
+      navStatus: { _tag: "Success", url: SEAT_VNC_URL, title: SEAT_VNC_TITLE },
       canGoBack: false,
       canGoForward: false,
       viewport: input.viewport,
       updatedAt: at,
     };
-    this.previews.set(`${input.threadId}:${tabId}`, snapshot);
+    this.previews.set(`${input.threadId}:${SEAT_PREVIEW_TAB_ID}`, snapshot);
     this.previewRevision += 1;
     this.previewHub.emit({
       type: "opened",
       threadId: input.threadId,
-      tabId,
+      tabId: SEAT_PREVIEW_TAB_ID,
       createdAt: at,
       serverEpoch: this.serverEpoch,
       revision: this.previewRevision,
@@ -1318,11 +1294,11 @@ export class Daemon {
     const key = `${input.threadId}:${input.tabId}`;
     const current = this.previews.get(key);
     if (current === undefined) {
-      return this.previewOpen({ threadId: input.threadId, url: input.url });
+      return this.previewOpen({ threadId: input.threadId });
     }
     const snapshot: PreviewSessionSnapshot = {
       ...current,
-      navStatus: { _tag: "Success", url: input.url, title: input.resolvedTitle ?? input.url },
+      navStatus: { _tag: "Success", url: SEAT_VNC_URL, title: SEAT_VNC_TITLE },
       updatedAt: nowIso(),
     };
     this.previews.set(key, snapshot);
@@ -1413,9 +1389,8 @@ export class Daemon {
     });
   }
 
-  setHumanDriving(driving: boolean): { driving: boolean; lockPath: string } {
-    this.humanDriving.setDriving(driving);
-    return { driving: this.humanDriving.driving, lockPath: this.humanDriving.lockPath };
+  setHumanDriving(driving: boolean): Promise<{ driving: boolean }> {
+    return this.humanDriving.setDriving(driving);
   }
 
   dispose(): void {
