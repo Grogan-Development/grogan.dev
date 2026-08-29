@@ -2,7 +2,6 @@ import {
   ApprovalRequestId,
   EventId,
   MessageId,
-  type OrchestrationThreadActivity,
   type ProviderApprovalDecision,
   type RuntimeMode,
   type TurnId,
@@ -16,7 +15,7 @@ import {
   streamChatCompletion,
   systemPrompt,
 } from "./openrouter.ts";
-import { MAX_SHOT_IMAGES, NERO_INSTANCE_ID, nextToken, nowIso } from "./runtime.ts";
+import { MAX_SHOT_IMAGES, nextToken, nowIso } from "./runtime.ts";
 import { executeTool, parseToolArguments, type ShotImage, toolActivityMeta } from "./tools.ts";
 
 const MAX_ROUNDS = 32;
@@ -28,6 +27,11 @@ type LiveTurn = {
   readonly controller: AbortController;
   readonly turnId: TurnId;
   readonly commandId: string;
+  assistantId: MessageId | undefined;
+  inProgressTools: Array<{
+    readonly toolCallId: string;
+    readonly meta: ReturnType<typeof toolActivityMeta>;
+  }>;
 };
 
 type ApprovalWaiter = {
@@ -115,6 +119,8 @@ export class PiHarness {
       controller,
       turnId: input.turnId,
       commandId: input.commandId,
+      assistantId: undefined,
+      inProgressTools: [],
     };
     this.live.set(input.threadId, live);
     this.daemon.setLiveTurn(input.threadId, input.turnId);
@@ -126,10 +132,6 @@ export class PiHarness {
           this.daemon.setLiveTurn(input.threadId, null);
         }
       });
-  }
-
-  private isCurrent(threadId: string, live: LiveTurn): boolean {
-    return this.live.get(threadId) === live && !live.controller.signal.aborted;
   }
 
   private conversation(
@@ -193,6 +195,73 @@ export class PiHarness {
     conversation.push({
       role: "user",
       content: userContent("Seat screenshot(s) from nero-desktop shot:", images),
+    });
+  }
+
+  private emitToolCompleted(
+    input: HarnessStartInput,
+    live: LiveTurn,
+    toolCallId: string,
+    meta: ReturnType<typeof toolActivityMeta>,
+    status: "completed" | "failed" | "stopped",
+    text: string,
+  ): void {
+    this.daemon.appendActivity(input.threadId, live.commandId, {
+      id: EventId.make(nextToken("act")),
+      tone: status === "completed" ? "tool" : "error",
+      kind: "tool.completed",
+      summary: meta.title,
+      payload: {
+        toolCallId,
+        itemType: meta.itemType,
+        requestKind: meta.requestKind,
+        title: meta.title,
+        detail: meta.detail,
+        status,
+        ...(meta.command === undefined ? {} : { command: meta.command }),
+        data: {
+          kind: "execute",
+          rawOutput: { content: text },
+          ...(meta.command === undefined ? {} : { command: meta.command }),
+        },
+      },
+      turnId: live.turnId,
+      createdAt: nowIso(),
+    });
+  }
+
+  private settleAbandoned(
+    input: HarnessStartInput,
+    live: LiveTurn,
+    status: "interrupted" | "error",
+    lastError: string | null,
+  ): void {
+    if (live.assistantId !== undefined) {
+      this.daemon.completeAssistant({
+        threadId: input.threadId,
+        messageId: live.assistantId,
+        turnId: live.turnId,
+        commandId: live.commandId,
+      });
+    }
+    for (const tool of live.inProgressTools) {
+      this.emitToolCompleted(
+        input,
+        live,
+        tool.toolCallId,
+        tool.meta,
+        status === "interrupted" ? "stopped" : "failed",
+        status === "interrupted" ? "Interrupted." : (lastError ?? "failed"),
+      );
+    }
+    live.inProgressTools = [];
+    this.daemon.finishTurn({
+      threadId: input.threadId,
+      turnId: live.turnId,
+      commandId: live.commandId,
+      assistantMessageId: live.assistantId ?? null,
+      status,
+      lastError,
     });
   }
 
@@ -268,24 +337,6 @@ export class PiHarness {
   }
 
   private async run(input: HarnessStartInput, live: LiveTurn): Promise<void> {
-    const apiKey = this.daemon.options.openRouterApiKey;
-    if (apiKey === undefined || apiKey.length === 0) {
-      this.daemon.finishTurn({
-        threadId: input.threadId,
-        turnId: live.turnId,
-        commandId: live.commandId,
-        assistantMessageId: this.daemon.completeAssistant({
-          threadId: input.threadId,
-          turnId: live.turnId,
-          commandId: live.commandId,
-          text: "Nero cannot start the GLM loop: OPENROUTER_API_KEY is not set.",
-        }),
-        status: "error",
-        lastError: "OPENROUTER_API_KEY is not set.",
-      });
-      return;
-    }
-
     const images = this.takeImages(input.threadId, input.attachmentIds);
     const conversation = this.conversation(
       input.threadId,
@@ -293,28 +344,28 @@ export class PiHarness {
       input.userText,
       images,
     );
-    let lastAssistant: MessageId | null = null;
 
     try {
       for (let round = 0; round < MAX_ROUNDS; round += 1) {
-        if (!this.isCurrent(input.threadId, live)) throw new Error("aborted");
+        if (live.controller.signal.aborted) throw new Error("aborted");
         this.attachPendingShots(input.threadId, conversation);
         this.daemon.touchKeepAwake();
 
-        let assistantId: MessageId | undefined;
         const result = await streamChatCompletion({
           baseUrl: this.daemon.options.openRouterBaseUrl,
-          apiKey,
+          apiKey: this.daemon.options.openRouterApiKey ?? "",
           messages: conversation,
           signal: live.controller.signal,
+          timeoutMs: this.daemon.options.openRouterTimeoutMs,
+          idleMs: this.daemon.options.openRouterIdleMs,
           onText: (delta) => {
-            if (!this.isCurrent(input.threadId, live)) return;
-            if (assistantId === undefined) {
-              assistantId = MessageId.make(nextToken("msg"));
+            if (live.controller.signal.aborted) return;
+            if (live.assistantId === undefined) {
+              live.assistantId = MessageId.make(nextToken("msg"));
             }
             this.daemon.deltaAssistant({
               threadId: input.threadId,
-              messageId: assistantId,
+              messageId: live.assistantId,
               turnId: live.turnId,
               commandId: live.commandId,
               delta,
@@ -322,21 +373,20 @@ export class PiHarness {
           },
         });
 
-        if (!this.isCurrent(input.threadId, live)) throw new Error("aborted");
+        if (live.controller.signal.aborted) throw new Error("aborted");
 
-        if (assistantId !== undefined) {
+        if (live.assistantId !== undefined) {
           this.daemon.completeAssistant({
             threadId: input.threadId,
-            messageId: assistantId,
+            messageId: live.assistantId,
             turnId: live.turnId,
             commandId: live.commandId,
           });
-          lastAssistant = assistantId;
         }
 
         if (result.toolCalls.length === 0) {
-          if (assistantId === undefined && result.content.length > 0) {
-            lastAssistant = this.daemon.completeAssistant({
+          if (live.assistantId === undefined && result.content.length > 0) {
+            live.assistantId = this.daemon.completeAssistant({
               threadId: input.threadId,
               turnId: live.turnId,
               commandId: live.commandId,
@@ -351,7 +401,7 @@ export class PiHarness {
             threadId: input.threadId,
             turnId: live.turnId,
             commandId: live.commandId,
-            assistantMessageId: lastAssistant,
+            assistantMessageId: live.assistantId ?? null,
             status: "ready",
             lastError: null,
           });
@@ -365,7 +415,7 @@ export class PiHarness {
         });
 
         for (const call of result.toolCalls) {
-          if (!this.isCurrent(input.threadId, live)) throw new Error("aborted");
+          if (live.controller.signal.aborted) throw new Error("aborted");
           let args: Record<string, unknown> = {};
           try {
             args = parseToolArguments(call.function.arguments);
@@ -373,6 +423,7 @@ export class PiHarness {
             args = {};
           }
           const meta = toolActivityMeta(call.function.name, args);
+          live.inProgressTools.push({ toolCallId: call.id, meta });
           const startedAt = nowIso();
           this.daemon.appendActivity(input.threadId, live.commandId, {
             id: EventId.make(nextToken("act")),
@@ -397,7 +448,7 @@ export class PiHarness {
           });
 
           const approved = await this.approveTool(input, live, call.function.name, args, meta);
-          let toolResult = approved
+          const toolResult = approved
             ? await executeTool(call.function.name, call.function.arguments, {
                 workspaceRoot: this.daemon.options.workspaceRoot,
                 homeDir: this.daemon.options.homeDir,
@@ -409,74 +460,48 @@ export class PiHarness {
                 failed: true,
               };
 
+          live.inProgressTools = live.inProgressTools.filter(
+            (entry) => entry.toolCallId !== call.id,
+          );
           this.pushShots(input.threadId, toolResult.shots);
-          this.daemon.appendActivity(input.threadId, live.commandId, {
-            id: EventId.make(nextToken("act")),
-            tone: toolResult.failed ? "error" : "tool",
-            kind: "tool.completed",
-            summary: meta.title,
-            payload: {
-              toolCallId: call.id,
-              itemType: meta.itemType,
-              requestKind: meta.requestKind,
-              title: meta.title,
-              detail: meta.detail,
-              status: toolResult.failed ? "failed" : "completed",
-              ...(meta.command === undefined ? {} : { command: meta.command }),
-              data: {
-                kind: "execute",
-                rawOutput: { content: toolResult.text },
-                ...(meta.command === undefined ? {} : { command: meta.command }),
-              },
-            },
-            turnId: live.turnId,
-            createdAt: nowIso(),
-          });
+          this.emitToolCompleted(
+            input,
+            live,
+            call.id,
+            meta,
+            toolResult.failed ? "failed" : "completed",
+            toolResult.text,
+          );
           conversation.push({
             role: "tool",
             tool_call_id: call.id,
             content: toolResult.text,
           });
         }
+        live.assistantId = undefined;
       }
 
-      this.daemon.finishTurn({
-        threadId: input.threadId,
-        turnId: live.turnId,
-        commandId: live.commandId,
-        assistantMessageId: lastAssistant,
-        status: "error",
-        lastError: "Tool loop exceeded the maximum number of rounds.",
-      });
+      this.settleAbandoned(
+        input,
+        live,
+        "error",
+        "Tool loop exceeded the maximum number of rounds.",
+      );
     } catch (error) {
-      if (!this.isCurrent(input.threadId, live) || isAbort(error)) {
-        if (this.live.get(input.threadId) === live) {
-          this.daemon.finishTurn({
-            threadId: input.threadId,
-            turnId: live.turnId,
-            commandId: live.commandId,
-            assistantMessageId: lastAssistant,
-            status: "interrupted",
-            lastError: null,
-          });
-        }
+      if (live.controller.signal.aborted || isAbort(error)) {
+        this.settleAbandoned(input, live, "interrupted", null);
         return;
       }
       const message = error instanceof Error ? error.message : "GLM loop failed.";
-      const assistantMessageId = this.daemon.completeAssistant({
-        threadId: input.threadId,
-        turnId: live.turnId,
-        commandId: live.commandId,
-        text: `Nero GLM loop error: ${message}`,
-      });
-      this.daemon.finishTurn({
-        threadId: input.threadId,
-        turnId: live.turnId,
-        commandId: live.commandId,
-        assistantMessageId,
-        status: "error",
-        lastError: message,
-      });
+      if (live.assistantId === undefined) {
+        live.assistantId = this.daemon.completeAssistant({
+          threadId: input.threadId,
+          turnId: live.turnId,
+          commandId: live.commandId,
+          text: `Nero GLM loop error: ${message}`,
+        });
+      }
+      this.settleAbandoned(input, live, "error", message);
     }
   }
 }

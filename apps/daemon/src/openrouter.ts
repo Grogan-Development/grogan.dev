@@ -2,7 +2,12 @@ import * as Http from "node:http";
 import * as Https from "node:https";
 import { URL } from "node:url";
 
-import { NERO_MODEL, OPENROUTER_PROVIDER_ONLY } from "./runtime.ts";
+import {
+  NERO_MODEL,
+  OPENROUTER_IDLE_MS,
+  OPENROUTER_PROVIDER_ONLY,
+  OPENROUTER_TIMEOUT_MS,
+} from "./runtime.ts";
 
 export type TextPart = {
   readonly type: "text";
@@ -135,6 +140,8 @@ export type StreamChatInput = {
   readonly messages: ReadonlyArray<ChatMessage>;
   readonly signal: AbortSignal;
   readonly onText: (delta: string) => void;
+  readonly timeoutMs?: number;
+  readonly idleMs?: number;
 };
 
 export type StreamChatResult = {
@@ -199,8 +206,16 @@ export const streamChatCompletion = (input: StreamChatInput): Promise<StreamChat
         allow_fallbacks: false,
       },
     });
+    const timeoutMs = input.timeoutMs ?? OPENROUTER_TIMEOUT_MS;
+    const idleMs = input.idleMs ?? OPENROUTER_IDLE_MS;
     let settled = false;
     let request: Http.ClientRequest | undefined;
+    let idleTimer: ReturnType<typeof setTimeout> | undefined;
+    const clearIdle = () => {
+      if (idleTimer === undefined) return;
+      clearTimeout(idleTimer);
+      idleTimer = undefined;
+    };
     const onAbort = () => {
       request?.destroy();
       settle(new Error("aborted"));
@@ -208,9 +223,17 @@ export const streamChatCompletion = (input: StreamChatInput): Promise<StreamChat
     const settle = (error: Error | undefined, result?: StreamChatResult) => {
       if (settled) return;
       settled = true;
+      clearIdle();
       input.signal.removeEventListener("abort", onAbort);
       if (error !== undefined) reject(error);
       else resolve(result ?? { content: "", toolCalls: [], finishReason: null });
+    };
+    const bumpIdle = () => {
+      clearIdle();
+      idleTimer = setTimeout(() => {
+        request?.destroy();
+        settle(new Error(`OpenRouter idle timeout after ${idleMs}ms`));
+      }, idleMs);
     };
     input.signal.addEventListener("abort", onAbort);
     const req = lib.request(
@@ -219,6 +242,7 @@ export const streamChatCompletion = (input: StreamChatInput): Promise<StreamChat
         hostname: url.hostname,
         path: `${url.pathname}${url.search}`,
         method: "POST",
+        timeout: timeoutMs,
         headers: {
           authorization: `Bearer ${input.apiKey}`,
           "content-type": "application/json",
@@ -227,13 +251,30 @@ export const streamChatCompletion = (input: StreamChatInput): Promise<StreamChat
         ...(url.port.length > 0 ? { port: url.port } : {}),
       },
       (response) => {
+        bumpIdle();
         const status = response.statusCode ?? 0;
+        const contentType = String(response.headers["content-type"] ?? "");
         if (status !== 200) {
           const chunks: Buffer[] = [];
-          response.on("data", (chunk) => chunks.push(chunk as Buffer));
+          response.on("data", (chunk) => {
+            bumpIdle();
+            chunks.push(chunk as Buffer);
+          });
           response.on("end", () => {
             const text = Buffer.concat(chunks).toString("utf8");
             settle(new Error(`OpenRouter HTTP ${status}: ${text.slice(0, 800)}`));
+          });
+          return;
+        }
+        if (contentType.includes("application/json") && !contentType.includes("event-stream")) {
+          const chunks: Buffer[] = [];
+          response.on("data", (chunk) => {
+            bumpIdle();
+            chunks.push(chunk as Buffer);
+          });
+          response.on("end", () => {
+            const text = Buffer.concat(chunks).toString("utf8");
+            settle(new Error(`OpenRouter JSON error: ${text.slice(0, 800)}`));
           });
           return;
         }
@@ -249,8 +290,20 @@ export const streamChatCompletion = (input: StreamChatInput): Promise<StreamChat
               : undefined,
           );
         };
+        const openRouterError = (value: unknown): string | undefined => {
+          if (value === null || typeof value !== "object") return undefined;
+          const record = value as { error?: unknown };
+          if (record.error === undefined) return undefined;
+          if (typeof record.error === "string") return record.error;
+          if (record.error !== null && typeof record.error === "object") {
+            const message = (record.error as { message?: unknown }).message;
+            if (typeof message === "string" && message.length > 0) return message;
+          }
+          return "OpenRouter stream error";
+        };
         response.on("error", (error) => finish(error));
         response.on("data", (chunk) => {
+          bumpIdle();
           buffer += (chunk as Buffer).toString("utf8");
           for (;;) {
             const nl = buffer.indexOf("\n");
@@ -271,6 +324,11 @@ export const streamChatCompletion = (input: StreamChatInput): Promise<StreamChat
             } catch {
               continue;
             }
+            const streamError = openRouterError(parsed);
+            if (streamError !== undefined) {
+              finish(new Error(streamError));
+              return;
+            }
             if (parsed === null || typeof parsed !== "object") continue;
             const choices = (parsed as { choices?: unknown }).choices;
             if (!Array.isArray(choices) || choices.length === 0) continue;
@@ -288,7 +346,12 @@ export const streamChatCompletion = (input: StreamChatInput): Promise<StreamChat
             if (delta === undefined) continue;
             if (typeof delta.content === "string" && delta.content.length > 0) {
               content += delta.content;
-              input.onText(delta.content);
+              try {
+                input.onText(delta.content);
+              } catch (error) {
+                finish(error instanceof Error ? error : new Error("onText failed"));
+                return;
+              }
             }
             if (Array.isArray(delta.tool_calls)) {
               for (const toolDelta of delta.tool_calls) {
@@ -303,6 +366,11 @@ export const streamChatCompletion = (input: StreamChatInput): Promise<StreamChat
       },
     );
     request = req;
+    bumpIdle();
+    req.on("timeout", () => {
+      req.destroy();
+      settle(new Error(`OpenRouter request timed out after ${timeoutMs}ms`));
+    });
     req.on("error", (error) => {
       if (input.signal.aborted) settle(new Error("aborted"));
       else settle(error);

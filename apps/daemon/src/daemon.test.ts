@@ -224,6 +224,8 @@ const tmpDaemon = (port: number, extra: Partial<DaemonOptions> = {}) => {
       accessToken: undefined,
       openRouterApiKey: undefined,
       openRouterBaseUrl: "https://openrouter.ai/api/v1",
+      openRouterTimeoutMs: 120_000,
+      openRouterIdleMs: 45_000,
       ...extra,
     } satisfies DaemonOptions,
   };

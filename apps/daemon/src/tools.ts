@@ -4,11 +4,34 @@ import * as Path from "node:path";
 import * as Process from "node:process";
 
 import { readProjectFile, resolveContained, writeProjectFile } from "./files.ts";
+import { MAX_SHOT_BYTES, nextToken } from "./runtime.ts";
 
 const DEFAULT_BASH_TIMEOUT_MS = 120_000;
 const MAX_BASH_TIMEOUT_MS = 600_000;
 const TOOL_OUTPUT_CAP = 32_000;
 const PNG_MAGIC = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+
+const BASH_ENV_ALLOW = new Set([
+  "PATH",
+  "HOME",
+  "USER",
+  "LOGNAME",
+  "SHELL",
+  "TERM",
+  "DISPLAY",
+  "XDG_RUNTIME_DIR",
+  "DBUS_SESSION_BUS_ADDRESS",
+  "LANG",
+  "LC_ALL",
+  "LC_CTYPE",
+  "LC_MESSAGES",
+  "TZ",
+  "TMPDIR",
+  "TMP",
+  "TEMP",
+]);
+
+const BASH_ENV_DENY = new Set(["OPENROUTER_API_KEY", "NERO_ACCESS_TOKEN"]);
 
 export type ShotImage = {
   readonly mimeType: "image/png";
@@ -62,6 +85,7 @@ export const isPngBuffer = (buffer: Buffer): boolean =>
 
 export const shotFromPng = (buffer: Buffer, name: string): ShotImage | undefined => {
   if (!isPngBuffer(buffer)) return undefined;
+  if (buffer.byteLength > MAX_SHOT_BYTES) return undefined;
   return {
     mimeType: "image/png",
     base64: buffer.toString("base64"),
@@ -79,6 +103,40 @@ export const parseShotOutPath = (command: string, cwd: string): string | undefin
   const out = match[1];
   if (out === undefined || out === "-") return undefined;
   return Path.resolve(cwd, out);
+};
+
+export const rewriteShotCommand = (
+  command: string,
+  cwd: string,
+): { readonly command: string; readonly outPath: string | undefined } => {
+  if (!isNeroDesktopShotCommand(command))
+    return { command, outPath: parseShotOutPath(command, cwd) };
+  const existing = parseShotOutPath(command, cwd);
+  if (existing !== undefined) return { command, outPath: existing };
+  const dir = Path.join(cwd, ".nero-shots");
+  Fs.mkdirSync(dir, { recursive: true });
+  const outPath = Path.join(dir, `${nextToken("shot")}.png`);
+  if (/--out(?:=|\s+)\S+/.test(command)) {
+    return { command: command.replace(/--out(?:=|\s+)\S+/, `--out ${outPath}`), outPath };
+  }
+  return { command: command.replace(/\bshot\b/, `shot --out ${outPath}`), outPath };
+};
+
+export const bashEnv = (ctx: ToolContext): NodeJS.ProcessEnv => {
+  const env: NodeJS.ProcessEnv = {};
+  for (const [key, value] of Object.entries(Process.env)) {
+    if (value === undefined) continue;
+    if (BASH_ENV_DENY.has(key)) continue;
+    const allowNero = key.startsWith("NERO_") && key !== "NERO_ACCESS_TOKEN";
+    if (!BASH_ENV_ALLOW.has(key) && !allowNero) continue;
+    env[key] = value;
+  }
+  env.HOME = ctx.homeDir;
+  env.PWD = ctx.workspaceRoot;
+  env.NERO_WORKSPACE = ctx.workspaceRoot;
+  delete env.OPENROUTER_API_KEY;
+  delete env.NERO_ACCESS_TOKEN;
+  return env;
 };
 
 const fail = (text: string): ToolResult => ({ text, shots: [], failed: true });
@@ -164,6 +222,23 @@ const executeEdit = (ctx: ToolContext, args: Record<string, unknown>): ToolResul
   return ok(`Edited ${path} (${occurrences} replacement${occurrences === 1 ? "" : "s"}).`);
 };
 
+const isNeroRunCommand = (command: string): boolean => /\bnero-run\b/.test(command);
+
+const killBashTree = (child: ChildProcess.ChildProcess, command: string): void => {
+  if (isNeroRunCommand(command)) return;
+  const pid = child.pid;
+  if (pid === undefined) return;
+  try {
+    Process.kill(-pid, "SIGKILL");
+  } catch {
+    try {
+      child.kill("SIGKILL");
+    } catch {
+      // already gone
+    }
+  }
+};
+
 const runBash = (
   ctx: ToolContext,
   command: string,
@@ -176,24 +251,27 @@ const runBash = (
     }
     const child = ChildProcess.spawn("bash", ["-c", command], {
       cwd: ctx.workspaceRoot,
-      env: {
-        ...Process.env,
-        HOME: ctx.homeDir,
-        PWD: ctx.workspaceRoot,
-        NERO_WORKSPACE: ctx.workspaceRoot,
-      },
+      env: bashEnv(ctx),
       stdio: ["ignore", "pipe", "pipe"],
+      detached: !isNeroRunCommand(command),
     });
     const stdout: Buffer[] = [];
     const stderr: Buffer[] = [];
     let stdoutBytes = 0;
-    const take = (target: Buffer[], chunk: Buffer) => {
-      if (stdoutBytes >= TOOL_OUTPUT_CAP * 4) return;
-      stdoutBytes += chunk.byteLength;
+    let stderrBytes = 0;
+    const take = (target: Buffer[], chunk: Buffer, kind: "stdout" | "stderr") => {
+      const cap = TOOL_OUTPUT_CAP * 4;
+      if (kind === "stdout") {
+        if (stdoutBytes >= cap) return;
+        stdoutBytes += chunk.byteLength;
+      } else {
+        if (stderrBytes >= cap) return;
+        stderrBytes += chunk.byteLength;
+      }
       target.push(chunk);
     };
-    child.stdout?.on("data", (chunk) => take(stdout, chunk as Buffer));
-    child.stderr?.on("data", (chunk) => take(stderr, chunk as Buffer));
+    child.stdout?.on("data", (chunk) => take(stdout, chunk as Buffer, "stdout"));
+    child.stderr?.on("data", (chunk) => take(stderr, chunk as Buffer, "stderr"));
     let settled = false;
     const finish = (code: number | null, error?: Error) => {
       if (settled) return;
@@ -210,16 +288,13 @@ const runBash = (
         code,
       });
     };
-    const kill = () => {
-      child.kill("SIGKILL");
-    };
     const onAbort = () => {
-      kill();
+      killBashTree(child, command);
       finish(null, new Error("aborted"));
     };
     ctx.signal.addEventListener("abort", onAbort);
     const timer = setTimeout(() => {
-      kill();
+      killBashTree(child, command);
       finish(null, new Error(`bash timed out after ${timeoutMs}ms`));
     }, timeoutMs);
     child.on("error", (error) => finish(null, error));
@@ -238,29 +313,28 @@ const executeBash = async (
     MAX_BASH_TIMEOUT_MS,
     Math.max(1, requested === undefined ? DEFAULT_BASH_TIMEOUT_MS : Math.floor(requested)),
   );
+  const prepared = rewriteShotCommand(command, ctx.workspaceRoot);
   try {
-    const result = await runBash(ctx, command, timeoutMs);
+    const result = await runBash(ctx, prepared.command, timeoutMs);
     const shots: ShotImage[] = [];
-    const stdoutShot = shotFromPng(result.stdout, "shot.png");
-    if (stdoutShot !== undefined && isNeroDesktopShotCommand(command)) shots.push(stdoutShot);
-    const outPath = parseShotOutPath(command, ctx.workspaceRoot);
-    if (outPath !== undefined) {
+    if (prepared.outPath !== undefined) {
       try {
-        const fileShot = shotFromPng(Fs.readFileSync(outPath), Path.basename(outPath));
+        const fileShot = shotFromPng(
+          Fs.readFileSync(prepared.outPath),
+          Path.basename(prepared.outPath),
+        );
         if (fileShot !== undefined) shots.push(fileShot);
       } catch {
         // shot --out path missing; bash output still returned
       }
     }
-    const stdoutText =
-      stdoutShot !== undefined
-        ? "[png screenshot on stdout; attached on the next model request]\n"
-        : result.stdout.toString("utf8");
+    const stdoutText = result.stdout.toString("utf8");
     const stderrText = result.stderr.toString("utf8");
     const parts = [
       `exit ${result.code ?? "killed"}`,
       stdoutText.length > 0 ? `stdout:\n${stdoutText}` : "stdout: (empty)",
       stderrText.length > 0 ? `stderr:\n${stderrText}` : undefined,
+      shots.length > 0 ? "[png screenshot attached on the next model request]" : undefined,
     ].filter((part): part is string => part !== undefined);
     return {
       text: truncate(parts.join("\n")),

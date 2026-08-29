@@ -90,6 +90,8 @@ const tmpDaemon = (port: number, extra: Partial<DaemonOptions> = {}) => {
       accessToken: undefined,
       openRouterApiKey: "test-openrouter-key",
       openRouterBaseUrl: "https://openrouter.ai/api/v1",
+      openRouterTimeoutMs: 120_000,
+      openRouterIdleMs: 45_000,
       ...extra,
     } satisfies DaemonOptions,
   };
@@ -155,11 +157,14 @@ const finishChunk = (reason: string) => ({
   choices: [{ index: 0, delta: {}, finish_reason: reason }],
 });
 
+type FakeReply = string | { readonly hang: true } | { readonly write: string; readonly hold: true };
+
 const startFakeOpenRouter = (
-  handler: (captured: CapturedRequest, index: number) => Promise<string> | string,
+  handler: (captured: CapturedRequest, index: number) => Promise<FakeReply> | FakeReply,
 ): Promise<{ port: number; captured: CapturedRequest[]; close: () => Promise<void> }> =>
   new Promise((resolve, reject) => {
     const captured: CapturedRequest[] = [];
+    const hanging: Http.ServerResponse[] = [];
     const server = Http.createServer((request, response) => {
       const chunks: Buffer[] = [];
       request.on("data", (chunk) => chunks.push(chunk as Buffer));
@@ -179,10 +184,19 @@ const startFakeOpenRouter = (
           captured.push(item);
           try {
             const payload = await handler(item, captured.length - 1);
+            if (typeof payload === "object" && "hang" in payload) {
+              hanging.push(response);
+              return;
+            }
             response.writeHead(200, {
               "content-type": "text/event-stream",
               "cache-control": "no-cache",
             });
+            if (typeof payload === "object" && "hold" in payload) {
+              hanging.push(response);
+              response.write(payload.write);
+              return;
+            }
             response.end(payload);
           } catch (error) {
             response.writeHead(500, { "content-type": "application/json" });
@@ -205,6 +219,7 @@ const startFakeOpenRouter = (
         captured,
         close: () =>
           new Promise((resolveClose) => {
+            for (const held of hanging) held.destroy();
             server.close(() => resolveClose());
           }),
       });
@@ -352,11 +367,7 @@ describe("pi harness", () => {
           if (index === 0) {
             return sse([
               textChunk("Shooting."),
-              toolCallChunk(
-                "call_shot",
-                "bash",
-                JSON.stringify({ command: "nero-desktop shot --out seat.png" }),
-              ),
+              toolCallChunk("call_shot", "bash", JSON.stringify({ command: "nero-desktop shot" })),
               finishChunk("tool_calls"),
             ]);
           }
@@ -401,27 +412,188 @@ fi
       Process.env.PATH = `${bin}${Path.delimiter}${previousPath}`;
 
       const fiber = yield* launch(tmp.options);
-      const threadId = "thread-shot-1";
-      yield* Effect.promise(() => createThread(port, threadId));
-      yield* Effect.promise(() => startUserTurn(port, threadId, "take a screenshot", "cmd-shot-1"));
+      try {
+        const threadId = "thread-shot-1";
+        yield* Effect.promise(() => createThread(port, threadId));
+        yield* Effect.promise(() =>
+          startUserTurn(port, threadId, "take a screenshot", "cmd-shot-1"),
+        );
 
+        const snapshot = yield* Effect.promise(() =>
+          poll(
+            () => httpRequest(port, "GET", `/api/orchestration/threads/${threadId}`),
+            (response) => JSON.stringify(response.json).includes("I see the seat."),
+          ),
+        );
+        expect(JSON.stringify(snapshot.json)).toContain("I see the seat.");
+
+        expect(fake.captured.length).toBeGreaterThanOrEqual(2);
+        const followUp = JSON.stringify(fake.captured[1]?.body ?? {});
+        expect(followUp).toContain("data:image/png;base64,");
+        expect(followUp).toContain(PNG_1x1.toString("base64"));
+        const firstTool = JSON.stringify(fake.captured[0]?.body ?? {});
+        expect(firstTool).toContain("nero-desktop shot");
+      } finally {
+        Process.env.PATH = previousPath;
+        yield* Fiber.interrupt(fiber);
+        yield* Effect.promise(() => fake.close());
+      }
+    }),
+  );
+
+  it.live("interrupts a mid-stream turn and does not leave streaming:true", () =>
+    Effect.gen(function* () {
+      const fake = yield* Effect.promise(() =>
+        startFakeOpenRouter(() => ({
+          write: sse([textChunk("Working")]).replace("data: [DONE]\n\n", ""),
+          hold: true,
+        })),
+      );
+      const port = yield* Effect.promise(allocatePort);
+      const tmp = tmpDaemon(port, {
+        openRouterBaseUrl: `http://127.0.0.1:${fake.port}/api/v1`,
+        openRouterApiKey: "test-openrouter-key",
+      });
+      const fiber = yield* launch(tmp.options);
+      const threadId = "thread-interrupt-1";
+      yield* Effect.promise(() => createThread(port, threadId));
+      yield* Effect.promise(() => startUserTurn(port, threadId, "hello", "cmd-int-1"));
+      yield* Effect.promise(() =>
+        poll(
+          () => httpRequest(port, "GET", `/api/orchestration/threads/${threadId}`),
+          (response) => JSON.stringify(response.json).includes("Working"),
+        ),
+      );
+      yield* Effect.promise(() =>
+        httpRequest(port, "POST", "/api/orchestration/dispatch", {
+          json: {
+            type: "thread.turn.interrupt",
+            commandId: CommandId.make("cmd-int-stop"),
+            threadId: ThreadId.make(threadId),
+            createdAt: nowIso(),
+          },
+        }),
+      );
       const snapshot = yield* Effect.promise(() =>
         poll(
           () => httpRequest(port, "GET", `/api/orchestration/threads/${threadId}`),
-          (response) => JSON.stringify(response.json).includes("I see the seat."),
+          (response) => {
+            const body = JSON.stringify(response.json);
+            if (!body.includes("Working")) return false;
+            const thread = (response.json as { thread?: { messages?: { streaming?: boolean }[] } })
+              .thread;
+            return thread?.messages?.every((message) => message.streaming !== true) === true;
+          },
         ),
       );
-      expect(JSON.stringify(snapshot.json)).toContain("I see the seat.");
-      expect(Fs.existsSync(Path.join(tmp.workspaceRoot, "seat.png"))).toBe(true);
-
-      expect(fake.captured.length).toBeGreaterThanOrEqual(2);
-      const followUp = JSON.stringify(fake.captured[1]?.body ?? {});
-      expect(followUp).toContain("data:image/png;base64,");
-      expect(followUp).toContain(PNG_1x1.toString("base64"));
-
-      Process.env.PATH = previousPath;
+      const thread = (snapshot.json as { thread: { messages: { streaming: boolean }[] } }).thread;
+      expect(thread.messages.every((message) => message.streaming === false)).toBe(true);
       yield* Fiber.interrupt(fiber);
       yield* Effect.promise(() => fake.close());
+    }),
+  );
+
+  it.live("a second turn settles the first and does not leave streaming:true", () =>
+    Effect.gen(function* () {
+      const fake = yield* Effect.promise(() =>
+        startFakeOpenRouter((_captured, index) => {
+          if (index === 0) return { hang: true };
+          return sse([textChunk("Second turn done."), finishChunk("stop")]);
+        }),
+      );
+      const port = yield* Effect.promise(allocatePort);
+      const tmp = tmpDaemon(port, {
+        openRouterBaseUrl: `http://127.0.0.1:${fake.port}/api/v1`,
+        openRouterApiKey: "test-openrouter-key",
+      });
+      const fiber = yield* launch(tmp.options);
+      const threadId = "thread-supersede-1";
+      yield* Effect.promise(() => createThread(port, threadId));
+      yield* Effect.promise(() => startUserTurn(port, threadId, "first", "cmd-first"));
+      yield* Effect.promise(() =>
+        poll(
+          () => fake.captured.length,
+          (count) => count >= 1,
+        ),
+      );
+      yield* Effect.promise(() => startUserTurn(port, threadId, "second", "cmd-second"));
+      const snapshot = yield* Effect.promise(() =>
+        poll(
+          () => httpRequest(port, "GET", `/api/orchestration/threads/${threadId}`),
+          (response) => JSON.stringify(response.json).includes("Second turn done."),
+        ),
+      );
+      const thread = (
+        snapshot.json as {
+          thread: { messages: { streaming: boolean }[]; session: { status: string } };
+        }
+      ).thread;
+      expect(thread.messages.every((message) => message.streaming === false)).toBe(true);
+      expect(thread.session.status).toBe("ready");
+      yield* Fiber.interrupt(fiber);
+      yield* Effect.promise(() => fake.close());
+    }),
+  );
+
+  it.live("times out a hung OpenRouter socket and clears keep-awake", () =>
+    Effect.gen(function* () {
+      const fake = yield* Effect.promise(() => startFakeOpenRouter(() => ({ hang: true })));
+      const port = yield* Effect.promise(allocatePort);
+      const tmp = tmpDaemon(port, {
+        openRouterBaseUrl: `http://127.0.0.1:${fake.port}/api/v1`,
+        openRouterApiKey: "test-openrouter-key",
+        openRouterTimeoutMs: 250,
+        openRouterIdleMs: 150,
+      });
+      const fiber = yield* launch(tmp.options);
+      const threadId = "thread-timeout-1";
+      yield* Effect.promise(() => createThread(port, threadId));
+      yield* Effect.promise(() => startUserTurn(port, threadId, "hang", "cmd-hang"));
+      const snapshot = yield* Effect.promise(() =>
+        poll(
+          () => httpRequest(port, "GET", `/api/orchestration/threads/${threadId}`),
+          (response) => {
+            const body = JSON.stringify(response.json);
+            return body.includes("timeout") || body.includes("OpenRouter");
+          },
+          8_000,
+        ),
+      );
+      expect(JSON.stringify(snapshot.json)).toMatch(/timeout|OpenRouter/);
+      const idle = yield* Effect.promise(() =>
+        poll(
+          () =>
+            JSON.parse(Fs.readFileSync(Path.join(tmp.dataDir, "keep-awake.json"), "utf8")) as {
+              liveTurns: unknown[];
+            },
+          (state) => state.liveTurns.length === 0,
+        ),
+      );
+      expect(idle.liveTurns).toHaveLength(0);
+      yield* Fiber.interrupt(fiber);
+      yield* Effect.promise(() => fake.close());
+    }),
+  );
+
+  it.live("clears stale keep-awake liveTurns on daemon start", () =>
+    Effect.gen(function* () {
+      const port = yield* Effect.promise(allocatePort);
+      const tmp = tmpDaemon(port, { openRouterApiKey: undefined });
+      Fs.mkdirSync(tmp.dataDir, { recursive: true });
+      Fs.writeFileSync(
+        Path.join(tmp.dataDir, "keep-awake.json"),
+        `${JSON.stringify({
+          version: 1,
+          liveTurns: [{ threadId: "ghost", turnId: "trn_old", updatedAt: nowIso() }],
+          updatedAt: nowIso(),
+        })}\n`,
+      );
+      const fiber = yield* launch(tmp.options);
+      const keepAwake = JSON.parse(
+        Fs.readFileSync(Path.join(tmp.dataDir, "keep-awake.json"), "utf8"),
+      ) as { liveTurns: unknown[] };
+      expect(keepAwake.liveTurns).toEqual([]);
+      yield* Fiber.interrupt(fiber);
     }),
   );
 });

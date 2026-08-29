@@ -198,6 +198,7 @@ export class Daemon {
     if (this.projects.size === 0) {
       this.seedWorkspace();
     }
+    this.writeKeepAwake();
   }
 
   private persistPath(): string {
@@ -212,7 +213,14 @@ export class Daemon {
     this.sequence = state.sequence;
     this.settings = decodeSettings(state.settings);
     for (const project of state.projects) this.projects.set(project.id, project);
-    for (const thread of state.threads) this.threads.set(thread.id, thread);
+    for (const thread of state.threads) {
+      this.threads.set(thread.id, {
+        ...thread,
+        messages: thread.messages.map((message) =>
+          message.streaming ? { ...message, streaming: false } : message,
+        ),
+      });
+    }
   }
 
   private schedulePersist(): void {
@@ -719,6 +727,7 @@ export class Daemon {
         break;
       }
       case "thread.delete": {
+        this.harness.abort(command.threadId);
         const thread = this.requireThread(command.threadId);
         const deletedAt = nowIso();
         this.threads.set(thread.id, { ...thread, deletedAt, updatedAt: deletedAt });
@@ -1458,7 +1467,9 @@ export class Daemon {
     readonly commandId: string;
     readonly delta: string;
   }): void {
-    const thread = this.requireThread(input.threadId);
+    const existingThread = this.threads.get(input.threadId);
+    if (existingThread === undefined || existingThread.deletedAt !== null) return;
+    const thread = existingThread;
     const at = nowIso();
     const existing = thread.messages.find((message) => message.id === input.messageId);
     const messages: OrchestrationMessage[] = existing
@@ -1500,7 +1511,6 @@ export class Daemon {
       },
     };
     this.emitThreadEvent(next, event);
-    this.schedulePersist();
   }
 
   completeAssistant(input: {
@@ -1510,7 +1520,10 @@ export class Daemon {
     readonly commandId: string;
     readonly text?: string;
   }): MessageId {
-    const thread = this.requireThread(input.threadId);
+    const thread = this.threads.get(input.threadId);
+    if (thread === undefined || thread.deletedAt !== null) {
+      return input.messageId ?? MessageId.make(nextToken("msg"));
+    }
     const at = nowIso();
     const existing =
       input.messageId === undefined
@@ -1562,7 +1575,8 @@ export class Daemon {
     commandId: string | null,
     activity: OrchestrationThreadActivity,
   ): void {
-    const thread = this.requireThread(threadId);
+    const thread = this.threads.get(threadId);
+    if (thread === undefined || thread.deletedAt !== null) return;
     const stamped: OrchestrationThreadActivity = { ...activity, sequence: this.sequence + 1 };
     const next: OrchestrationThread = {
       ...thread,
@@ -1588,8 +1602,43 @@ export class Daemon {
     readonly lastError: string | null;
   }): void {
     const thread = this.threads.get(input.threadId);
-    if (thread === undefined) return;
+    if (thread === undefined || thread.deletedAt !== null) return;
     const at = nowIso();
+    const settledMessages = thread.messages.map((message) =>
+      message.turnId === input.turnId && message.streaming
+        ? { ...message, streaming: false, updatedAt: at }
+        : message,
+    );
+    for (const message of settledMessages) {
+      if (message.turnId !== input.turnId || message.role !== "assistant") continue;
+      const wasStreaming =
+        thread.messages.find((entry) => entry.id === message.id)?.streaming === true;
+      if (!wasStreaming) continue;
+      const event: OrchestrationEvent = {
+        ...this.eventBase(input.commandId, "thread", thread.id),
+        type: "thread.message-sent",
+        payload: {
+          threadId: thread.id,
+          messageId: message.id,
+          role: "assistant",
+          text: "",
+          turnId: input.turnId,
+          streaming: false,
+          createdAt: message.createdAt,
+          updatedAt: at,
+        },
+      };
+      this.emitThreadEvent({ ...thread, messages: settledMessages }, event);
+    }
+    const current = this.threads.get(input.threadId);
+    if (current === undefined || current.deletedAt !== null) return;
+    const stillThisTurn =
+      current.latestTurn?.turnId === input.turnId || current.session?.activeTurnId === input.turnId;
+    if (!stillThisTurn) {
+      this.threads.set(current.id, { ...current, messages: settledMessages, updatedAt: at });
+      this.schedulePersist();
+      return;
+    }
     const diff = turnWorkspaceDiff(this.options.workspaceRoot);
     const isRepo = gitRepoRoot(this.options.workspaceRoot) !== undefined;
     const turnCount = thread.messages.filter((message) => message.role === "user").length;
@@ -1615,7 +1664,8 @@ export class Daemon {
       assistantMessageId: input.assistantMessageId,
     };
     const next: OrchestrationThread = {
-      ...thread,
+      ...current,
+      messages: settledMessages,
       session,
       latestTurn,
       checkpoints: [
@@ -1638,6 +1688,7 @@ export class Daemon {
       updatedAt: at,
     };
     this.threads.set(next.id, next);
+    this.setLiveTurn(next.id, null);
     const sessionEvent: OrchestrationEvent = {
       ...this.eventBase(input.commandId, "thread", next.id),
       type: "thread.session-set",
