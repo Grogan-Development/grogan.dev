@@ -11,6 +11,7 @@ import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 
 import { daemonLayer } from "./app.ts";
+import { sanitizeConversation } from "./harness.ts";
 import type { DaemonOptions } from "./runtime.ts";
 import { NERO_MODEL, nowIso } from "./runtime.ts";
 
@@ -608,4 +609,66 @@ fi
       yield* Fiber.interrupt(fiber);
     }),
   );
+});
+
+describe("conversation sanitizer", () => {
+  it("keeps complete assistant/tool_call blocks", () => {
+    const clean = sanitizeConversation([
+      { role: "user", content: "run it" },
+      {
+        role: "assistant",
+        content: null,
+        tool_calls: [
+          { id: "call_1", type: "function", function: { name: "bash", arguments: "{}" } },
+        ],
+      },
+      { role: "tool", tool_call_id: "call_1", content: "ok" },
+      { role: "assistant", content: "done" },
+    ]);
+    expect(clean).toHaveLength(4);
+  });
+
+  it("drops an assistant tool_calls block whose results never arrived", () => {
+    // An interrupted turn leaves assistant.tool_calls with no tool rows;
+    // OpenAI-strict backends 400 on every later turn in that thread.
+    const poisoned = [
+      { role: "user", content: "run it" },
+      {
+        role: "assistant",
+        content: null,
+        tool_calls: [
+          { id: "call_1", type: "function", function: { name: "bash", arguments: "{}" } },
+        ],
+      },
+    ];
+    const clean = sanitizeConversation([
+      ...poisoned,
+      { role: "user", content: "superseding question" },
+    ]);
+    expect(clean).toEqual([
+      { role: "user", content: "run it" },
+      { role: "user", content: "superseding question" },
+    ]);
+  });
+
+  it("drops partial results and orphan tool rows", () => {
+    const clean = sanitizeConversation([
+      { role: "user", content: "go" },
+      {
+        role: "assistant",
+        content: null,
+        tool_calls: [
+          { id: "call_1", type: "function", function: { name: "bash", arguments: "{}" } },
+          { id: "call_2", type: "function", function: { name: "read", arguments: "{}" } },
+        ],
+      },
+      { role: "tool", tool_call_id: "call_1", content: "partial" },
+      { role: "tool", tool_call_id: "call_9", content: "stray" },
+      { role: "user", content: "next" },
+    ]);
+    expect(clean).toEqual([
+      { role: "user", content: "go" },
+      { role: "user", content: "next" },
+    ]);
+  });
 });

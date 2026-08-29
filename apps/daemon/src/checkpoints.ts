@@ -200,6 +200,37 @@ export class CheckpointStore {
     this.capture(threadId, 0);
   }
 
+  /**
+   * Hard-reset the workspace tree to the checkpoint at or before turnCount
+   * (read-tree -u --reset: tracked files update, files that vanish from the
+   * index are removed). Files created after the last capture and never added
+   * stay on disk — checkpoints exclude dotfiles and caches anyway, so the
+   * restore is best-effort by design. False when git failed.
+   */
+  restoreTree(threadId: string, turnCount: number): boolean {
+    this.ensureRepo();
+    const tree = this.treeAtOrBefore(threadId, turnCount) ?? this.emptyTreeSha();
+    const read = git(this.gitDir, ["read-tree", "-u", "--reset", tree], {
+      workTree: this.workspaceRoot,
+    });
+    return read.ok;
+  }
+
+  /**
+   * Drop checkpoint trees above a revert's keep-count: trees are keyed by
+   * per-thread turn count, so without pruning the next capture would
+   * overwrite an old tree and stale turn diffs would resolve to new content.
+   */
+  pruneAfter(threadId: string, turnCount: number): void {
+    const threadTrees = this.trees[threadId];
+    if (threadTrees === undefined) return;
+    for (const key of Object.keys(threadTrees)) {
+      const count = Number.parseInt(key, 10);
+      if (Number.isFinite(count) && count > turnCount) delete threadTrees[key];
+    }
+    this.persist();
+  }
+
   rangeDiff(
     threadId: string,
     fromTurnCount: number,

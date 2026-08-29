@@ -66,6 +66,44 @@ const needsApproval = (
   return true;
 };
 
+/**
+ * Drop protocol-invalid tails left by interrupted turns: an assistant
+ * message with tool_calls must be followed by a tool result for every call
+ * id, and tool results must follow such an assistant message. OpenAI-strict
+ * backends 400 on any later turn otherwise — an orphaned block would poison
+ * the thread until daemon restart.
+ */
+export const sanitizeConversation = (messages: ChatMessage[]): ChatMessage[] => {
+  const out: ChatMessage[] = [];
+  for (let i = 0; i < messages.length; i += 1) {
+    const message = messages[i];
+    if (message === undefined) continue;
+    const calls = message.role === "assistant" ? message.tool_calls : undefined;
+    if (Array.isArray(calls) && calls.length > 0) {
+      const missing = new Set(calls.map((call) => call.id));
+      let j = i + 1;
+      while (j < messages.length) {
+        const next = messages[j];
+        if (next === undefined || next.role !== "tool" || next.tool_call_id === undefined) break;
+        if (!missing.delete(next.tool_call_id)) break;
+        j += 1;
+      }
+      if (missing.size === 0) {
+        out.push(message, ...messages.slice(i + 1, j));
+        i = j - 1;
+        continue;
+      }
+      // Incomplete: drop the assistant block together with its partial
+      // results; trailing stray results are dropped by the rule below.
+      i = j - 1;
+      continue;
+    }
+    if (message.role === "tool") continue;
+    out.push(message);
+  }
+  return out;
+};
+
 export class PiHarness {
   private readonly daemon: Daemon;
   private readonly live = new Map<string, LiveTurn>();
@@ -107,6 +145,17 @@ export class PiHarness {
     return this.live.has(threadId);
   }
 
+  /**
+   * Drop a thread's model memory entirely: used by revert so the next turn
+   * rebuilds the conversation from the truncated transcript instead of
+   * silently feeding the model pre-revert history.
+   */
+  evict(threadId: string): void {
+    this.abort(threadId);
+    this.conversations.delete(threadId);
+    this.pendingShots.delete(threadId);
+  }
+
   start(input: HarnessStartInput): void {
     this.abort(input.threadId);
     const controller = new AbortController();
@@ -138,8 +187,11 @@ export class PiHarness {
     const existing = this.conversations.get(threadId);
     const user: ChatMessage = { role: "user", content: userContent(userText, images) };
     if (existing !== undefined) {
-      existing.push(user);
-      return existing;
+      // Heal protocol damage from interrupted turns before extending.
+      const clean = sanitizeConversation(existing);
+      if (clean.length !== existing.length) this.conversations.set(threadId, clean);
+      clean.push(user);
+      return clean;
     }
     const thread = this.daemon.getThread(threadId);
     const prior: ChatMessage[] = [
@@ -451,6 +503,11 @@ export class PiHarness {
           });
 
           const approved = await this.approveTool(input, live, call.function.name, args, meta);
+          // A superseding turn (or stop/revert) resolved the approval with
+          // "cancel" via abort: bail without touching the shared array.
+          // Pushing the declined tool result here would land it after the
+          // next turn's user message and poison the conversation.
+          if (live.controller.signal.aborted) throw new Error("aborted");
           const toolResult = approved
             ? await executeTool(call.function.name, call.function.arguments, {
                 workspaceRoot: this.daemon.options.workspaceRoot,
@@ -475,6 +532,7 @@ export class PiHarness {
             toolResult.failed ? "failed" : "completed",
             toolResult.text,
           );
+          if (live.controller.signal.aborted) throw new Error("aborted");
           conversation.push({
             role: "tool",
             tool_call_id: call.id,

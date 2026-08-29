@@ -1130,17 +1130,28 @@ export class Daemon {
         break;
       }
       case "thread.checkpoint.revert": {
+        // `turnCount` means "keep this many user turns": the web sends the
+        // clicked turn's checkpoint count minus 1, and the client reducer prunes
+        // checkpoints with checkpointTurnCount <= turnCount. Transcript, stored
+        // checkpoints, the workspace tree, and the model's conversation must all
+        // move together — reverting only the chat used to leave the files at
+        // HEAD and the model fed pre-revert history.
+        this.harness.evict(command.threadId);
+        this.checkpoints.restoreTree(command.threadId, command.turnCount);
+        this.checkpoints.pruneAfter(command.threadId, command.turnCount);
         this.patchThread(command.threadId, command.commandId, (thread) => {
           const userTurns = thread.messages.filter((message) => message.role === "user");
-          const keepUsers = Math.max(0, userTurns.length - command.turnCount);
-          const cutoff = userTurns[keepUsers]?.createdAt;
+          const cutoff = userTurns[command.turnCount]?.createdAt;
           const messages =
             cutoff === undefined
-              ? []
+              ? thread.messages
               : thread.messages.filter((message) => message.createdAt < cutoff);
+          const checkpoints = thread.checkpoints.filter(
+            (entry) => entry.checkpointTurnCount <= command.turnCount,
+          );
           const updatedAt = nowIso();
           return {
-            thread: { ...thread, messages, latestTurn: null, updatedAt },
+            thread: { ...thread, messages, checkpoints, latestTurn: null, updatedAt },
             type: "thread.reverted",
             payload: { threadId: thread.id, turnCount: command.turnCount },
           };

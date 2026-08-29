@@ -98,6 +98,46 @@ describe("checkpoint diffs", () => {
     expect(fromMissing.diff).toBe(fromZero.diff);
   });
 
+  it("pruneAfter drops later trees so the next capture writes fresh", () => {
+    const tmp = tmpDirs();
+    const store = new CheckpointStore(tmp.dataDir, tmp.workspace);
+    Fs.writeFileSync(Path.join(tmp.workspace, "a.txt"), "turn one\n");
+    store.ensureBaseline("thread-revert");
+    store.capture("thread-revert", 1);
+    Fs.writeFileSync(Path.join(tmp.workspace, "a.txt"), "turn two\n");
+    Fs.writeFileSync(Path.join(tmp.workspace, "b.txt"), "turn two extra\n");
+    store.capture("thread-revert", 2);
+    expect(store.treeFor("thread-revert", 2)).toBeDefined();
+
+    store.pruneAfter("thread-revert", 1);
+    expect(store.treeFor("thread-revert", 2)).toBeUndefined();
+    expect(store.treeFor("thread-revert", 1)).toBeDefined();
+
+    // The next capture at the same count must not resurrect the pruned tree.
+    Fs.writeFileSync(Path.join(tmp.workspace, "b.txt"), "turn two again\n");
+    store.capture("thread-revert", 2);
+    const diff = store.rangeDiff("thread-revert", 1, 2, false);
+    expect(diff.diff).toContain("turn two again");
+    expect(diff.diff).not.toContain("turn two extra");
+  });
+
+  it("restoreTree hard-resets the workspace to the kept checkpoint", () => {
+    const tmp = tmpDirs();
+    const store = new CheckpointStore(tmp.dataDir, tmp.workspace);
+    Fs.writeFileSync(Path.join(tmp.workspace, "a.txt"), "kept\n");
+    store.ensureBaseline("thread-restore");
+    store.capture("thread-restore", 1);
+
+    // Turn 2 edits a.txt and adds b.txt; revert to keep 1 turn undoes both.
+    Fs.writeFileSync(Path.join(tmp.workspace, "a.txt"), "edited after revert point\n");
+    Fs.writeFileSync(Path.join(tmp.workspace, "b.txt"), "created later\n");
+    store.capture("thread-restore", 2);
+
+    expect(store.restoreTree("thread-restore", 1)).toBe(true);
+    expect(Fs.readFileSync(Path.join(tmp.workspace, "a.txt"), "utf8")).toBe("kept\n");
+    expect(Fs.existsSync(Path.join(tmp.workspace, "b.txt"))).toBe(false);
+  });
+
   it("does not snapshot env keys, ssh, or browser profiles", () => {
     const tmp = tmpDirs();
     Fs.mkdirSync(Path.join(tmp.workspace, ".ssh"), { recursive: true });
