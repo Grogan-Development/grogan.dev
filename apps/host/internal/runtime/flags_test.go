@@ -9,7 +9,8 @@ func TestDockerCreateArgsCgroupPolicy(t *testing.T) {
 	args := DockerCreateArgs("nero-guest:v1", "abc", "ws", "/var/lib/nero/ws/abc", GuestEnv{
 		HostToken:        "tok",
 		AccessToken:      "access",
-		OpenRouterAPIKey: "sk-or-test",
+		ZaiAPIKey: "zai-key-test",
+		BasetenAPIKey: "bt-key-test",
 	})
 	joined := strings.Join(args, " ")
 	for _, want := range []string{
@@ -18,7 +19,8 @@ func TestDockerCreateArgsCgroupPolicy(t *testing.T) {
 		"NERO_ENVIRONMENT_ID=abc",
 		"NERO_LABEL=ws",
 		"NERO_ACCESS_TOKEN=access",
-		"OPENROUTER_API_KEY=sk-or-test",
+		"ZAI_API_KEY=zai-key-test",
+		"BASETEN_API_KEY=bt-key-test",
 		"--memory=64g",
 		"--memory-swap=64g",
 		"--cpu-shares=1024",
@@ -50,7 +52,7 @@ func TestDockerCreateArgsCgroupPolicy(t *testing.T) {
 func TestDockerCreateArgsOmitsEmptySecrets(t *testing.T) {
 	args := DockerCreateArgs("nero-guest:v1", "abc", "ws", "/var/lib/nero/ws/abc", GuestEnv{})
 	joined := strings.Join(args, " ")
-	for _, leak := range []string{"OPENROUTER_API_KEY=", "NERO_ACCESS_TOKEN=", "NERO_HOST_TOKEN="} {
+	for _, leak := range []string{"ZAI_API_KEY=zai-key-test", "BASETEN_API_KEY=bt-key-test", "NERO_ACCESS_TOKEN=", "NERO_HOST_TOKEN="} {
 		if strings.Contains(joined, leak) {
 			t.Errorf("empty secret should be omitted: %s", leak)
 		}

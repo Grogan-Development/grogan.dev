@@ -17,23 +17,25 @@ import (
 )
 
 type DockerSettings struct {
-	Image            string
-	Pool             string
-	MountRoot        string
-	HostToken        string
-	AccessToken      string
-	OpenRouterAPIKey string
-	SocketDir        string
+	Image         string
+	Pool          string
+	MountRoot     string
+	HostToken     string
+	AccessToken   string
+	ZaiAPIKey     string
+	BasetenAPIKey string
+	SocketDir     string
 }
 
 type Docker struct {
-	Image            string
-	Pool             string
-	MountRoot        string
-	HostToken        string
-	AccessToken      string
-	OpenRouterAPIKey string
-	log              *slog.Logger
+	Image         string
+	Pool          string
+	MountRoot     string
+	HostToken     string
+	AccessToken   string
+	ZaiAPIKey     string
+	BasetenAPIKey string
+	log           *slog.Logger
 	run              func(ctx context.Context, name string, args ...string) (string, error)
 	readFile         func(name string) ([]byte, error)
 	writeFile        func(name string, data []byte, perm os.FileMode) error
@@ -53,13 +55,14 @@ func NewDocker(cfg DockerSettings, log *slog.Logger) *Docker {
 		dir = DefaultSocketDir
 	}
 	return &Docker{
-		Image:            cfg.Image,
-		Pool:             cfg.Pool,
-		MountRoot:        cfg.MountRoot,
-		HostToken:        cfg.HostToken,
-		AccessToken:      cfg.AccessToken,
-		OpenRouterAPIKey: cfg.OpenRouterAPIKey,
-		log:              log,
+		Image:         cfg.Image,
+		Pool:          cfg.Pool,
+		MountRoot:     cfg.MountRoot,
+		HostToken:     cfg.HostToken,
+		AccessToken:   cfg.AccessToken,
+		ZaiAPIKey:     cfg.ZaiAPIKey,
+		BasetenAPIKey: cfg.BasetenAPIKey,
+		log:           log,
 		run:              runCmd,
 		readFile:         os.ReadFile,
 		writeFile:        os.WriteFile,
@@ -125,11 +128,12 @@ func (d *Docker) CreateContainer(ctx context.Context, spec WorkspaceSpec) error 
 	}
 	mp := MountPath(d.MountRoot, spec.ID)
 	args := DockerCreateArgs(d.Image, spec.ID, spec.Name, mp, GuestEnv{
-		HostToken:         d.HostToken,
-		AccessToken:       d.AccessToken,
-		OpenRouterAPIKey:  d.OpenRouterAPIKey,
-		OpenRouterBaseUrl: os.Getenv("OPENROUTER_BASE_URL"),
-		NeroModel:         os.Getenv("NERO_MODEL"),
+		HostToken:      d.HostToken,
+		AccessToken:    d.AccessToken,
+		ZaiAPIKey:      d.ZaiAPIKey,
+		BasetenAPIKey:  d.BasetenAPIKey,
+		ZaiBaseUrl:     os.Getenv("ZAI_BASE_URL"),
+		NeroModel:      os.Getenv("NERO_MODEL"),
 	})
 	_, err := d.run(ctx, "docker", args...)
 	return err

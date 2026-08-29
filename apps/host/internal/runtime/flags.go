@@ -26,12 +26,13 @@ const (
 
 // GuestEnv is injected at docker create. Secrets come from host.env, not git.
 type GuestEnv struct {
-	HostToken        string
-	AccessToken      string
-	OpenRouterAPIKey string
+	HostToken     string
+	AccessToken   string
+	ZaiAPIKey     string
+	BasetenAPIKey string
 	// Routing knobs for the harness (non-secret); empty means daemon defaults.
-	OpenRouterBaseUrl string
-	NeroModel         string
+	ZaiBaseUrl string
+	NeroModel  string
 }
 
 func ContainerName(id string) string { return "nero-ws-" + id }
@@ -69,8 +70,9 @@ func DockerCreateArgs(image, id, name, mount string, env GuestEnv) []string {
 	}
 	args = appendEnv(args, "NERO_HOST_TOKEN", env.HostToken)
 	args = appendEnv(args, "NERO_ACCESS_TOKEN", env.AccessToken)
-	args = appendEnv(args, "OPENROUTER_API_KEY", env.OpenRouterAPIKey)
-	args = appendEnv(args, "OPENROUTER_BASE_URL", env.OpenRouterBaseUrl)
+	args = appendEnv(args, "ZAI_API_KEY", env.ZaiAPIKey)
+	args = appendEnv(args, "ZAI_BASE_URL", env.ZaiBaseUrl)
+	args = appendEnv(args, "BASETEN_API_KEY", env.BasetenAPIKey)
 	args = appendEnv(args, "NERO_MODEL", env.NeroModel)
 	return append(args, image)
 }

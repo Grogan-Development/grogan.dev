@@ -91,10 +91,15 @@ const tmpDaemon = (port: number, extra: Partial<DaemonOptions> = {}) => {
       seatLockPath: Path.join(root, "seat.lock"),
       seatHoldBin: "nero-desktop",
       vncOrigin: "http://127.0.0.1:8444",
-      openRouterApiKey: "test-openrouter-key",
-      openRouterBaseUrl: "https://openrouter.ai/api/v1",
-      openRouterTimeoutMs: 120_000,
-      openRouterIdleMs: 45_000,
+      zaiApiKey: "test-zai-key",
+      zaiCodingBaseUrl: "https://api.z.ai/api/coding/paas/v4",
+      zaiPaygBaseUrl: "https://api.z.ai/api/paas/v4",
+      basetenApiKey: "test-baseten-key",
+      basetenBaseUrl: "https://inference.baseten.co/v1",
+      openaiClientId: undefined,
+      codexRedirectUri: undefined,
+      routerTimeoutMs: 120_000,
+      routerIdleMs: 45_000,
       hostUrl: undefined,
       hostToken: undefined,
       workspaceId: undefined,
@@ -165,7 +170,7 @@ const finishChunk = (reason: string) => ({
 
 type FakeReply = string | { readonly hang: true } | { readonly write: string; readonly hold: true };
 
-const startFakeOpenRouter = (
+const startFakeModelEndpoint = (
   handler: (captured: CapturedRequest, index: number) => Promise<FakeReply> | FakeReply,
 ): Promise<{ port: number; captured: CapturedRequest[]; close: () => Promise<void> }> =>
   new Promise((resolve, reject) => {
@@ -217,7 +222,7 @@ const startFakeOpenRouter = (
       const address = server.address();
       if (address === null || typeof address === "string") {
         server.close();
-        reject(new Error("Failed to bind fake OpenRouter."));
+        reject(new Error("Failed to bind fake model endpoint."));
         return;
       }
       resolve({
@@ -284,14 +289,14 @@ const createThread = (port: number, threadId: string) =>
   });
 
 describe("pi harness", () => {
-  it.live("streams GLM-5.3-Flash via OpenRouter Baseten and executes a tool_call", () =>
+  it.live("streams GLM-5.3-Flash via the router (Z.ai route) and executes a tool_call", () =>
     Effect.gen(function* () {
       let releaseFirst: (() => void) | undefined;
       const firstGate = new Promise<void>((resolve) => {
         releaseFirst = resolve;
       });
       const fake = yield* Effect.promise(() =>
-        startFakeOpenRouter(async (_captured, index) => {
+        startFakeModelEndpoint(async (_captured, index) => {
           if (index === 0) {
             await firstGate;
             return sse([
@@ -310,8 +315,8 @@ describe("pi harness", () => {
       );
       const port = yield* Effect.promise(allocatePort);
       const tmp = tmpDaemon(port, {
-        openRouterBaseUrl: `http://127.0.0.1:${fake.port}/api/v1`,
-        openRouterApiKey: "test-openrouter-key",
+        zaiCodingBaseUrl: `http://127.0.0.1:${fake.port}/coding/v4`,
+        zaiApiKey: "test-zai-key",
       });
       const fiber = yield* launch(tmp.options);
       const threadId = "thread-harness-1";
@@ -346,11 +351,10 @@ describe("pi harness", () => {
 
       expect(fake.captured.length).toBeGreaterThanOrEqual(2);
       const first = fake.captured[0];
-      expect(first?.authorization).toBe("Bearer test-openrouter-key");
+      expect(first?.authorization).toBe("Bearer test-zai-key");
       expect(first?.body).toMatchObject({
         model: NERO_MODEL,
         stream: true,
-        provider: { only: ["baseten"], allow_fallbacks: false },
       });
       expect(JSON.stringify(first?.body)).toContain('"name":"bash"');
 
@@ -366,10 +370,10 @@ describe("pi harness", () => {
     }),
   );
 
-  it.live("attaches shot PNGs on the subsequent OpenRouter turn (max 8)", () =>
+  it.live("attaches shot PNGs on the subsequent router turn (max 8)", () =>
     Effect.gen(function* () {
       const fake = yield* Effect.promise(() =>
-        startFakeOpenRouter((_captured, index) => {
+        startFakeModelEndpoint((_captured, index) => {
           if (index === 0) {
             return sse([
               textChunk("Shooting."),
@@ -383,8 +387,8 @@ describe("pi harness", () => {
 
       const port = yield* Effect.promise(allocatePort);
       const tmp = tmpDaemon(port, {
-        openRouterBaseUrl: `http://127.0.0.1:${fake.port}/api/v1`,
-        openRouterApiKey: "test-openrouter-key",
+        zaiCodingBaseUrl: `http://127.0.0.1:${fake.port}/coding/v4`,
+        zaiApiKey: "test-zai-key",
       });
       const bin = Path.join(tmp.root, "bin");
       Fs.mkdirSync(bin, { recursive: true });
@@ -450,15 +454,15 @@ fi
   it.live("interrupts a mid-stream turn and does not leave streaming:true", () =>
     Effect.gen(function* () {
       const fake = yield* Effect.promise(() =>
-        startFakeOpenRouter(() => ({
+        startFakeModelEndpoint(() => ({
           write: sse([textChunk("Working")]).replace("data: [DONE]\n\n", ""),
           hold: true,
         })),
       );
       const port = yield* Effect.promise(allocatePort);
       const tmp = tmpDaemon(port, {
-        openRouterBaseUrl: `http://127.0.0.1:${fake.port}/api/v1`,
-        openRouterApiKey: "test-openrouter-key",
+        zaiCodingBaseUrl: `http://127.0.0.1:${fake.port}/coding/v4`,
+        zaiApiKey: "test-zai-key",
       });
       const fiber = yield* launch(tmp.options);
       const threadId = "thread-interrupt-1";
@@ -502,15 +506,15 @@ fi
   it.live("a second turn settles the first and does not leave streaming:true", () =>
     Effect.gen(function* () {
       const fake = yield* Effect.promise(() =>
-        startFakeOpenRouter((_captured, index) => {
+        startFakeModelEndpoint((_captured, index) => {
           if (index === 0) return { hang: true };
           return sse([textChunk("Second turn done."), finishChunk("stop")]);
         }),
       );
       const port = yield* Effect.promise(allocatePort);
       const tmp = tmpDaemon(port, {
-        openRouterBaseUrl: `http://127.0.0.1:${fake.port}/api/v1`,
-        openRouterApiKey: "test-openrouter-key",
+        zaiCodingBaseUrl: `http://127.0.0.1:${fake.port}/coding/v4`,
+        zaiApiKey: "test-zai-key",
       });
       const fiber = yield* launch(tmp.options);
       const threadId = "thread-supersede-1";
@@ -541,15 +545,15 @@ fi
     }),
   );
 
-  it.live("times out a hung OpenRouter socket and clears keep-awake", () =>
+  it.live("times out a hung provider socket and clears keep-awake", () =>
     Effect.gen(function* () {
-      const fake = yield* Effect.promise(() => startFakeOpenRouter(() => ({ hang: true })));
+      const fake = yield* Effect.promise(() => startFakeModelEndpoint(() => ({ hang: true })));
       const port = yield* Effect.promise(allocatePort);
       const tmp = tmpDaemon(port, {
-        openRouterBaseUrl: `http://127.0.0.1:${fake.port}/api/v1`,
-        openRouterApiKey: "test-openrouter-key",
-        openRouterTimeoutMs: 250,
-        openRouterIdleMs: 150,
+        zaiCodingBaseUrl: `http://127.0.0.1:${fake.port}/coding/v4`,
+        zaiApiKey: "test-zai-key",
+        routerTimeoutMs: 250,
+        routerIdleMs: 150,
       });
       const fiber = yield* launch(tmp.options);
       const threadId = "thread-timeout-1";
@@ -560,12 +564,12 @@ fi
           () => httpRequest(port, "GET", `/api/orchestration/threads/${threadId}`),
           (response) => {
             const body = JSON.stringify(response.json);
-            return body.includes("timeout") || body.includes("OpenRouter");
+            return body.includes("timeout") || body.includes("Z.ai");
           },
           8_000,
         ),
       );
-      expect(JSON.stringify(snapshot.json)).toMatch(/timeout|OpenRouter/);
+      expect(JSON.stringify(snapshot.json)).toMatch(/timeout|Z.ai/);
       const idle = yield* Effect.promise(() =>
         poll(
           () =>
@@ -584,7 +588,7 @@ fi
   it.live("clears stale keep-awake liveTurns on daemon start", () =>
     Effect.gen(function* () {
       const port = yield* Effect.promise(allocatePort);
-      const tmp = tmpDaemon(port, { openRouterApiKey: undefined });
+      const tmp = tmpDaemon(port, { zaiApiKey: undefined, basetenApiKey: undefined });
       Fs.mkdirSync(tmp.dataDir, { recursive: true });
       Fs.writeFileSync(
         Path.join(tmp.dataDir, "keep-awake.json"),

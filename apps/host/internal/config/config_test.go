@@ -4,10 +4,11 @@ import "testing"
 
 func TestFromEnvSecretsAndSocketDir(t *testing.T) {
 	t.Setenv("NERO_ACCESS_TOKEN", "access")
-	t.Setenv("OPENROUTER_API_KEY", "sk-or")
+	t.Setenv("ZAI_API_KEY", "zai-key")
+	t.Setenv("BASETEN_API_KEY", "bt-key")
 	t.Setenv("NERO_SOCK_DIR", "/tmp/nero-w")
 	cfg := FromEnv()
-	if cfg.AccessToken != "access" || cfg.OpenRouterAPIKey != "sk-or" || cfg.SocketDir != "/tmp/nero-w" {
+	if cfg.AccessToken != "access" || cfg.ZaiAPIKey != "zai-key" || cfg.BasetenAPIKey != "bt-key" || cfg.SocketDir != "/tmp/nero-w" {
 		t.Fatalf("%+v", cfg)
 	}
 }

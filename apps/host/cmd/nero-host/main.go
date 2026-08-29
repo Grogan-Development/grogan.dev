@@ -30,7 +30,8 @@ func main() {
 		MountRoot:        cfg.MountRoot,
 		HostToken:        cfg.HostToken,
 		AccessToken:      cfg.AccessToken,
-		OpenRouterAPIKey: cfg.OpenRouterAPIKey,
+		ZaiAPIKey:        cfg.ZaiAPIKey,
+		BasetenAPIKey:    cfg.BasetenAPIKey,
 		SocketDir:        cfg.SocketDir,
 	}, log)
 	ll := landlord.New(rt, landlord.RealClock{}, log)

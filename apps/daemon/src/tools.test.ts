@@ -140,31 +140,37 @@ fi
     }
   });
 
-  it("does not expose OPENROUTER_API_KEY or NERO_ACCESS_TOKEN to bash", async () => {
+  it("does not expose router keys or NERO_ACCESS_TOKEN to bash", async () => {
     const tmp = workspace();
     const ctx = {
       workspaceRoot: tmp.root,
       homeDir: tmp.home,
       signal: new AbortController().signal,
     };
-    const previousKey = Process.env.OPENROUTER_API_KEY;
+    const previousKey = Process.env.ZAI_API_KEY;
+    const previousBaseten = Process.env.BASETEN_API_KEY;
     const previousToken = Process.env.NERO_ACCESS_TOKEN;
-    Process.env.OPENROUTER_API_KEY = "secret-openrouter-key";
+    Process.env.ZAI_API_KEY = "secret-zai-key";
+    Process.env.BASETEN_API_KEY = "secret-baseten-key";
     Process.env.NERO_ACCESS_TOKEN = "secret-access-token";
     try {
       const result = await executeTool(
         "bash",
         JSON.stringify({
-          command: "printenv OPENROUTER_API_KEY; printenv NERO_ACCESS_TOKEN; printenv HOME",
+          command:
+            "printenv ZAI_API_KEY; printenv BASETEN_API_KEY; printenv NERO_ACCESS_TOKEN; printenv HOME",
         }),
         ctx,
       );
-      expect(result.text).not.toContain("secret-openrouter-key");
+      expect(result.text).not.toContain("secret-zai-key");
+      expect(result.text).not.toContain("secret-baseten-key");
       expect(result.text).not.toContain("secret-access-token");
       expect(result.text).toContain(tmp.home);
     } finally {
-      if (previousKey === undefined) delete Process.env.OPENROUTER_API_KEY;
-      else Process.env.OPENROUTER_API_KEY = previousKey;
+      if (previousKey === undefined) delete Process.env.ZAI_API_KEY;
+      else Process.env.ZAI_API_KEY = previousKey;
+      if (previousBaseten === undefined) delete Process.env.BASETEN_API_KEY;
+      else Process.env.BASETEN_API_KEY = previousBaseten;
       if (previousToken === undefined) delete Process.env.NERO_ACCESS_TOKEN;
       else Process.env.NERO_ACCESS_TOKEN = previousToken;
     }

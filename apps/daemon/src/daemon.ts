@@ -57,6 +57,8 @@ import * as Schema from "effect/Schema";
 
 import { CheckpointStore } from "./checkpoints.ts";
 import { PiHarness } from "./harness.ts";
+import { NeroRouter } from "./router/router.ts";
+import { CATALOG } from "./router/catalog.ts";
 import type { DaemonOptions } from "./runtime.ts";
 import {
   DAEMON_VERSION,
@@ -275,9 +277,22 @@ export class Daemon {
   readonly serverEpoch = nextToken("epoch");
   private persistTimer: ReturnType<typeof setTimeout> | undefined;
   readonly humanDriving: HumanDrivingLock;
+  /** All model traffic routes through this (see src/router). */
+  readonly router: NeroRouter;
 
   constructor(options: DaemonOptions) {
     this.options = options;
+    this.router = new NeroRouter({
+      zai: {
+        apiKey: options.zaiApiKey,
+        codingBaseUrl: options.zaiCodingBaseUrl,
+        paygBaseUrl: options.zaiPaygBaseUrl,
+      },
+      baseten: { apiKey: options.basetenApiKey, baseUrl: options.basetenBaseUrl },
+      codex: { clientId: options.openaiClientId, redirectUri: options.codexRedirectUri },
+      grok: { baseUrl: Process.env.XAI_BASE_URL },
+      dataDir: options.dataDir,
+    });
     this.humanDriving = new HumanDrivingLock(options.seatLockPath, options.seatHoldBin);
     this.harness = new PiHarness(this);
     this.turnPulse = new HostTurnPulse(options);
@@ -382,6 +397,38 @@ export class Daemon {
     };
   }
 
+  /** A turn can start when at least one router provider is usable. */
+  private routerAvailable(): boolean {
+    const status = this.router.status();
+    return status.zai || status.baseten || status.codex || status.grok;
+  }
+
+  /**
+   * Model picker rows for the single nero provider. GLM routes always show;
+   * subscription models only appear once their provider is signed in, since
+   * picking one without credentials is a guaranteed turn failure.
+   */
+  private catalogModels(): Array<{
+    slug: string;
+    name: string;
+    isCustom: boolean;
+    isDefault: boolean;
+    capabilities: null;
+  }> {
+    const status = this.router.status();
+    return CATALOG.filter((model) => {
+      if (model.chain.every((id) => id === "grok")) return status.grok;
+      if (model.chain.every((id) => id === "codex")) return status.codex;
+      return true;
+    }).map((model) => ({
+      slug: model.slug,
+      name: model.name,
+      isCustom: false,
+      isDefault: model.default === true,
+      capabilities: null,
+    }));
+  }
+
   serverConfig(): ServerConfig {
     return {
       environment: this.environment(),
@@ -402,15 +449,7 @@ export class Daemon {
           auth: { status: "authenticated", type: "api-key", label: "Nero" },
           checkedAt: nowIso(),
           availability: "available",
-          models: [
-            {
-              slug: NERO_MODEL,
-              name: "GLM-5.3 Flash",
-              isCustom: false,
-              isDefault: true,
-              capabilities: null,
-            },
-          ],
+          models: this.catalogModels(),
           slashCommands: [],
           skills: [],
         },
@@ -1341,13 +1380,14 @@ export class Daemon {
     this.emitThreadEvent(next, startEvent);
     this.emitSession(next.id, command.commandId, session);
     this.checkpoints.ensureBaseline(next.id);
-    const apiKey = this.options.openRouterApiKey;
-    if (apiKey === undefined || apiKey.length === 0) {
+    if (!this.routerAvailable()) {
+      const message =
+        "Nero cannot start the turn: no model provider is configured (set ZAI_API_KEY or BASETEN_API_KEY).";
       const assistantId = this.completeAssistant({
         threadId: next.id,
         turnId,
         commandId: command.commandId,
-        text: "Nero cannot start the GLM loop: OPENROUTER_API_KEY is not set.",
+        text: message,
       });
       this.finishTurn({
         threadId: next.id,
@@ -1355,7 +1395,7 @@ export class Daemon {
         commandId: command.commandId,
         assistantMessageId: assistantId,
         status: "error",
-        lastError: "OPENROUTER_API_KEY is not set.",
+        lastError: message,
       });
       return;
     }

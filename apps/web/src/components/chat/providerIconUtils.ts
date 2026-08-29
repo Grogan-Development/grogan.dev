@@ -1,9 +1,9 @@
 import { NERO_DRIVER_KIND, ProviderDriverKind } from "@t3tools/contracts";
-import { ClaudeAI, CursorIcon, GrokIcon, Icon, OpenAI, OpenCodeIcon } from "../Icons";
+import { ClaudeAI, CursorIcon, GrokIcon, Icon, NeroIcon, OpenAI, OpenCodeIcon } from "../Icons";
 import { PROVIDER_OPTIONS } from "../../session-logic";
 
 export const PROVIDER_ICON_BY_PROVIDER: Partial<Record<ProviderDriverKind, Icon>> = {
-  [NERO_DRIVER_KIND]: GrokIcon,
+  [NERO_DRIVER_KIND]: NeroIcon,
   [ProviderDriverKind.make("codex")]: OpenAI,
   [ProviderDriverKind.make("claudeAgent")]: ClaudeAI,
   [ProviderDriverKind.make("opencode")]: OpenCodeIcon,

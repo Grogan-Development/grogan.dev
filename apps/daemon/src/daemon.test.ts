@@ -232,10 +232,15 @@ const tmpDaemon = (port: number, extra: Partial<DaemonOptions> = {}) => {
       seatLockPath: Path.join(root, "seat.lock"),
       seatHoldBin: NERO_DESKTOP,
       vncOrigin: "http://127.0.0.1:8444",
-      openRouterApiKey: undefined,
-      openRouterBaseUrl: "https://openrouter.ai/api/v1",
-      openRouterTimeoutMs: 120_000,
-      openRouterIdleMs: 45_000,
+      zaiApiKey: undefined,
+      zaiCodingBaseUrl: "https://api.z.ai/api/coding/paas/v4",
+      zaiPaygBaseUrl: "https://api.z.ai/api/paas/v4",
+      basetenApiKey: undefined,
+      basetenBaseUrl: "https://inference.baseten.co/v1",
+      openaiClientId: undefined,
+      codexRedirectUri: undefined,
+      routerTimeoutMs: 120_000,
+      routerIdleMs: 45_000,
       hostUrl: undefined,
       hostToken: undefined,
       workspaceId: undefined,
@@ -269,7 +274,7 @@ describe("nero daemon", () => {
       });
       expect(
         (config as { providers: { models: { slug: string }[] }[] }).providers[0]?.models[0]?.slug,
-      ).toBe("z-ai/glm-5.3-flash");
+      ).toBe("glm-5.3-flash");
 
       const threadId = "thread-test-1";
       const created = yield* Effect.promise(() =>
@@ -279,7 +284,7 @@ describe("nero daemon", () => {
           threadId: ThreadId.make(threadId),
           projectId: ProjectId.make("workspace"),
           title: "Test thread",
-          modelSelection: { instanceId: "nero", model: "z-ai/glm-5.3-flash" },
+          modelSelection: { instanceId: "nero", model: "glm-5.3-flash" },
           runtimeMode: "full-access",
           interactionMode: "default",
           branch: null,
@@ -344,7 +349,7 @@ describe("nero daemon", () => {
       );
       expect(thread.status).toBe(200);
       expect(JSON.stringify(thread.json)).toContain("hello");
-      expect(JSON.stringify(thread.json)).toContain("OPENROUTER_API_KEY");
+      expect(JSON.stringify(thread.json)).toContain("ZAI_API_KEY");
 
       yield* Fiber.interrupt(fiber);
     }),

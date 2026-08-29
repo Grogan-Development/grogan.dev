@@ -13,9 +13,15 @@ Precedent research (Aug 2026): models.dev, Z.ai/Baseten docs, and how Zed,
 OpenCode, Hermes (Nous), Cline, and Warp route subscriptions. Key sources are
 linked inline.
 
-**Status:** v1 is implemented and merged to main @ `5afbd24`. Sections 1–4
-formalize the locally proven `claudeg` / `claudex` / `claudez` wrappers (Grok
-OIDC, Codex OAuth, Z.ai-via-Baseten) into the router.
+**Status (2026-08-29):** v1 shipped and was merged to main @ `5afbd24`.
+**§1–2 have landed:** the Nero Router is implemented (`apps/daemon/src/router/`)
+and is the only model path — Z.ai coding plan main route with PAYG fallback,
+Baseten fast model, and the §3–4 subscription adapters (Codex OAuth PKCE +
+Responses transport, Grok xAI OIDC with the CLI auth.json importer) are in code
+with their token store on the workspace dataset. The third-party middleman is
+gone from the daemon, PLAN.md, and deploy; what remains for §3–4 is live
+bring-up (redirect registration, first login, upstream slug confirmation) —
+tracked in `docs/issues.md` §9. Sections 5–10 remain roadmap.
 
 ---
 
@@ -39,9 +45,9 @@ OIDC, Codex OAuth, Z.ai-via-Baseten) into the router.
 - **Canonical model mapping:** Nero slugs → per-provider slugs. Known: the v1
   OpenRouter slug `z-ai/glm-5.3-flash`, Z.ai first-party `glm-5.3-flash`, Baseten
   `zai-org/GLM-5.3-Flash`. One internal name, many providers.
-- **Placement:** start as a library inside `apps/daemon` (replacing
-  `openrouter.ts`'s role), extract into a standalone service only if the portal
-  or multiple daemons need it. Don't build the service first.
+- **Placement:** a library inside `apps/daemon` (`apps/daemon/src/router/`) —
+  done; extract into a standalone service only if the portal or multiple
+  daemons need it. Don't build the service first.
 - **Takes:** pinned catalog + override schema, transport adapters (OpenAI-compat,
   Anthropic-compat, Responses), selection/fallback policy, cost/quota tracking,
   and migration of the v1 harness call sites.
@@ -73,12 +79,12 @@ OIDC, Codex OAuth, Z.ai-via-Baseten) into the router.
   thread's turns to Baseten while enabled. Per-token spend instead of plan quota;
   native inline images; historically best time-to-first-token on GLM.
 
-| | Z.ai Coding Plan (main) | Baseten (fast mode) |
-|---|---|---|
-| Billing | Subscription credits, 5h/weekly windows | Per-token |
-| Vision | MCP path, multiplies credits | Inline image messages |
-| Protocol | OpenAI + Anthropic compat | OpenAI compat |
-| Rate shape | Quota resets + throttles | Standard API limits |
+|            | Z.ai Coding Plan (main)                 | Baseten (fast mode)   |
+| ---------- | --------------------------------------- | --------------------- |
+| Billing    | Subscription credits, 5h/weekly windows | Per-token             |
+| Vision     | MCP path, multiplies credits            | Inline image messages |
+| Protocol   | OpenAI + Anthropic compat               | OpenAI compat         |
+| Rate shape | Quota resets + throttles                | Standard API limits   |
 
 **Fallback order:** plan quota (coding endpoint) → Z.ai PAYG on 429/exhaust →
 fast mode only when the user flips it (never automatic — the toggle is the user's

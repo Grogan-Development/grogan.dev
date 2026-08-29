@@ -20,7 +20,8 @@ type Config struct {
 	AllowedEmails    []string
 	HostToken        string
 	AccessToken      string
-	OpenRouterAPIKey string
+	ZaiAPIKey        string
+	BasetenAPIKey    string
 	GuestImage       string
 	ZFSPool          string
 	MountRoot        string
@@ -45,7 +46,8 @@ func FromEnv() Config {
 		AllowedEmails:    splitCSV(os.Getenv("NERO_ALLOWED_EMAILS")),
 		HostToken:        os.Getenv("NERO_HOST_TOKEN"),
 		AccessToken:      os.Getenv("NERO_ACCESS_TOKEN"),
-		OpenRouterAPIKey: os.Getenv("OPENROUTER_API_KEY"),
+		ZaiAPIKey:        os.Getenv("ZAI_API_KEY"),
+		BasetenAPIKey:    os.Getenv("BASETEN_API_KEY"),
 		GuestImage:       env("NERO_GUEST_IMAGE", "nero-guest:v1"),
 		ZFSPool:          env("NERO_ZFS_POOL", "grid"),
 		MountRoot:        env("NERO_WS_MOUNT", "/var/lib/nero/ws"),

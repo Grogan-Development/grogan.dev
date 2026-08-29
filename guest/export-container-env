@@ -8,8 +8,9 @@ import grp
 from pathlib import Path
 
 KEYS = {
-    "OPENROUTER_API_KEY",
-    "OPENROUTER_BASE_URL",
+    "ZAI_API_KEY",
+    "ZAI_BASE_URL",
+    "BASETEN_API_KEY",
     "NERO_MODEL",
     "NERO_ACCESS_TOKEN",
     "NERO_HOST_TOKEN",

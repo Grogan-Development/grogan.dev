@@ -8,13 +8,8 @@ import {
 } from "@t3tools/contracts";
 
 import type { Daemon } from "./daemon.ts";
-import {
-  type ChatMessage,
-  type ContentPart,
-  type ImagePart,
-  streamChatCompletion,
-  systemPrompt,
-} from "./openrouter.ts";
+import type { ChatMessage, ContentPart, ImagePart } from "./router/openaiCompat.ts";
+import { systemPrompt } from "./router/catalog.ts";
 import { MAX_SHOT_IMAGES, nextToken, nowIso } from "./runtime.ts";
 import { executeTool, parseToolArguments, type ShotImage, toolActivityMeta } from "./tools.ts";
 
@@ -351,13 +346,13 @@ export class PiHarness {
         this.attachPendingShots(input.threadId, conversation);
         this.daemon.touchKeepAwake();
 
-        const result = await streamChatCompletion({
-          baseUrl: this.daemon.options.openRouterBaseUrl,
-          apiKey: this.daemon.options.openRouterApiKey ?? "",
+        const thread = this.daemon.getThread(input.threadId);
+        const result = await this.daemon.router.stream({
+          model: thread?.modelSelection.model ?? "",
           messages: conversation,
           signal: live.controller.signal,
-          timeoutMs: this.daemon.options.openRouterTimeoutMs,
-          idleMs: this.daemon.options.openRouterIdleMs,
+          timeoutMs: this.daemon.options.routerTimeoutMs,
+          idleMs: this.daemon.options.routerIdleMs,
           onText: (delta) => {
             if (live.controller.signal.aborted) return;
             if (live.assistantId === undefined) {

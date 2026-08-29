@@ -102,7 +102,7 @@ describe("checkpoint diffs", () => {
     const tmp = tmpDirs();
     Fs.mkdirSync(Path.join(tmp.workspace, ".ssh"), { recursive: true });
     Fs.mkdirSync(Path.join(tmp.workspace, ".config", "chromium"), { recursive: true });
-    Fs.writeFileSync(Path.join(tmp.workspace, ".env"), "OPENROUTER_API_KEY=secret-value\n");
+    Fs.writeFileSync(Path.join(tmp.workspace, ".env"), "ZAI_API_KEY=secret-value\n");
     Fs.writeFileSync(Path.join(tmp.workspace, ".ssh", "id_rsa"), "fake-private-key\n");
     Fs.writeFileSync(Path.join(tmp.workspace, ".config", "chromium", "Cookies"), "cookie-jar\n");
     Fs.writeFileSync(Path.join(tmp.workspace, "ok.txt"), "visible\n");

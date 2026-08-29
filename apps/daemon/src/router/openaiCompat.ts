@@ -1,13 +1,11 @@
+/**
+ * Shared OpenAI-chat-completions streaming client. Every OpenAI-compatible
+ * Nero Router provider (Z.ai, Baseten, Grok OIDC) streams through here; only
+ * the endpoint, credential header, model slug, and body extras differ.
+ */
 import * as Http from "node:http";
 import * as Https from "node:https";
 import { URL } from "node:url";
-
-import {
-  NERO_MODEL,
-  OPENROUTER_IDLE_MS,
-  OPENROUTER_PROVIDER_ONLY,
-  OPENROUTER_TIMEOUT_MS,
-} from "./runtime.ts";
 
 export type TextPart = {
   readonly type: "text";
@@ -40,114 +38,39 @@ export type ChatMessage =
     }
   | { readonly role: "tool"; readonly tool_call_id: string; readonly content: string };
 
-export const OPENROUTER_TOOLS = [
-  {
-    type: "function",
-    function: {
-      name: "bash",
-      description:
-        "Run a shell command in the workspace root. Drive the graphical seat with `nero-desktop shot|click|type|key`. Start long jobs with `nero-run` so they keep the workspace awake after this turn.",
-      parameters: {
-        type: "object",
-        properties: {
-          command: { type: "string", description: "Shell command to run." },
-          timeout_ms: {
-            type: "number",
-            description: "Optional timeout in milliseconds (default 120000, max 600000).",
-          },
-        },
-        required: ["command"],
-      },
-    },
-  },
-  {
-    type: "function",
-    function: {
-      name: "read",
-      description: "Read a UTF-8 file under the workspace root.",
-      parameters: {
-        type: "object",
-        properties: {
-          path: {
-            type: "string",
-            description: "Path relative to the workspace root, or absolute inside it.",
-          },
-          offset: { type: "number", description: "1-indexed start line (optional)." },
-          limit: { type: "number", description: "Max lines to return (optional)." },
-        },
-        required: ["path"],
-      },
-    },
-  },
-  {
-    type: "function",
-    function: {
-      name: "write",
-      description: "Write a UTF-8 file under the workspace root, creating parent directories.",
-      parameters: {
-        type: "object",
-        properties: {
-          path: { type: "string" },
-          content: { type: "string" },
-        },
-        required: ["path", "content"],
-      },
-    },
-  },
-  {
-    type: "function",
-    function: {
-      name: "edit",
-      description:
-        "Replace `old_string` with `new_string` in a workspace file. `old_string` must be unique unless `replace_all` is true.",
-      parameters: {
-        type: "object",
-        properties: {
-          path: { type: "string" },
-          old_string: { type: "string" },
-          new_string: { type: "string" },
-          replace_all: { type: "boolean" },
-        },
-        required: ["path", "old_string", "new_string"],
-      },
-    },
-  },
-] as const;
-
-export const systemPrompt = (workspaceRoot: string): string =>
-  `You are Nero, a Pi-like coding agent in a single shared workspace.
-
-Workspace root: ${workspaceRoot}
-File tools (read/write/edit) cannot leave that root. bash starts there.
-
-Tools: bash, read, write, edit.
-Seat CLI via bash:
-  nero-desktop shot [--out PATH]
-  nero-desktop click X Y [--button left|middle|right] [--double]
-  nero-desktop type TEXT
-  nero-desktop key KEY [KEY...]
-shot captures a PNG; it is attached on the next model request (max 8 images).
-Long jobs: \`nero-run COMMAND\` so the workspace stays awake after this turn.
-
-Prefer tools over questions. Be concise.`;
-
-export const chatCompletionsUrl = (baseUrl: string): string =>
-  `${baseUrl.replace(/\/+$/, "")}/chat/completions`;
-
-export type StreamChatInput = {
-  readonly baseUrl: string;
-  readonly apiKey: string;
-  readonly messages: ReadonlyArray<ChatMessage>;
-  readonly signal: AbortSignal;
-  readonly onText: (delta: string) => void;
-  readonly timeoutMs?: number;
-  readonly idleMs?: number;
-};
-
 export type StreamChatResult = {
   readonly content: string;
   readonly toolCalls: ReadonlyArray<ToolCall>;
   readonly finishReason: string | null;
+};
+
+export type OpenAICompatStreamInput = {
+  readonly url: string;
+  readonly headers: Readonly<Record<string, string>>;
+  readonly body: Record<string, unknown>;
+  readonly signal: AbortSignal;
+  readonly onText: (delta: string) => void;
+  readonly timeoutMs: number;
+  readonly idleMs: number;
+  /** Label used in error messages (e.g. "Z.ai", "Baseten"). */
+  readonly label: string;
+};
+
+export class RouterHttpStatusError extends Error {
+  readonly status: number;
+  constructor(label: string, status: number, body: string) {
+    super(`${label} HTTP ${status}: ${body.slice(0, 800)}`);
+    this.name = "RouterHttpStatusError";
+    this.status = status;
+  }
+}
+
+export const isRouterQuotaError = (error: unknown): boolean => {
+  if (error instanceof RouterHttpStatusError) {
+    return error.status === 429 || error.status === 402 || error.status === 403;
+  }
+  const message = error instanceof Error ? error.message : "";
+  return /\b(429|quota|insufficient|exhausted|credit)\b/i.test(message);
 };
 
 type AccTool = {
@@ -187,27 +110,15 @@ const finalizedToolCalls = (tools: AccTool[]): ToolCall[] =>
       function: { name: tool.name, arguments: tool.arguments },
     }));
 
-export const streamChatCompletion = (input: StreamChatInput): Promise<StreamChatResult> =>
+export const streamOpenAICompat = (input: OpenAICompatStreamInput): Promise<StreamChatResult> =>
   new Promise((resolve, reject) => {
     if (input.signal.aborted) {
       reject(new Error("aborted"));
       return;
     }
-    const url = new URL(chatCompletionsUrl(input.baseUrl));
+    const url = new URL(input.url);
     const lib = url.protocol === "https:" ? Https : Http;
-    const body = JSON.stringify({
-      model: NERO_MODEL,
-      stream: true,
-      messages: input.messages,
-      tools: OPENROUTER_TOOLS,
-      tool_choice: "auto",
-      provider: {
-        only: [...OPENROUTER_PROVIDER_ONLY],
-        allow_fallbacks: false,
-      },
-    });
-    const timeoutMs = input.timeoutMs ?? OPENROUTER_TIMEOUT_MS;
-    const idleMs = input.idleMs ?? OPENROUTER_IDLE_MS;
+    const body = JSON.stringify(input.body);
     let settled = false;
     let request: Http.ClientRequest | undefined;
     let idleTimer: ReturnType<typeof setTimeout> | undefined;
@@ -232,8 +143,8 @@ export const streamChatCompletion = (input: StreamChatInput): Promise<StreamChat
       clearIdle();
       idleTimer = setTimeout(() => {
         request?.destroy();
-        settle(new Error(`OpenRouter idle timeout after ${idleMs}ms`));
-      }, idleMs);
+        settle(new Error(`${input.label} idle timeout after ${input.idleMs}ms`));
+      }, input.idleMs);
     };
     input.signal.addEventListener("abort", onAbort);
     const req = lib.request(
@@ -242,11 +153,11 @@ export const streamChatCompletion = (input: StreamChatInput): Promise<StreamChat
         hostname: url.hostname,
         path: `${url.pathname}${url.search}`,
         method: "POST",
-        timeout: timeoutMs,
+        timeout: input.timeoutMs,
         headers: {
-          authorization: `Bearer ${input.apiKey}`,
           "content-type": "application/json",
           "content-length": String(Buffer.byteLength(body)),
+          ...input.headers,
         },
         ...(url.port.length > 0 ? { port: url.port } : {}),
       },
@@ -261,8 +172,13 @@ export const streamChatCompletion = (input: StreamChatInput): Promise<StreamChat
             chunks.push(chunk as Buffer);
           });
           response.on("end", () => {
-            const text = Buffer.concat(chunks).toString("utf8");
-            settle(new Error(`OpenRouter HTTP ${status}: ${text.slice(0, 800)}`));
+            settle(
+              new RouterHttpStatusError(
+                input.label,
+                status,
+                Buffer.concat(chunks).toString("utf8"),
+              ),
+            );
           });
           return;
         }
@@ -273,8 +189,11 @@ export const streamChatCompletion = (input: StreamChatInput): Promise<StreamChat
             chunks.push(chunk as Buffer);
           });
           response.on("end", () => {
-            const text = Buffer.concat(chunks).toString("utf8");
-            settle(new Error(`OpenRouter JSON error: ${text.slice(0, 800)}`));
+            settle(
+              new Error(
+                `${input.label} JSON error: ${Buffer.concat(chunks).toString("utf8").slice(0, 800)}`,
+              ),
+            );
           });
           return;
         }
@@ -290,7 +209,7 @@ export const streamChatCompletion = (input: StreamChatInput): Promise<StreamChat
               : undefined,
           );
         };
-        const openRouterError = (value: unknown): string | undefined => {
+        const streamError = (value: unknown): string | undefined => {
           if (value === null || typeof value !== "object") return undefined;
           const record = value as { error?: unknown };
           if (record.error === undefined) return undefined;
@@ -299,7 +218,7 @@ export const streamChatCompletion = (input: StreamChatInput): Promise<StreamChat
             const message = (record.error as { message?: unknown }).message;
             if (typeof message === "string" && message.length > 0) return message;
           }
-          return "OpenRouter stream error";
+          return `${input.label} stream error`;
         };
         response.on("error", (error) => finish(error));
         response.on("data", (chunk) => {
@@ -324,9 +243,9 @@ export const streamChatCompletion = (input: StreamChatInput): Promise<StreamChat
             } catch {
               continue;
             }
-            const streamError = openRouterError(parsed);
-            if (streamError !== undefined) {
-              finish(new Error(streamError));
+            const errorMessage = streamError(parsed);
+            if (errorMessage !== undefined) {
+              finish(new Error(errorMessage));
               return;
             }
             if (parsed === null || typeof parsed !== "object") continue;
@@ -369,7 +288,7 @@ export const streamChatCompletion = (input: StreamChatInput): Promise<StreamChat
     bumpIdle();
     req.on("timeout", () => {
       req.destroy();
-      settle(new Error(`OpenRouter request timed out after ${timeoutMs}ms`));
+      settle(new Error(`${input.label} request timed out after ${input.timeoutMs}ms`));
     });
     req.on("error", (error) => {
       if (input.signal.aborted) settle(new Error("aborted"));

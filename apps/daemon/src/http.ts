@@ -448,6 +448,78 @@ export const httpRoutesLayer = (daemon: Daemon) =>
 
       yield* router.add(
         "GET",
+        "/api/router/status",
+        recover(
+          Effect.gen(function* () {
+            yield* requireAuth(daemon);
+            return json(200, daemon.router.status());
+          }),
+        ),
+      );
+
+      yield* router.add(
+        "POST",
+        "/api/router/codex/login",
+        recover(
+          Effect.gen(function* () {
+            yield* requireAuth(daemon);
+            return json(200, { url: daemon.router.codexLogin.begin() });
+          }),
+        ),
+      );
+
+      yield* router.add(
+        "GET",
+        "/api/router/codex/callback",
+        recover(
+          Effect.gen(function* () {
+            yield* requireAuth(daemon);
+            const request = yield* HttpServerRequest.HttpServerRequest;
+            const query = new URL(request.url, "http://localhost").searchParams;
+            const code = query.get("code") ?? "";
+            const state = query.get("state") ?? "";
+            if (code.length === 0) {
+              return json(400, { error: "missing code" });
+            }
+            yield* Effect.promise(() => daemon.router.codexLogin.complete(code, state));
+            return HttpServerResponse.text(
+              "<!doctype html><title>Nero</title><p>Codex signed in. You can close this tab.</p>",
+              { contentType: "text/html; charset=utf-8" },
+            );
+          }),
+        ),
+      );
+
+      yield* router.add(
+        "POST",
+        "/api/router/grok/import",
+        recover(
+          Effect.gen(function* () {
+            yield* requireAuth(daemon);
+            const request = yield* HttpServerRequest.HttpServerRequest;
+            const body = yield* request.json;
+            daemon.router.importGrokAuth(body);
+            return json(200, { signedIn: true });
+          }),
+        ),
+      );
+
+      yield* router.add(
+        "POST",
+        "/api/router/codex/import",
+        recover(
+          Effect.gen(function* () {
+            yield* requireAuth(daemon);
+            const request = yield* HttpServerRequest.HttpServerRequest;
+            const body = yield* request.json;
+            daemon.router.importCodexTokens(body);
+            return json(200, { signedIn: true });
+          }),
+        ),
+      );
+
+      yield* router.add(
+        "GET",
         "/api/attachments/:attachmentId",
         recover(
           Effect.gen(function* () {

@@ -13,8 +13,14 @@ leak, dev-bypass refusal + guest non-forwarding, heartbeat default, predictable
 tokens, host token in agent bash), the never-served /api/assets + /api/attachments
 routes implemented, and the dead shared relay/DPoP/Connect stack deleted.
 Post-wave: typecheck, `pnpm test` (2623), go build/vet/test -race, lint, and the
-web build are all green. §0–7 are down to ~20 open; §8 has 4 P1 + 11 P2 + 27 P3
-open.
+web build are all green.
+
+Second full-tree pass the same day (main @ `29d96a2`, after `4ecfb70` + the
+stopped-workspace wake-before-navigate in `29d96a2`): §9 added. Independently
+re-verified §8 against current source; the stopped-workspace P1 is closed;
+two §8 items were false positives; several “fixed” claims were incomplete
+(attachment RPC, `BASH_ENV_DENY`, git argv). §0–7 ~20 open; §8 has 3 P1 +
+10 P2 + 26 P3 open; §9 has 4 P1 + 14 P2 + 6 P3 open.
 
 ---
 
@@ -28,13 +34,13 @@ open.
       `nero-daemon.service` enabled (c52a2d6). **Live-verified** (daemon healthy,
       `/healthz` ok in created workspaces).
 - [x] Secret injection — docker env + `guest/export-container-env`; routing vars
-      (`OPENROUTER_BASE_URL`, `NERO_MODEL`) now injected too (f496a7d).
+      (`ZAI_BASE_URL`, `NERO_MODEL`) now injected too (f496a7d).
       **Live-verified** (GLM turns run via Z.ai coding endpoint).
 - [x] Keep-awake bridge — job side: `nero-run` heartbeats the host (5afbd24);
       UI side: the skin pins `connected` while a `/w/:id` route is open (neroHost
-      heartbeat watcher, 30s interval + sendBeacon unpin). Remaining gap: the daemon
-      still does not raise `AgentWorking` itself, but any open workspace route pins,
-      which covers interactive use.
+      heartbeat watcher, 30s interval + sendBeacon unpin). The daemon _does_ pin
+      live turns, but through **JobRunning** (`HostTurnPulse` → job-heartbeat),
+      which collides with `nero-run` (§9 P1). `agentWorking` is still never set.
 - [x] Workspace management UI — host-API picker, create/wake/stop/delete,
       heartbeat watcher; sidebar workspace switcher dialog landed
       (e36f4d8, b9e41da). The old project abstraction still lives underneath
@@ -45,7 +51,10 @@ open.
       persistence across daemon reboot ✓; KasmVNC seat `noVNC_connected` through
       Caddy ✓; idle-stop reaped an unpinned workspace live ✓ (works as designed).
       Still unverified: `nero-run` >32 GiB survival, third-wake FIFO queue under
-      real pressure, guest image memory.high cgroup writes under load.
+      real pressure, guest image memory.high cgroup writes under load (and
+      §9: those writes likely hit `init.scope`, not the container cgroup).
+      Idle-stop “unpinned” live may have been the 20-min zombie path — pin/unpin
+      race + sendBeacon JSON can leave `Connected=true` (§9 P2).
 
 ## 1. Process / repo hygiene
 
@@ -151,23 +160,27 @@ Law: "After adapt there is no T3 product left." Survivors at main:
       (`session.go:227`); the `*.grogan.dev` domain heuristic remains (`:224`).
 - [x] **docker argv secret leak** — `runCmd` embedded full argv in error strings
       that bubble to HTTP 500 bodies and logs, including `--env
-    OPENROUTER_API_KEY=…`/`NERO_ACCESS_TOKEN`/`NERO_HOST_TOKEN` on create
+  OPENROUTER_API_KEY=…`/`NERO_ACCESS_TOKEN`/`NERO_HOST_TOKEN` on create
       failure. `argvForErrors` now redacts env values (4ecfb70).
 - [x] **Daemon credentials were predictable** — tickets/sessions/pairing creds
       minted from timestamp+counter; now CSPRNG (`nextSecret`,
       `crypto.randomBytes(24)` base64url) (4ecfb70). Remaining (§8): the
       `authorizeHttp` compare is not constant-time and mint endpoints have no
       rate limit.
-- [x] **Host token reached agent bash** — `BASH_ENV_DENY` covered only
+- [x] **Host token reached agent bash env** — `BASH_ENV_DENY` covered only
       `OPENROUTER_API_KEY`/`NERO_ACCESS_TOKEN`; the `NERO_*` pass-through leaked
       `NERO_HOST_TOKEN` (authorizes job-heartbeat for ANY workspace id). Deny
       list now also covers `NERO_HOST_TOKEN`/`NERO_HOST_URL`/`NERO_WORKSPACE_ID`
-      (4ecfb70).
+      (4ecfb70). Incomplete: the child env is stripped, but the same secrets
+      sit in `/etc/nero/guest.env` (`0640 root:nero`) and in the daemon
+      process environ (same UID as agent bash) — §9 P1.
 
 ## 5. Admission & sticker fidelity
 
 - [ ] **32 GiB sticker warning** — still doc-only (`deploy/README.md:189`); no
-      runtime warn when a workspace crosses 32 GiB.
+      runtime warn when a workspace crosses 32 GiB. The 48 GiB `memory.high`
+      throttle is likely inert as well (written on PID 1's innermost cgroup,
+      usually `init.scope`, not the Docker container cgroup) — §9 P1.
 - [ ] Job-start admission — create/wake FIFO exists; whether jobs need separate
       gating is undecided (currently ride the workspace 64G cap).
 
@@ -210,7 +223,9 @@ Parallel sweep of apps/host (Go), apps/daemon, apps/web Nero surfaces,
 packages/\*, and deploy/guest. Every P1 and P2 below was verified against the
 surrounding code; P3s are code-quoted and plausible. Excludes everything
 already tracked in §0–7. Items fixed by the first wave are checked with
-`4ecfb70`; the P1s are re-verified against current code and still open.
+`4ecfb70`. Re-verified 2026-08-29 @ `29d96a2`: stopped-workspace P1 closed;
+preview-shortcut P2 and KasmVncFrame-src P3 were false positives; remaining
+P1s still open (revert, harness poison, unbounded read).
 
 ### P1
 
@@ -218,12 +233,14 @@ already tracked in §0–7. Items fixed by the first wave are checked with
       loss.** Web sends "keep N" — the clicked turn's checkpoint count minus 1
       (`ChatView.tsx:2637-2642`, dialog at `:5204`, send at `:5216-5222`). Daemon
       reads it as "remove N user turns": `keepUsers = userTurns.length -
-    command.turnCount` (`daemon.ts:1076-1091`). Client reducer keeps
+  command.turnCount` (`daemon.ts:1076-1091`). Client reducer keeps
       checkpoints `<= payload.turnCount` (`threadReducer.ts:524-536`). Reverting
       the last turn of a 4-turn thread permanently deletes turns 2–4 server-side
       while the optimistic UI shows 1–3 until reload. Daemon also never prunes
-      `thread.checkpoints` (stale rows). Fix: pick one meaning and align all
-      three; prune checkpoint state on revert.
+      `thread.checkpoints` (stale rows), never `harness.abort`s, and **never
+      checks out the stored tree** — chat rewinds, workspace files stay at
+      HEAD. Fix: pick one meaning and align all three; prune checkpoint state;
+      restore the tree; abort/evict the harness conversation.
 - [ ] **Superseding a turn while a tool approval is pending poisons the shared
       LLM conversation.** `PiHarness.conversations` is one array per thread
       reused across turns (`harness.ts:115-147`); supersede only aborts at the
@@ -231,18 +248,24 @@ already tracked in §0–7. Items fixed by the first wave are checked with
       pushes `{role:"tool"}` for its old call id AFTER the superseding turn's
       user message (`harness.ts:450-479`) — orphaned tool message; OpenAI-strict
       backends 400 every later turn on that thread until daemon restart.
-      Composer gates on `isSendBusy` only, so this is a normal flow.
-- [ ] **Landing on a stopped workspace is a dead app.** `/` redirect picks last
-      workspace without checking `state` (`_chat.index.tsx:30-42`); switcher row
-      click likewise (`WorkspaceSwitcher.tsx:120-123`). Stopped workspace has no
-      proxy socket → SPA loads from Caddy, all RPC 502s, endless
-      "Reconnecting…". Only the overflow-menu Wake recovers. Wake-then-navigate
-      (or pick a running workspace) is the fix.
+      Composer gates on `isSendBusy` only, so this is a normal flow. Same
+      poison without a pending approval: interrupt can leave
+      `assistant.tool_calls` on the array with no `role:"tool"` rows
+      (`harness.ts:411-505`) if `executeTool` throws `aborted` before the push.
+- [x] **Landing on a stopped workspace is a dead app.** `/` and the switcher
+      now `ensureNeroWorkspaceAwake` (wake, wait for running) before
+      `/w/:id/` (`29d96a2`). Remainder: first-run **create** still
+      `location.assign`s without a state check (`_chat.index.tsx:110-111`,
+      `WorkspaceSwitcher.tsx:183-186`) — if admission returns `queued`, same
+      502 dead-end. Tracked as §9 P2.
 - [ ] **Unbounded `readFileSync` in file tools can OOM-kill the daemon.**
       `files.ts:113-135` (read) and `:323-331` (searchProjectContents, per file
       walked up to 8k entries) read the whole file before the 1 MiB cap /
-      binary check; `stat.size` is in hand and unchecked. A multi-GB file in the
-      workspace (agent bash can create one) kills the daemon for everyone.
+      binary check; `stat.size` is in hand and unchecked. Same pattern:
+      `tools.ts:213` (`edit` whole file), `:330-331` (shot `--out` before
+      `MAX_SHOT_BYTES`), `http.ts` GET attachment (no cap on the stored
+      dataURL). A multi-GB file in the workspace (agent bash can create one)
+      kills the daemon for everyone.
 
 ### P2
 
@@ -256,11 +279,13 @@ already tracked in §0–7. Items fixed by the first wave are checked with
       re-checking `pinned(ws)`; each `docker stop -t 20` makes later decisions
       20s+ stale, so a freshly re-pinned workspace is stopped under the user
       (`landlord.go:335-353`, `stopOp` at `:455-464` only checks `wasRunning`).
-- [x] **Attachment ids used unsanitized in filesystem paths.** Client-supplied
-      `id` was joined into `dataDir/attachments` for read and write (`../`
-      reads arbitrary files, plants files anywhere the daemon user can write).
-      All four surfaces (write/read/delete/HTTP route) now enforce
-      `^[A-Za-z0-9]{4,64}$` (4ecfb70).
+- [x] **Attachment ids used unsanitized in filesystem paths (HTTP/delete).**
+      Client-supplied `id` was joined into `dataDir/attachments` for read and
+      write (`../` reads arbitrary files, plants files anywhere the daemon
+      user can write). HTTP GET/POST and `attachments.delete` now enforce
+      `^[A-Za-z0-9]{4,64}$` (4ecfb70). **RPC persist/read missed:**
+      `persistIncomingAttachment` / `writeAttachmentDataUrl` still join the
+      client id (`daemon.ts:1232-1239,1576-1579`) — §9 P2.
 - [ ] **`restore()` crash-loops the daemon on a poisoned `orchestration.json`.**
       Settings go through unguarded `Schema.decodeUnknownSync`
       (`daemon.ts:145-146`), projects/threads are blind casts (`:296-312`);
@@ -269,7 +294,7 @@ already tracked in §0–7. Items fixed by the first wave are checked with
       promises the opposite behavior.
 - [ ] **`nero-run` reports `running:false` on INT/TERM without killing the
       job.** The trap posts the heartbeat but never signals the `systemd-run
-    --scope` child (`guest/nero-run:86-103`): a harness timeout kills only the
+  --scope` child (`guest/nero-run:86-103`): a harness timeout kills only the
       wrapper → live job unpinned → idle-stop kills it after grace.
 - [ ] **Alt-tab never releases the human-driving latch.** `focusout` with
       `relatedTarget === null` (focus left the browser) is treated as "moved
@@ -306,12 +331,12 @@ already tracked in §0–7. Items fixed by the first wave are checked with
       of revert is silently defeated (`harness.ts:137-165`, no eviction path);
       relatedly `deltaAssistant` can resurrect messages deleted mid-stream
       (`daemon.ts:1603-1631`).
-- [ ] **Preview keyboard shortcuts are dispatched to nothing and swallow
-      browser shortcuts while the seat is focused.** Dispatcher kept,
-      PreviewView consumer deleted; mod+r / mod+= / mod+- / mod+0 are
-      `preventDefault`ed to no effect during normal seat use
-      (`_chat.tsx:204-224`, `ChatView.tsx:3722-3725`,
-      `shared/keybindings.ts:31-36`).
+- [x] **Preview keyboard shortcuts swallow seat input** — **false
+      positive.** The seat is an iframe; parent `window` `keydown`
+      (`_chat.tsx:204-224`) does not see iframe keys. `PreviewView` still
+      subscribes but ChatView mounts `PreviewPanel`, not `PreviewView`.
+      Dead chrome handlers only; not a seat-focus swallow. Leave the
+      unused dispatcher as §2/§3 cleanup, not a P2 bug.
 
 ### P3
 
@@ -328,7 +353,8 @@ already tracked in §0–7. Items fixed by the first wave are checked with
       self-heal (`proxy.go:66-67,121-129`).
 - [ ] `tightenSocket` silently skips the caddy-group chown when group lookup
       fails → all workspace routes 502 silently on non-apt Caddy installs
-      (`proxy.go:89-103`).
+      (`proxy.go:89-103`). Even when lookup succeeds, `Chown` errors are
+      discarded (`proxy.go:101`) — §9 P2.
 - [ ] `runCmd` uses `CombinedOutput`, merging stderr into JSON parsed
       downstream (`docker.go:72-75`) — stray docker CLI stderr wedges the
       lifecycle loop.
@@ -344,9 +370,9 @@ already tracked in §0–7. Items fixed by the first wave are checked with
       (`DiagnosticsSettings.tsx:911-977`, `rpc.ts:109-115`).
 - [ ] First heartbeat pin fires even when the tab mounts hidden
       (`_chat.tsx:84-90`) → background-tab loads pin the 20-min zombie grace.
-- [ ] `KasmVncFrame` recomputes `src` from the live pathname on every render —
-      cross-route SPA nav rewrites the iframe src and tears down the seat
-      websocket (`KasmVncFrame.tsx:20`).
+- [x] `KasmVncFrame` src teardown on every render — **false positive.**
+      `seatVncClientUrl()` is prefix-stable under `/w/:id/*`; an identical
+      `src` does not remount the iframe (`KasmVncFrame.tsx:20`).
 - [ ] `writeLastWorkspaceId` called in render phase
       (`_chat.w.$workspaceId.index.tsx:21`, draft route `:23`).
 - [x] Published `auth.md` still said `/w/*` is 501/not-wired — wired since
@@ -359,13 +385,13 @@ already tracked in §0–7. Items fixed by the first wave are checked with
 - [ ] `streamChatCompletion` never destroys the response after settle (trailing
       SSE deltas still append to the completed message); no retry on
       429/5xx; request `timeout` is socket-idle, not total
-      (`openrouter.ts:304-365`).
+      (now `apps/daemon/src/router/` — the old single-provider client was replaced by the router on 2026-08-29; re-verify this item against `router/openaiCompat.ts`).
 - [ ] `applyToolDelta` merges index-less parallel tool calls into the first
-      (`openrouter.ts:168-169`).
+      (now `apps/daemon/src/router/openaiCompat.ts:applyToolDelta`).
 - [ ] Concurrent `setDriving(true)` can leave both `hold` children dead →
       driving:false after two explicit drive requests (`seat-lock.ts:57-108`).
 - [ ] Interactive terminal PTY inherits the full daemon env including
-      `OPENROUTER_API_KEY` (`terminal.ts:92-98`) — human seat only, but visible
+      `ZAI_API_KEY` (`terminal.ts:92-98`) — human seat only, but visible
       on screen and in model-fed screenshots.
 - [ ] `appendActivity` stamps `sequence + 1` without consuming it → duplicate
       sequence across shell/event streams (`daemon.ts:1713`).
@@ -397,13 +423,214 @@ already tracked in §0–7. Items fixed by the first wave are checked with
 Audited-and-clean notes: Caddy cookie handling is correct (non-deferred header
 ops apply before reverse_proxy appends upstream headers, so upstream
 Set-Cookie survives; `wos-session` regex strip works; `nero-ws` id is
-hex-constrained and re-validated); `git.ts` has no command injection; daemon
-SSE parsing is sound; neroHost.ts ↔ Go field shapes match end-to-end;
-`go test -race` passes; `.env` is untracked and not VITE-exposed.
+hex-constrained and re-validated); daemon SSE parsing is sound; neroHost.ts ↔
+Go field shapes match end-to-end; `go test -race` passes; `.env` is untracked
+and not VITE-exposed. **Retracted:** "`git.ts` has no command injection" — no
+`sh -c` interpolation, but leading `-` on clone URL / ref / path is still git
+option-injection (`git.ts:259-288,503-546,601-616`); tracked in §9.
+
+---
+
+## 9. Second full-tree pass (2026-08-29, main @ `29d96a2`)
+
+Independent re-read of host, daemon, guest, web Nero surfaces, contracts, and
+deploy. Excludes everything already tracked in §0–8 except where this pass
+proved a “fixed” claim incomplete or a §8 item false. Every P1/P2 below was
+verified against current source.
+
+Suggested fix order: secret isolation → split `agentWorking`/`jobRunning` →
+`memory.high` on the Docker cgroup → `/run/nero/w` mode → revert meaning +
+tree restore + harness abort → harness conversation poison → create-queued
+wake → `stat.size` before `readFileSync` → prefix all daemon URLs with
+`/w/:id`.
+
+### P1
+
+- [ ] **Agent can read every host secret.** `BASH_ENV_DENY` only strips the
+      **child** env (`tools.ts:34-42,133-147`; `printenv` test at
+      `tools.test.ts:143`). Agent bash is UID `nero`, same as the daemon.
+      `/etc/nero/guest.env` is `0640 root:nero` (`export-container-env:46-47`)
+      — systemd `EnvironmentFile=` is read as root, so the nero group does not
+      need the file. `/proc/<daemon-pid>/environ` still holds
+      `OPENROUTER_API_KEY` / `NERO_ACCESS_TOKEN` / `NERO_HOST_TOKEN` because
+      `loadOptionsFromEnv` never unsets them (`runtime.ts:128-134`,
+      `main.ts`). `nero-run` puts the host token on `curl` argv
+      (`guest/nero-run:77-82`). `NERO_HOST_TOKEN` authorizes job-heartbeat for
+      **any** workspace id (`server.go:254-279`). Fix: `chmod 0600 root:root`
+      on `guest.env`; drop secrets from the daemon process env after load;
+      per-workspace host tokens; heartbeat helper that is not agent-readable;
+      `ProtectProc=` / split UID / `hidepid=`.
+- [ ] **Live agent turns and `nero-run` share one boolean.** `HostTurnPulse`
+      (`daemon.ts:157-202,1362,1764`) POSTs `{running}` to **job-heartbeat**.
+      `nero-run` does the same (`guest/nero-run:70-93`). Landlord last-write
+      wins on `JobRunning` (`landlord.go:228-229`). A finishing turn unpins a
+      live bake (5 min idle-stop kills it); a finishing job unpins a live turn
+      until the next 30s pulse. UI never sends `agentWorking`
+      (`neroHost.ts:177-183`). PLAN keep-awake is three independent pins. Fix:
+      pulse `agentWorking` (host-token on `/heartbeat`, or a third route);
+      refcount jobs.
+- [ ] **`memory.high` is written on the wrong cgroup.** `ApplyCgroup` uses
+      PID 1’s current cgroup (`docker.go:207-232`). After guest systemd
+      starts, that is typically `docker-….scope/init.scope`, not the Docker
+      container cgroup where `--memory=64g` landed. User slices (`nero-daemon`,
+      Chromium, `nero-job.slice`) are siblings, so the 48 GiB throttle and
+      `oom.group=1` do not cover the pig. Tests stub
+      `0::/system.slice/docker-abc.scope` (`docker_test.go:16-18`) and miss
+      this. Start ignores apply errors (`docker.go:144`). `--memory=64g` still
+      caps the workspace. Fix: walk up to the cgroup that has `memory.max=64g`;
+      fail start if cgroupfs is present and the write fails.
+- [ ] **`/run/nero/w` is `0700` after reboot → all workspace routes 502.**
+      `deploy/nero-host.service` has `UMask=0077` and
+      `ExecStartPre=/bin/mkdir -p /run/nero/w`. `/run` is tmpfs. First reboot
+      creates `root:root 0700`. Caddy cannot traverse to `0660` sockets even
+      when `chown` to group `caddy` succeeds. `MkdirAll(..., 0755)`
+      (`proxy.go:70-72`) will not chmod an existing dir. README’s `sudo mkdir`
+      does not survive reboot. Fix: tmpfiles `d /run/nero/w 0750 root caddy`,
+      or `RuntimeDirectory=` + `RuntimeDirectoryMode=0750` + `Group=caddy`.
+
+### P2
+
+- [ ] **Privileged guest is host root, and README omits it.** `--privileged`
+      is in `flags.go:63`. The unit file admits a guest escape is host root
+      (`deploy/nero-host.service:17-19`); `deploy/README.md`’s docker block
+      does not list `--privileged`. Chromium runs `--no-sandbox`. Combined
+      with the P1 secret leak, the coding agent is a privileged container
+      holding the host token. Also: `NERO_HOST=0.0.0.0`
+      (`nero-daemon.service:22`) and a **shared** `NERO_ACCESS_TOKEN` mean
+      workspace A can hit B:8787 if it can reach the published port (trivial
+      once privileged). Fix: drop `--privileged` for `--cgroupns=host` +
+      explicit caps if possible; private networks; per-workspace access
+      tokens; document the threat model.
+- [ ] **Attachment RPC persist skipped the id check.** HTTP/delete validate
+      `^[A-Za-z0-9]{4,64}$` (4ecfb70). `persistIncomingAttachment` /
+      `writeAttachmentDataUrl` (`daemon.ts:1232-1239,1576-1579`) still
+      `Path.join(dataDir, "attachments", id)` the client-supplied id.
+      `../orchestration.json` (or anything the daemon user can write) is
+      writable from `thread.turn.start`.
+- [ ] **`NERO_ACCESS_TOKEN` is also a pairing password.**
+      `acceptPairingCredential` treats the host-wide access token as a valid
+      pairing secret (`daemon.ts:531-535`), minting administrative sessions
+      via `/oauth/token` and `/api/auth/browser-session` (`http.ts:220-287`).
+      From inside the guest, `curl localhost:8787` bypasses Caddy. Combined
+      with guest.env, the agent mints daemon sessions. `pairingLinks()` also
+      **returns the credential** (`daemon.ts:556-571`).
+- [ ] **`/internal/caddy-auth` is published on `grogan.dev`.** That vhost is a
+      blanket reverse_proxy (`Caddyfile:45-47`). Caddy is always loopback to
+      `:8080`, so `RemoteLoopback` (`caddy.go:22-25`) passes. An authenticated
+      GET returns `X-Nero-Access` to the client. PLAN topology is landing +
+      AuthKit only; create/wake/delete are also live on `grogan.dev`. Fix:
+      do not proxy `/internal/*` (or `/api/workspaces*`) on `grogan.dev`;
+      require a Caddy-to-host secret header on caddy-auth.
+- [ ] **Pin/unpin race stretches idle to zombie grace.** `pin()` is an
+      in-flight `fetch`; hide/unmount `sendBeacon`s `{connected:false}`
+      without aborting the pin (`_chat.tsx:84-99`, `neroHost.ts:190-198`). A
+      late `true` leaves `Connected=true` with the interval skipping hidden
+      tabs → 20 min zombie, not 5 min disconnect. Also verify `sendBeacon` +
+      `Blob type: application/json` — that content-type is a known silent
+      failure, which would make close-tab never unpin. Distinct from “first
+      pin while already hidden” (§8 P3).
+- [ ] **Create can still land on a queued workspace.** `29d96a2` wakes before
+      navigate for `/` and the switcher row. First-run create
+      (`_chat.index.tsx:110-111`) and switcher create
+      (`WorkspaceSwitcher.tsx:183-186`) `location.assign` without checking
+      `state`. Host create may return `queued` (`landlord.go:371-377`);
+      heartbeat does not start Docker.
+- [ ] **`isNeroRunCommand` is `/\bnero-run\b/` on the whole string**
+      (`tools.ts:233-247,299-307`). Any command that _mentions_ `nero-run`
+      skips process-group kill on abort **and** timeout, so
+      `sleep 9999; nero-run true` outlives interrupt. Parse argv; only skip
+      when the invocation **is** `nero-run`.
+- [ ] **ZFS chown failure orphans a dataset with no landlord row.**
+      `CreateDataset` `zfs create` then `os.Chown`; chown error is returned
+      **without** `zfs destroy` (`docker.go:102-113`). Create never inserts
+      the workspace (`landlord.go:149-151`). Distinct from the tracked
+      tryStart orphan. Not API-deletable.
+- [ ] **`tightenSocket` swallows `Chown` errors.** Related to the tracked
+      group-lookup skip (`proxy.go:93-96`): even after a successful `caddy`
+      lookup, `_ = os.Chown(...)` (`proxy.go:101`) can leave `root:root 0660`
+      sockets Caddy cannot use (silent 502). Treat chown failure as bind
+      failure.
+- [ ] **Git option-injection via leading `-`.** `spawnSync` avoids a shell,
+      but refs/URLs are still argv: `git branch <refName>`, `git switch`,
+      `git clone <remote> <dest>`, `git diff <baseRef>`
+      (`git.ts:259-288,503-546,601-616`). `reviewDiffFileContents`
+      `Path.join(cwd, filePath)` follows `../`. Reject operands starting with
+      `-`; `resolveContained` every path; `--` before refs.
+- [ ] **`NERO_HOST_TOKEN` is not required in `AuthReady`.** Empty token →
+      `hostTokenOK` is false (`server.go:282-294`) → job-heartbeat 401 →
+      turns and jobs silently do not pin. Deploy README lists it; boot
+      succeeds without it (`config.go:57-80`).
+- [ ] **`NERO_HOST_URL` is hardcoded `http://host.docker.internal:8080`**
+      (`flags.go:68`). Binding `127.0.0.1:8080` as README advises breaks
+      `nero-run` (docker0 cannot reach host loopback). Binding `:8080`
+      publishes list/create/wake/stop/heartbeat/job-heartbeat on the public
+      IP (session still required; job-heartbeat is the shared host token).
+      Make listen address + `NERO_HOST_URL` a pair; firewall 8080 to
+      loopback+docker0.
+- [ ] **Daemon browser-session cookie has no `Secure`.** `http.ts:244-248`:
+      `httpOnly` + `sameSite: "lax"` only. Pairing is a dead path through
+      Caddy today, but the cookie is still minted.
+- [ ] **`nero-run` resource `-p` probe can disable all job limits.** Probe
+      `systemd-run -p MemoryHigh=48G … -- true` on failure **clears all job
+      `-p`** (`guest/nero-run:41-50`). User manager in Docker often rejects
+      those properties. Slice `MemoryMax=64G` may also be inert without
+      `Delegate=`. Jobs then only have the (possibly wrong) container
+      `memory.max`.
+
+### P3
+
+- [ ] `pingDaemonHealthz` allocates a new `http.Client` per ping
+      (`docker.go:295-301`). Each 200ms health wait (up to `opTimeout`)
+      creates a Transport and keeps idle conns. FD spike while `opMu` is held.
+- [ ] `searchProjectContents` compiles a client-supplied regex per line
+      (`files.ts:250-254,335-341`) — ReDoS hangs the daemon event loop.
+- [ ] `browseFilesystem` / `listProjectEntries` take client `cwd` with no
+      workspace-root containment (`files.ts:50-53,361-399`) — UI can list
+      `/etc/nero`.
+- [ ] `auth.md` is a “humans only, no tokens” skill, not WorkOS agentic
+      registration (no PRM JSON, no ID-JAG, Bearer ignored —
+      `apps/host/authmd/auth.md:5-72`) while 401 still emits
+      `Bearer resource_metadata="https://nero.grogan.dev/auth.md"`
+      (`server.go:328-330`). Fine for one-human v1; not PLAN’s “agentic
+      registration” sentence.
+- [x] The model path was the retired third-party middleman with a Baseten pin;
+      live notes already routed Z.ai directly. Superseded by the Nero Router
+      (§9) — PLAN.md, the daemon, and deploy all agree now (2026-08-29).
+      edit. Extra `provider` field is ignored by Z.ai today.
+- [ ] Unquoted `NERO_LABEL` as EnvironmentFile injection is **not** live:
+      `validateName` limits names to a safe alphabet (`landlord.go:807-830`).
+      The unquoted-write item in §8 P3 stays as latent for future free-text
+      keys.
 
 ---
 
 Laws that outlive the plan (do not violate while fixing): T3 copy is copy-and-map,
-never rewrite; the OpenRouter-Baseten pin is v1 law only — its retirement is
-decided and recorded in `docs/post-plan.md` §1–2 (Nero Router + Z.ai/Baseten);
-control plane stays landlord-only (no agent loop in `apps/host`).
+never rewrite; ALL model traffic routes through the Nero Router
+(`apps/daemon/src/router/`) — Z.ai main, Baseten fast mode, OpenAI Pro / Grok
+Heavy subscriptions; never reintroduce a third-party routing middleman, and
+PLAN.md is the implementation source of truth (retired approaches are deleted
+from it, not annotated); control plane stays landlord-only (no agent loop in
+`apps/host`).
+
+## 9. Nero Router bring-up (code landed 2026-08-29, live bring-up pending)
+
+- [ ] Z.ai route end-to-end on Grid-01: inject `ZAI_API_KEY` (was the old
+      middleman key) into `/etc/nero/host.env`, rebuild/redeploy the daemon
+      image, confirm a GLM turn streams via the coding endpoint and falls back
+      to PAYG on a forced 429.
+- [ ] Baseten fast model: inject `BASETEN_API_KEY`, pick `glm-5.3-flash-fast`
+      in the model picker, confirm routing (it must NOT be used as an automatic
+      fallback).
+- [ ] Codex (OpenAI Pro): register the callback URI
+      `https://nero.grogan.dev/w/{id}/api/router/codex/callback` for the public
+      Codex client (or set `NERO_CODEX_REDIRECT_URI` to whatever OpenAI
+      allows), run `POST /api/router/codex/login` → browser → callback, and
+      confirm the Responses transport streams tool calls. Upstream model slug
+      (`NERO_CODEX_MODEL`, default `gpt-5-codex`) needs confirmation against
+      the live subscription.
+- [ ] Grok Heavy: export the Grok CLI `~/.grok/auth.json` and import via
+      `POST /api/router/grok/import`; confirm OIDC refresh works and
+      `grok-4.6`/`grok-4.5` stream (Heavy availability rides the OIDC
+      subscription session).
+- [ ] Composer fast-mode toggle (post-plan §2 UI): the fast model is selectable
+      in the picker; the dedicated composer toggle is still UI work.

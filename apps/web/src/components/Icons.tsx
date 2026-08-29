@@ -214,6 +214,15 @@ export const GrokIcon: Icon = ({ className, ...props }) => (
   </svg>
 );
 
+/** Nero's own mark: a geometric N monogram. */
+export const NeroIcon: Icon = ({ className, ...props }) => (
+  <svg {...props} viewBox="0 0 24 24" fill="currentColor" className={className}>
+    <rect x="4.5" y="3.5" width="3" height="17" rx="0.75" />
+    <rect x="16.5" y="3.5" width="3" height="17" rx="0.75" />
+    <path d="M7.5 3.5h3.4l5.6 17h-3.4L7.5 3.5z" />
+  </svg>
+);
+
 export const TraeIcon: Icon = (props) => (
   <svg {...props} viewBox="0 0 24 24" fill="currentColor">
     {/* Back rectangle: left strip + bottom strip drawn separately — empty bottom-left corner is the gap between them */}
