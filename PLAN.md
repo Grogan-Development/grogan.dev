@@ -30,7 +30,7 @@ This file is the source of truth for implementation. File-level UI/RPC work foll
 | Model         | The **Nero Router** (below): Z.ai main (coding plan), Baseten fast mode, OpenAI Pro and Grok Heavy subscriptions. GLM-5.3-Flash default. |
 | Deferred      | Video/audio judge, models.dev catalog integration, per-provider shopping.                                                                |
 
-Batteries in the image: official Blender tarball, Chromium, KasmVNC, compositor for the seat, Nero daemon. No Docker-in-Docker in v1. No GPU (llvmpipe).
+Batteries in the image: official Blender tarball, Chromium, KasmVNC, compositor for the seat, Nero daemon, Loom CLI (git customer of loom.grogan.dev; off until its first pinned release). No Docker-in-Docker in v1. No GPU (llvmpipe).
 
 ---
 

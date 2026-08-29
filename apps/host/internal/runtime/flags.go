@@ -56,7 +56,9 @@ func DockerCreateArgs(image, id, name, mount string, env GuestEnv) []string {
 		"--hostname", "ws-" + id,
 		"--publish", "127.0.0.1::" + DaemonPort,
 		"--add-host", "host.docker.internal:host-gateway",
-		"--tmpfs", "/tmp:mode=1777",
+		// exec on /tmp: docker's tmpfs default is noexec, which breaks
+		// pip/venv and compilers that stage binaries there.
+		"--tmpfs", "/tmp:rw,nosuid,nodev,exec,mode=1777",
 		"--tmpfs", "/run",
 		"--tmpfs", "/run/lock",
 		"--shm-size", "1g",

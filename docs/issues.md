@@ -612,27 +612,22 @@ PLAN.md is the implementation source of truth (retired approaches are deleted
 from it, not annotated); control plane stays landlord-only (no agent loop in
 `apps/host`).
 
-## 9. Nero Router bring-up (code landed 2026-08-29, live bring-up pending)
+## 9. Nero Router bring-up — LIVE (2026-08-29)
 
-- [ ] Z.ai route end-to-end on Grid-01: inject `ZAI_API_KEY` (was the old
-      middleman key) into `/etc/nero/host.env`, rebuild/redeploy the daemon
-      image, confirm a GLM turn streams via the coding endpoint and falls back
-      to PAYG on a forced 429.
+- [x] Z.ai route end-to-end on Grid-01 (2026-08-29): `ZAI_API_KEY`/`BASETEN_API_KEY`/
+      `OPENCODE_API_KEY` in `/etc/nero/host.env`, daemon + image redeployed,
+      GLM turns streaming live (coding endpoint).
 - [ ] GLM speed entries: `glm-5.3-highspeed` is the native Z.ai variant;
       `glm-5.3-flash-fast` fakes Flash's missing fast tier by routing Flash
       through Baseten (`BASETEN_API_KEY`) with the Z.ai plan behind it.
       Confirm both route correctly and that Baseten serves no other chains.
-- [ ] Codex (OpenAI Pro): register the callback URI
-      `https://nero.grogan.dev/w/{id}/api/router/codex/callback` for the public
-      Codex client (or set `NERO_CODEX_REDIRECT_URI` to whatever OpenAI
-      allows), run `POST /api/router/codex/login` → browser → callback, and
-      confirm the Responses transport streams tool calls. Upstream model slug
-      (`NERO_CODEX_MODEL`, default `gpt-5-codex`) needs confirmation against
-      the live subscription.
-- [ ] Grok Heavy: export the Grok CLI `~/.grok/auth.json` and import via
-      `POST /api/router/grok/import`; confirm OIDC refresh works and
-      `grok-4.6`/`grok-4.5` stream (Heavy availability rides the OIDC
-      subscription session).
+- [x] Codex (OpenAI Pro): tokens borrowed from the local Codex CLI via
+      `POST /api/router/codex/import`; `gpt-5.6-sol` streamed a live turn.
+      Callback registration + first browser login still pending (import path
+      works today; refresh rotation will eventually require the real flow).
+- [x] Grok: CLI auth.json imported with `oidc_client_id` (the token endpoint
+      400s without it — fixed in the store), OIDC refresh verified live,
+      `grok-4.6` streamed. Heavy availability rides the subscription session.
 - [ ] Composer fast-mode toggle (post-plan §2 UI): the fast model is selectable
       in the picker; the dedicated composer toggle is still UI work.
 - [ ] OpenCode Zen route: inject `OPENCODE_API_KEY` (opencode.ai/auth billing),

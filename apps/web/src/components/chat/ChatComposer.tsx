@@ -610,7 +610,6 @@ export interface ChatComposerProps {
   interactionMode: ProviderInteractionMode;
 
   // Provider / model
-  lockedProvider: ProviderDriverKind | null;
   providerStatuses: ServerProvider[];
   activeProjectDefaultModelSelection: ModelSelection | null | undefined;
   activeThreadModelSelection: ModelSelection | null | undefined;
@@ -706,7 +705,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     activeTaskSteps,
     runtimeMode,
     interactionMode,
-    lockedProvider,
     providerStatuses,
     activeProjectDefaultModelSelection,
     activeThreadModelSelection,
@@ -841,22 +839,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     ) ??
     providerInstanceEntries[0]?.driverKind ??
     ProviderDriverKind.make("unconfigured");
-  const requestedDriverKind: ProviderDriverKind = lockedProvider ?? unlockedSelectedProvider;
-  const lockedContinuationGroupKey = useMemo((): string | null => {
-    if (!lockedProvider || !activeThread) return null;
-    const lockedInstanceId =
-      activeThread.session?.providerInstanceId ?? activeThreadModelSelection?.instanceId;
-    if (!lockedInstanceId) return null;
-    return (
-      providerInstanceEntries.find((entry) => entry.instanceId === lockedInstanceId)
-        ?.continuationGroupKey ?? null
-    );
-  }, [
-    activeThread,
-    activeThreadModelSelection?.instanceId,
-    lockedProvider,
-    providerInstanceEntries,
-  ]);
+  // One harness, one provider: the driver kind comes from the configured
+  // instance — no T3-style provider lock narrows it.
+  const requestedDriverKind: ProviderDriverKind = unlockedSelectedProvider;
 
   // Resolve which configured instance the composer is currently targeting.
   // Priority:
@@ -881,23 +866,10 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         (entry) => entry.instanceId === candidate && entry.enabled && entry.isAvailable,
       );
       if (match) {
-        // When locked to a specific driver kind, ignore persisted instance
-        // ids from a different kind or continuation group.
-        if (lockedProvider && match.driverKind !== lockedProvider) continue;
-        if (
-          lockedContinuationGroupKey &&
-          match.continuationGroupKey !== lockedContinuationGroupKey
-        ) {
-          continue;
-        }
         return match.instanceId;
       }
     }
-    const compatibleEntries = providerInstanceEntries.filter(
-      (entry) =>
-        (!lockedProvider || entry.driverKind === lockedProvider) &&
-        (!lockedContinuationGroupKey || entry.continuationGroupKey === lockedContinuationGroupKey),
-    );
+    const compatibleEntries = providerInstanceEntries;
     const requestedDriverEntries = compatibleEntries.filter(
       (entry) => entry.driverKind === requestedDriverKind,
     );
@@ -911,8 +883,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     activeThread?.session?.providerInstanceId,
     activeThreadModelSelection?.instanceId,
     composerDraft.activeProvider,
-    lockedContinuationGroupKey,
-    lockedProvider,
     providerInstanceEntries,
     requestedDriverKind,
   ]);
@@ -3490,8 +3460,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                       compact={isComposerFooterCompact}
                       activeInstanceId={selectedInstanceId}
                       model={selectedModelForPickerWithCustomFallback}
-                      lockedProvider={lockedProvider}
-                      lockedContinuationGroupKey={lockedContinuationGroupKey}
                       instanceEntries={providerInstanceEntries}
                       keybindings={keybindings}
                       modelOptionsByInstance={modelOptionsByInstance}

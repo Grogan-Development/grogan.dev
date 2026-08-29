@@ -21,3 +21,14 @@ touch "$HOME/.vnc/.de-was-selected"
 # The agent's bash cwd / file-tree root is its own folder; $HOME keeps only
 # harness plumbing (.nero state, .vnc, .kasmpasswd) the UI never shows.
 mkdir -p "$HOME/workspace"
+# Login shells (bash -l) read .profile, not .bashrc (whose interactive guard
+# skips PATH exports). Seed it so non-interactive tool PATHs stick.
+if [ ! -f "$HOME/.profile" ]; then
+  cat > "$HOME/.profile" <<'PROFILE'
+# ~/.profile — sourced by login shells (bash -l). Tool PATHs live here
+# because ~/.bashrc's interactive guard skips them otherwise.
+if [ -d "$HOME/tools/bin" ]; then
+  PATH="$HOME/tools/bin:$PATH"
+fi
+PROFILE
+fi

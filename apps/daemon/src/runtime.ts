@@ -21,8 +21,10 @@ export const DAEMON_VERSION = "0.1.0";
 export const ZAI_CODING_BASE_URL = "https://api.z.ai/api/coding/paas/v4";
 export const ZAI_PAYG_BASE_URL = "https://api.z.ai/api/paas/v4";
 export const BASETEN_BASE_URL = "https://inference.baseten.co/v1";
-export const ROUTER_TIMEOUT_MS = 120_000;
-export const ROUTER_IDLE_MS = 45_000;
+// Long tool-call generations (Baseten GLM writing files) can pause well over
+// a minute between SSE chunks — the idle window must outlive those.
+export const ROUTER_TIMEOUT_MS = 180_000;
+export const ROUTER_IDLE_MS = 120_000;
 export const MAX_SHOT_IMAGES = 8;
 export const MAX_SHOT_BYTES = 10 * 1024 * 1024;
 

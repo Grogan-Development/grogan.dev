@@ -903,16 +903,8 @@ export default function FilePreviewPanel({
               ))}
             </div>
           </ScrollArea>
-          {absolutePath &&
-          (environmentId === primaryEnvironmentId || remoteOpenState.mode !== "local-exec") ? (
-            <OpenInPicker
-              environmentId={environmentId}
-              keybindings={keybindings}
-              availableEditors={availableEditors}
-              openInCwd={absolutePath}
-              compact
-              enableShortcut={false}
-            />
+          {absolutePath ? (
+            <OpenInPicker threadRef={threadRef} openInCwd={absolutePath} compact />
           ) : null}
           {isMarkdown ? (
             <Tooltip>

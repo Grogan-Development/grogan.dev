@@ -100,6 +100,8 @@ export const importGrokAuth = (options: GrokOptions, raw: unknown): OAuthTokenSe
     accessToken: entry.accessToken,
     refreshToken: entry.refreshToken,
     expiresAtMs: entry.expiresAtMs,
+    // The CLI's public client id — the token endpoint requires it on refresh.
+    clientId: entry.clientId,
   };
   options.tokenStore.set("grok", tokens);
   return tokens;
@@ -144,6 +146,7 @@ export const ensureGrokToken = async (options: GrokOptions): Promise<OAuthTokenS
   const json = await tokenEndpointRequest(endpoint, {
     grant_type: "refresh_token",
     refresh_token: current.refreshToken,
+    ...(current.clientId === undefined ? {} : { client_id: current.clientId }),
   });
   const accessToken = json.access_token;
   if (typeof accessToken !== "string" || accessToken.length === 0) {

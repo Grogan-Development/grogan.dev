@@ -394,9 +394,7 @@ export const ChatHeader = memo(function ChatHeader({
         )}
         {showOpenInPicker && (
           <OpenInPicker
-            environmentId={activeThreadEnvironmentId}
-            keybindings={keybindings}
-            availableEditors={availableEditors}
+            threadRef={scopeThreadRef(activeThreadEnvironmentId, activeThreadId)}
             openInCwd={openInCwd}
           />
         )}

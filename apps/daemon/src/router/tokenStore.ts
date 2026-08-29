@@ -16,6 +16,8 @@ export type OAuthTokenSet = {
   readonly accessToken: string;
   readonly refreshToken: string | undefined;
   readonly expiresAtMs: number | undefined;
+  /** OIDC public client id — required by token endpoints on refresh (xAI). */
+  readonly clientId?: string | undefined;
 };
 
 type StoreShape = {
@@ -38,6 +40,10 @@ const parse = (value: unknown): OAuthTokenSet | null => {
     accessToken: record.accessToken,
     refreshToken: typeof record.refreshToken === "string" ? record.refreshToken : undefined,
     expiresAtMs: typeof record.expiresAtMs === "number" ? record.expiresAtMs : undefined,
+    clientId:
+      typeof record.clientId === "string" && record.clientId.length > 0
+        ? record.clientId
+        : undefined,
   };
 };
 

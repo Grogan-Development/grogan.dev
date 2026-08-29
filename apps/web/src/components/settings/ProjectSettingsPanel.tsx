@@ -828,7 +828,6 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
                   <ProviderModelPicker
                     activeInstanceId={resolvedSelection.instanceId}
                     model={resolvedSelection.model}
-                    lockedProvider={null}
                     instanceEntries={instanceEntries}
                     modelOptionsByInstance={modelOptionsByInstance}
                     triggerVariant="outline"
