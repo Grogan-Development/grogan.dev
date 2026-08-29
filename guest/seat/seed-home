@@ -18,3 +18,6 @@ mkdir -p "$HOME/.vnc"
 chmod 700 "$HOME/.vnc"
 # Quiet DE selection on an empty dataset.
 touch "$HOME/.vnc/.de-was-selected"
+# The agent's bash cwd / file-tree root is its own folder; $HOME keeps only
+# harness plumbing (.nero state, .vnc, .kasmpasswd) the UI never shows.
+mkdir -p "$HOME/workspace"

@@ -16,7 +16,7 @@ Environment=DISPLAY=:1
 Environment=XDG_RUNTIME_DIR=/run/user/1000
 Environment=DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus
 Environment=NERO_HOME=/home/nero
-Environment=NERO_WORKSPACE=/home/nero
+Environment=NERO_WORKSPACE=/home/nero/workspace
 Environment=NERO_DATA_DIR=/home/nero/.nero
 Environment=NERO_SEAT_LOCK=/run/nero/seat.lock
 Environment=NERO_HOST=0.0.0.0
