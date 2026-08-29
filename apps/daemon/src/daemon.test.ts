@@ -222,6 +222,8 @@ const tmpDaemon = (port: number, extra: Partial<DaemonOptions> = {}) => {
       label: "Nero test",
       devBypass: false,
       accessToken: undefined,
+      openRouterApiKey: undefined,
+      openRouterBaseUrl: "https://openrouter.ai/api/v1",
       ...extra,
     } satisfies DaemonOptions,
   };
@@ -327,7 +329,7 @@ describe("nero daemon", () => {
       );
       expect(thread.status).toBe(200);
       expect(JSON.stringify(thread.json)).toContain("hello");
-      expect(JSON.stringify(thread.json)).toContain("Nero v1 stub");
+      expect(JSON.stringify(thread.json)).toContain("OPENROUTER_API_KEY");
 
       yield* Fiber.interrupt(fiber);
     }),

@@ -9,6 +9,7 @@ import {
   type AuthPairingLink,
   type AuthSessionState,
   type AuthWebSocketTicketResult,
+  CheckpointRef,
   type ChatAttachment,
   type ClientOrchestrationCommand,
   DEFAULT_SERVER_SETTINGS,
@@ -16,12 +17,17 @@ import {
   type DispatchResult,
   type ExecutionEnvironmentDescriptor,
   type OrchestrationEvent,
+  type OrchestrationGetFullThreadDiffInput,
+  type OrchestrationGetTurnDiffInput,
+  type OrchestrationMessage,
   type OrchestrationProject,
   type OrchestrationProjectShell,
   type OrchestrationSearchThreadsResult,
+  type OrchestrationSession,
   type OrchestrationShellSnapshot,
   type OrchestrationShellStreamItem,
   type OrchestrationThread,
+  type OrchestrationThreadActivity,
   type OrchestrationThreadDetailSnapshot,
   type OrchestrationThreadShell,
   type OrchestrationThreadStreamItem,
@@ -31,6 +37,7 @@ import {
   type PreviewOpenInput,
   type PreviewNavigateInput,
   type PreviewResizeInput,
+  type ProviderApprovalDecision,
   ProjectId,
   ProviderDriverKind,
   ProviderInstanceId,
@@ -47,6 +54,8 @@ import {
 import * as DateTime from "effect/DateTime";
 import * as Schema from "effect/Schema";
 
+import { gitRepoRoot, turnWorkspaceDiff } from "./git.ts";
+import { PiHarness } from "./harness.ts";
 import type { DaemonOptions } from "./runtime.ts";
 import {
   DAEMON_VERSION,
@@ -155,6 +164,7 @@ const attachmentFromUnknown = (raw: unknown): ChatAttachment | undefined => {
 export class Daemon {
   readonly options: DaemonOptions;
   readonly terminals = new TerminalHub();
+  readonly harness: PiHarness;
   readonly shellHub = new Hub<OrchestrationShellStreamItem>();
   readonly threadHubs = new Map<string, Hub<OrchestrationThreadStreamItem>>();
   readonly configHub = new Hub<ServerConfigStreamEvent>();
@@ -171,12 +181,15 @@ export class Daemon {
   private readonly sessions = new Map<string, Session>();
   private readonly pairing = new Map<string, PairingRecord>();
   private readonly previews = new Map<string, PreviewSession>();
+  private readonly liveTurns = new Map<string, string>();
+  private readonly turnDiffs = new Map<string, string>();
   private previewRevision = 0;
   readonly serverEpoch = nextToken("epoch");
   private persistTimer: ReturnType<typeof setTimeout> | undefined;
 
   constructor(options: DaemonOptions) {
     this.options = options;
+    this.harness = new PiHarness(this);
     this.settings = patchedSettings(DEFAULT_SERVER_SETTINGS);
     ensureDir(options.dataDir);
     ensureDir(Path.join(options.dataDir, "logs"));
@@ -525,7 +538,7 @@ export class Daemon {
       titleRegeneration: thread.titleRegeneration,
       session: thread.session,
       latestUserMessageAt: latestUser?.createdAt ?? null,
-      hasPendingApprovals: false,
+      hasPendingApprovals: this.harness.pendingApprovalCount(thread.id) > 0,
       hasPendingUserInput: false,
       hasActionableProposedPlan: thread.proposedPlans.some((plan) => plan.implementedAt === null),
     };
@@ -913,6 +926,7 @@ export class Daemon {
         break;
       }
       case "thread.turn.interrupt": {
+        this.harness.abort(command.threadId);
         this.patchThread(command.threadId, command.commandId, (thread) => {
           const createdAt = command.createdAt;
           const latestTurn =
@@ -935,7 +949,24 @@ export class Daemon {
         });
         break;
       }
-      case "thread.approval.respond":
+      case "thread.approval.respond": {
+        this.harness.respondApproval(command.requestId, command.decision);
+        const thread = this.threads.get(command.threadId);
+        if (thread !== undefined) {
+          const event: OrchestrationEvent = {
+            ...this.eventBase(command.commandId, "thread", thread.id),
+            type: "thread.approval-response-requested",
+            payload: {
+              threadId: thread.id,
+              requestId: command.requestId,
+              decision: command.decision,
+              createdAt: command.createdAt,
+            },
+          };
+          this.emitThreadEvent(thread, event);
+        }
+        break;
+      }
       case "thread.user-input.respond": {
         break;
       }
@@ -958,6 +989,7 @@ export class Daemon {
         break;
       }
       case "thread.session.stop": {
+        this.harness.abort(command.threadId);
         this.patchThread(command.threadId, command.commandId, (thread) => {
           const createdAt = command.createdAt;
           return {
@@ -1086,6 +1118,18 @@ export class Daemon {
     return next.thread;
   }
 
+  private persistIncomingAttachment(raw: unknown): ChatAttachment | undefined {
+    const attachment = attachmentFromUnknown(raw);
+    if (attachment === undefined) return undefined;
+    if (raw !== null && typeof raw === "object" && "dataUrl" in raw) {
+      const dataUrl = (raw as { dataUrl?: unknown }).dataUrl;
+      if (typeof dataUrl === "string" && dataUrl.startsWith("data:")) {
+        this.writeAttachmentDataUrl(attachment.id, dataUrl);
+      }
+    }
+    return attachment;
+  }
+
   private startTurn(
     command: Extract<ClientOrchestrationCommand, { type: "thread.turn.start" }>,
   ): void {
@@ -1110,37 +1154,25 @@ export class Daemon {
     const at = command.createdAt;
     const turnId = TurnId.make(nextToken("trn"));
     const attachments = command.message.attachments
-      .map((item) => attachmentFromUnknown(item))
+      .map((item) => this.persistIncomingAttachment(item))
       .filter((item): item is ChatAttachment => item !== undefined);
-    const userMessage = {
+    const userMessage: OrchestrationMessage = {
       id: MessageId.make(command.message.messageId),
-      role: "user" as const,
+      role: "user",
       text: command.message.text,
-      attachments,
+      ...(attachments.length > 0 ? { attachments } : {}),
       turnId,
       streaming: false,
       createdAt: at,
       updatedAt: at,
     };
-    const assistantId = MessageId.make(nextToken("msg"));
-    const assistantText =
-      "Nero v1 stub: the GLM loop lands in a later PR. Your message was recorded.";
-    const assistantMessage = {
-      id: assistantId,
-      role: "assistant" as const,
-      text: assistantText,
-      turnId,
-      streaming: false,
-      createdAt: at,
-      updatedAt: at,
-    };
-    const session = {
+    const session: OrchestrationSession = {
       threadId: thread.id,
-      status: "ready" as const,
+      status: "running",
       providerName: "Nero",
       providerInstanceId: ProviderInstanceId.make(NERO_INSTANCE_ID),
       runtimeMode: command.runtimeMode,
-      activeTurnId: null,
+      activeTurnId: turnId,
       lastError: null,
       updatedAt: at,
     };
@@ -1153,14 +1185,14 @@ export class Daemon {
         thread.messages.length === 0 && thread.title === "New thread"
           ? command.message.text.slice(0, 72) || thread.title
           : thread.title,
-      messages: [...thread.messages, userMessage, assistantMessage],
+      messages: [...thread.messages, userMessage],
       latestTurn: {
         turnId,
-        state: "completed",
+        state: "running",
         requestedAt: at,
         startedAt: at,
-        completedAt: at,
-        assistantMessageId: assistantId,
+        completedAt: null,
+        assistantMessageId: null,
       },
       session,
       updatedAt: at,
@@ -1174,7 +1206,7 @@ export class Daemon {
         messageId: userMessage.id,
         role: "user",
         text: userMessage.text,
-        attachments,
+        ...(attachments.length > 0 ? { attachments } : {}),
         turnId,
         streaming: false,
         createdAt: at,
@@ -1188,29 +1220,42 @@ export class Daemon {
       payload: {
         threadId: next.id,
         messageId: userMessage.id,
-        modelSelection: command.modelSelection,
-        titleSeed: command.titleSeed,
+        ...(command.modelSelection === undefined ? {} : { modelSelection: command.modelSelection }),
+        ...(command.titleSeed === undefined ? {} : { titleSeed: command.titleSeed }),
         runtimeMode: command.runtimeMode,
         interactionMode: command.interactionMode,
         createdAt: at,
       },
     };
     this.emitThreadEvent(next, startEvent);
-    const assistantEvent: OrchestrationEvent = {
-      ...this.eventBase(command.commandId, "thread", next.id),
-      type: "thread.message-sent",
-      payload: {
+    this.emitSession(next.id, command.commandId, session);
+    const apiKey = this.options.openRouterApiKey;
+    if (apiKey === undefined || apiKey.length === 0) {
+      const assistantId = this.completeAssistant({
         threadId: next.id,
-        messageId: assistantId,
-        role: "assistant",
-        text: assistantText,
         turnId,
-        streaming: false,
-        createdAt: at,
-        updatedAt: at,
-      },
-    };
-    this.emitThreadEvent(next, assistantEvent);
+        commandId: command.commandId,
+        text: "Nero cannot start the GLM loop: OPENROUTER_API_KEY is not set.",
+      });
+      this.finishTurn({
+        threadId: next.id,
+        turnId,
+        commandId: command.commandId,
+        assistantMessageId: assistantId,
+        status: "error",
+        lastError: "OPENROUTER_API_KEY is not set.",
+      });
+      return;
+    }
+    this.harness.start({
+      threadId: next.id,
+      turnId,
+      commandId: command.commandId,
+      userMessageId: userMessage.id,
+      userText: command.message.text,
+      attachmentIds: attachments.filter((item) => item.type === "image").map((item) => item.id),
+      runtimeMode: command.runtimeMode,
+    });
   }
 
   searchThreads(query: string, limit: number | undefined): OrchestrationSearchThreadsResult {
@@ -1346,6 +1391,295 @@ export class Daemon {
   previewList(threadId: string): PreviewListResult {
     const sessions = [...this.previews.values()].filter((session) => session.threadId === threadId);
     return { sessions, serverEpoch: this.serverEpoch, revision: this.previewRevision };
+  }
+
+  getThread(threadId: string): OrchestrationThread | undefined {
+    return this.threads.get(threadId);
+  }
+
+  setLiveTurn(threadId: string, turnId: string | null): void {
+    if (turnId === null) this.liveTurns.delete(threadId);
+    else this.liveTurns.set(threadId, turnId);
+    this.writeKeepAwake();
+  }
+
+  touchKeepAwake(): void {
+    this.writeKeepAwake();
+  }
+
+  private writeKeepAwake(): void {
+    const at = nowIso();
+    writeJsonAtomic(Path.join(this.options.dataDir, "keep-awake.json"), {
+      version: 1,
+      liveTurns: [...this.liveTurns.entries()].map(([threadId, turnId]) => ({
+        threadId,
+        turnId,
+        updatedAt: at,
+      })),
+      updatedAt: at,
+    });
+  }
+
+  writeAttachmentDataUrl(id: string, dataUrl: string): void {
+    const dest = Path.join(this.options.dataDir, "attachments", id);
+    ensureDir(Path.dirname(dest));
+    Fs.writeFileSync(dest, dataUrl, "utf8");
+  }
+
+  readAttachmentDataUrl(id: string): string | undefined {
+    const dest = Path.join(this.options.dataDir, "attachments", id);
+    try {
+      const raw = Fs.readFileSync(dest);
+      const asText = raw.toString("utf8");
+      if (asText.startsWith("data:")) return asText;
+      return `data:image/png;base64,${raw.toString("base64")}`;
+    } catch {
+      return undefined;
+    }
+  }
+
+  emitSession(threadId: string, commandId: string | null, session: OrchestrationSession): void {
+    const thread = this.requireThread(threadId);
+    const next: OrchestrationThread = { ...thread, session, updatedAt: session.updatedAt };
+    this.threads.set(next.id, next);
+    const event: OrchestrationEvent = {
+      ...this.eventBase(commandId, "thread", next.id),
+      type: "thread.session-set",
+      payload: { threadId: next.id, session },
+    };
+    this.emitThreadEvent(next, event);
+    this.schedulePersist();
+  }
+
+  deltaAssistant(input: {
+    readonly threadId: string;
+    readonly messageId: MessageId;
+    readonly turnId: TurnId;
+    readonly commandId: string;
+    readonly delta: string;
+  }): void {
+    const thread = this.requireThread(input.threadId);
+    const at = nowIso();
+    const existing = thread.messages.find((message) => message.id === input.messageId);
+    const messages: OrchestrationMessage[] = existing
+      ? thread.messages.map((message) =>
+          message.id === input.messageId
+            ? { ...message, text: `${message.text}${input.delta}`, streaming: true, updatedAt: at }
+            : message,
+        )
+      : [
+          ...thread.messages,
+          {
+            id: input.messageId,
+            role: "assistant",
+            text: input.delta,
+            turnId: input.turnId,
+            streaming: true,
+            createdAt: at,
+            updatedAt: at,
+          },
+        ];
+    const latestTurn =
+      thread.latestTurn !== null && thread.latestTurn.turnId === input.turnId
+        ? { ...thread.latestTurn, assistantMessageId: input.messageId }
+        : thread.latestTurn;
+    const next: OrchestrationThread = { ...thread, messages, latestTurn, updatedAt: at };
+    this.threads.set(next.id, next);
+    const event: OrchestrationEvent = {
+      ...this.eventBase(input.commandId, "thread", next.id),
+      type: "thread.message-sent",
+      payload: {
+        threadId: next.id,
+        messageId: input.messageId,
+        role: "assistant",
+        text: input.delta,
+        turnId: input.turnId,
+        streaming: true,
+        createdAt: existing?.createdAt ?? at,
+        updatedAt: at,
+      },
+    };
+    this.emitThreadEvent(next, event);
+    this.schedulePersist();
+  }
+
+  completeAssistant(input: {
+    readonly threadId: string;
+    readonly messageId?: MessageId;
+    readonly turnId: TurnId;
+    readonly commandId: string;
+    readonly text?: string;
+  }): MessageId {
+    const thread = this.requireThread(input.threadId);
+    const at = nowIso();
+    const existing =
+      input.messageId === undefined
+        ? undefined
+        : thread.messages.find((message) => message.id === input.messageId);
+    const messageId = existing?.id ?? input.messageId ?? MessageId.make(nextToken("msg"));
+    const text = input.text ?? existing?.text ?? "";
+    const messages: OrchestrationMessage[] = existing
+      ? thread.messages.map((message) =>
+          message.id === messageId
+            ? { ...message, text, streaming: false, updatedAt: at }
+            : message,
+        )
+      : [
+          ...thread.messages,
+          {
+            id: messageId,
+            role: "assistant",
+            text,
+            turnId: input.turnId,
+            streaming: false,
+            createdAt: at,
+            updatedAt: at,
+          },
+        ];
+    const next: OrchestrationThread = { ...thread, messages, updatedAt: at };
+    this.threads.set(next.id, next);
+    const event: OrchestrationEvent = {
+      ...this.eventBase(input.commandId, "thread", next.id),
+      type: "thread.message-sent",
+      payload: {
+        threadId: next.id,
+        messageId,
+        role: "assistant",
+        text: existing === undefined ? text : (input.text ?? ""),
+        turnId: input.turnId,
+        streaming: false,
+        createdAt: existing?.createdAt ?? at,
+        updatedAt: at,
+      },
+    };
+    this.emitThreadEvent(next, event);
+    this.schedulePersist();
+    return messageId;
+  }
+
+  appendActivity(
+    threadId: string,
+    commandId: string | null,
+    activity: OrchestrationThreadActivity,
+  ): void {
+    const thread = this.requireThread(threadId);
+    const stamped: OrchestrationThreadActivity = { ...activity, sequence: this.sequence + 1 };
+    const next: OrchestrationThread = {
+      ...thread,
+      activities: [...thread.activities, stamped],
+      updatedAt: activity.createdAt,
+    };
+    this.threads.set(next.id, next);
+    const event: OrchestrationEvent = {
+      ...this.eventBase(commandId, "thread", next.id),
+      type: "thread.activity-appended",
+      payload: { threadId: next.id, activity: stamped },
+    };
+    this.emitThreadEvent(next, event);
+    this.schedulePersist();
+  }
+
+  finishTurn(input: {
+    readonly threadId: string;
+    readonly turnId: TurnId;
+    readonly commandId: string;
+    readonly assistantMessageId: MessageId | null;
+    readonly status: "ready" | "error" | "interrupted";
+    readonly lastError: string | null;
+  }): void {
+    const thread = this.threads.get(input.threadId);
+    if (thread === undefined) return;
+    const at = nowIso();
+    const diff = turnWorkspaceDiff(this.options.workspaceRoot);
+    const isRepo = gitRepoRoot(this.options.workspaceRoot) !== undefined;
+    const turnCount = thread.messages.filter((message) => message.role === "user").length;
+    this.turnDiffs.set(`${thread.id}:${turnCount}`, diff.diff);
+    this.turnDiffs.set(thread.id, diff.diff);
+    const turnState = input.status === "ready" ? ("completed" as const) : input.status;
+    const session: OrchestrationSession = {
+      threadId: thread.id,
+      status: input.status,
+      providerName: "Nero",
+      providerInstanceId: ProviderInstanceId.make(NERO_INSTANCE_ID),
+      runtimeMode: thread.runtimeMode,
+      activeTurnId: null,
+      lastError: input.lastError,
+      updatedAt: at,
+    };
+    const latestTurn = {
+      turnId: input.turnId,
+      state: turnState,
+      requestedAt: thread.latestTurn?.requestedAt ?? at,
+      startedAt: thread.latestTurn?.startedAt ?? at,
+      completedAt: at,
+      assistantMessageId: input.assistantMessageId,
+    };
+    const next: OrchestrationThread = {
+      ...thread,
+      session,
+      latestTurn,
+      checkpoints: [
+        ...thread.checkpoints.filter((checkpoint) => checkpoint.turnId !== input.turnId),
+        {
+          turnId: input.turnId,
+          checkpointTurnCount: turnCount,
+          checkpointRef: CheckpointRef.make(nextToken("ckpt")),
+          status: isRepo ? "ready" : "missing",
+          files: diff.files.map((file) => ({
+            path: file.path,
+            kind: file.kind,
+            additions: file.additions,
+            deletions: file.deletions,
+          })),
+          assistantMessageId: input.assistantMessageId,
+          completedAt: at,
+        },
+      ],
+      updatedAt: at,
+    };
+    this.threads.set(next.id, next);
+    const sessionEvent: OrchestrationEvent = {
+      ...this.eventBase(input.commandId, "thread", next.id),
+      type: "thread.session-set",
+      payload: { threadId: next.id, session },
+    };
+    this.emitThreadEvent(next, sessionEvent);
+    const diffEvent: OrchestrationEvent = {
+      ...this.eventBase(input.commandId, "thread", next.id),
+      type: "thread.turn-diff-completed",
+      payload: {
+        threadId: next.id,
+        turnId: input.turnId,
+        checkpointTurnCount: turnCount,
+        checkpointRef:
+          next.checkpoints[next.checkpoints.length - 1]?.checkpointRef ??
+          CheckpointRef.make(nextToken("ckpt")),
+        status: isRepo ? "ready" : "missing",
+        files: next.checkpoints[next.checkpoints.length - 1]?.files ?? [],
+        assistantMessageId: input.assistantMessageId,
+        completedAt: at,
+      },
+    };
+    this.emitThreadEvent(next, diffEvent);
+    this.schedulePersist();
+  }
+
+  getTurnDiff(input: OrchestrationGetTurnDiffInput) {
+    return {
+      fromTurnCount: input.fromTurnCount,
+      toTurnCount: input.toTurnCount,
+      threadId: input.threadId,
+      diff: this.turnDiffs.get(`${input.threadId}:${input.toTurnCount}`) ?? "",
+    };
+  }
+
+  getFullThreadDiff(input: OrchestrationGetFullThreadDiffInput) {
+    return {
+      fromTurnCount: 0,
+      toTurnCount: input.toTurnCount,
+      threadId: input.threadId,
+      diff: this.turnDiffs.get(input.threadId) ?? "",
+    };
   }
 
   pid(): number {

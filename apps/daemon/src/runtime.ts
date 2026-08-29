@@ -12,6 +12,9 @@ export const NERO_DRIVER = "nero";
 export const NERO_INSTANCE_ID = "nero";
 export const SESSION_COOKIE = "nero_session";
 export const DAEMON_VERSION = "0.1.0";
+export const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
+export const OPENROUTER_PROVIDER_ONLY = ["baseten"] as const;
+export const MAX_SHOT_IMAGES = 8;
 
 export type DaemonOptions = {
   readonly host: string;
@@ -23,6 +26,8 @@ export type DaemonOptions = {
   readonly label: string;
   readonly devBypass: boolean;
   readonly accessToken: string | undefined;
+  readonly openRouterApiKey: string | undefined;
+  readonly openRouterBaseUrl: string;
 };
 
 export const nowUtc = (): DateTime.Utc => DateTime.nowUnsafe();
@@ -89,6 +94,8 @@ export const loadOptionsFromEnv = (): DaemonOptions => {
     label: Process.env.NERO_LABEL ?? "Nero",
     devBypass: envFlag("NERO_DEV_BYPASS"),
     accessToken: Process.env.NERO_ACCESS_TOKEN,
+    openRouterApiKey: Process.env.OPENROUTER_API_KEY,
+    openRouterBaseUrl: Process.env.OPENROUTER_BASE_URL ?? OPENROUTER_BASE_URL,
   };
 };
 

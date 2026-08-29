@@ -107,6 +107,49 @@ export const gitRepoRoot = (cwd: string): string | undefined => {
   return root.length === 0 ? undefined : root;
 };
 
+export type TurnWorkspaceDiff = {
+  readonly diff: string;
+  readonly files: ReadonlyArray<{
+    readonly path: string;
+    readonly kind: string;
+    readonly additions: number;
+    readonly deletions: number;
+  }>;
+};
+
+export const turnWorkspaceDiff = (cwd: string): TurnWorkspaceDiff => {
+  const root = gitRepoRoot(cwd);
+  if (root === undefined) return { diff: "", files: [] };
+  const files: TurnWorkspaceDiff["files"][number][] = [];
+  const seen = new Set<string>();
+  const numstat = tryGit(root, ["diff", "--numstat", "HEAD"]);
+  if (numstat.ok) {
+    for (const line of numstat.stdout.split("\n")) {
+      const match = /^(\d+|-)\t(\d+|-)\t(.+)$/.exec(line);
+      if (match === null) continue;
+      const path = match[3];
+      if (path === undefined || path.length === 0) continue;
+      seen.add(path);
+      files.push({
+        path,
+        kind: "changed",
+        additions: match[1] === "-" ? 0 : Number.parseInt(match[1] ?? "0", 10) || 0,
+        deletions: match[2] === "-" ? 0 : Number.parseInt(match[2] ?? "0", 10) || 0,
+      });
+    }
+  }
+  const untracked = tryGit(root, ["ls-files", "--others", "--exclude-standard"]);
+  if (untracked.ok) {
+    for (const line of untracked.stdout.split("\n")) {
+      const path = line.trim();
+      if (path.length === 0 || seen.has(path)) continue;
+      files.push({ path, kind: "added", additions: 0, deletions: 0 });
+    }
+  }
+  const diff = tryGit(root, ["diff", "HEAD"]);
+  return { diff: diff.ok ? diff.stdout : "", files };
+};
+
 const emptyLocal = (isRepo: boolean): VcsStatusLocalResult => ({
   isRepo,
   hasPrimaryRemote: false,

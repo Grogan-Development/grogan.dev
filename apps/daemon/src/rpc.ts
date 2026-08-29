@@ -396,20 +396,8 @@ export const makeRpcLayer = (daemon: Daemon) =>
           scriptPath: input.scriptPath,
         }),
       ),
-    "orchestration.getTurnDiff": (input) =>
-      Effect.succeed({
-        fromTurnCount: input.fromTurnCount,
-        toTurnCount: input.toTurnCount,
-        threadId: input.threadId,
-        diff: "",
-      }),
-    "orchestration.getFullThreadDiff": (input) =>
-      Effect.succeed({
-        fromTurnCount: 0,
-        toTurnCount: input.toTurnCount,
-        threadId: input.threadId,
-        diff: "",
-      }),
+    "orchestration.getTurnDiff": (input) => Effect.succeed(daemon.getTurnDiff(input)),
+    "orchestration.getFullThreadDiff": (input) => Effect.succeed(daemon.getFullThreadDiff(input)),
     "orchestration.searchThreads": (input) =>
       Effect.succeed(daemon.searchThreads(input.query, input.limit)),
     "orchestration.getArchivedShellSnapshot": () => Effect.succeed(daemon.shellSnapshot(true)),
