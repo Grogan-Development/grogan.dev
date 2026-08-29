@@ -9,10 +9,10 @@
       "name": "Z.AI Coding Plan",
       "npm": "@ai-sdk/openai-compatible",
       "models": {
-        "glm-5.3-highspeed": {
-          "id": "glm-5.3-highspeed",
-          "name": "GLM-5.3 Highspeed",
-          "attachment": false,
+        "glm-5.3-flash": {
+          "id": "glm-5.3-flash",
+          "name": "GLM-5.3-Flash",
+          "attachment": true,
           "reasoning": true,
           "tool_call": true,
           "temperature": true,
@@ -27,10 +27,10 @@
             "output": 131072
           }
         },
-        "glm-5.3-flash": {
-          "id": "glm-5.3-flash",
-          "name": "GLM-5.3-Flash",
-          "attachment": true,
+        "glm-5.3-highspeed": {
+          "id": "glm-5.3-highspeed",
+          "name": "GLM-5.3 Highspeed",
+          "attachment": false,
           "reasoning": true,
           "tool_call": true,
           "temperature": true,

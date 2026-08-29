@@ -8,8 +8,12 @@
  * family — GLM, Kimi, Gemini, Claude, Grok, DeepSeek, GPT. Subscription
  * routes come first where they exist (GLM → Z.ai plan, GPT → ChatGPT Pro,
  * Grok → xAI OIDC); OpenCode Zen is the fallback for GPT/Grok and the primary
- * route for everything else. Baseten is per-token spend behind the GLM chain
- * only, never an automatic fallback for other families.
+ * route for everything else.
+ *
+ * GLM-5.3-Flash is the go-to default (price/cost and behavior). The Speed
+ * option is GLM-5.3 on Baseten — speed comes from the better provider, not a
+ * model variant; it is text-only (no seat images). Baseten never serves
+ * chains the user did not explicitly pick.
  *
  * Slug/limit/pricing metadata comes from the vendored models.dev snapshot
  * (`modelsdev.json`) — refresh that file, never live-fetch at runtime.
@@ -51,14 +55,24 @@ export const CATALOG: ReadonlyArray<CatalogModel> = [
     default: true,
   },
   {
-    // The speed option: Z.ai's Highspeed variant on plan quota first, then
-    // Baseten per-token (best time-to-first-token).
-    slug: "glm-5.3-flash-fast",
-    name: "GLM 5.3 Flash Speed · Z.ai Highspeed → Baseten",
+    // Native HighSpeed variant of GLM-5.3 on the Z.ai coding plan.
+    slug: "glm-5.3-highspeed",
+    name: "GLM 5.3 HighSpeed · Z.ai",
     chain: [
       { provider: "zai", transport: "openai", upstream: "glm-5.3-highspeed" },
       { provider: "zai-payg", transport: "openai", upstream: "glm-5.3-highspeed" },
+    ],
+  },
+  {
+    // Flash has NO native fast variant — we fake it by routing Flash through
+    // Baseten, the faster provider. Only this entry gets a provider as its
+    // speed; fall back to the Z.ai plan serving of the same model.
+    slug: "glm-5.3-flash-fast",
+    name: "GLM 5.3 Flash Fast · Baseten → Z.ai",
+    chain: [
       { provider: "baseten", transport: "openai", upstream: "zai-org/GLM-5.3-Flash" },
+      { provider: "zai", transport: "openai", upstream: "glm-5.3-flash" },
+      { provider: "zai-payg", transport: "openai", upstream: "glm-5.3-flash" },
     ],
   },
   {

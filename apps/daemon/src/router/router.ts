@@ -148,7 +148,9 @@ export class NeroRouter {
         // only within the GLM chain; the last route's error surfaces.
         const isLast = index === chain.length - 1;
         const fallbackEligible =
-          (route.provider === "zai" || route.provider === "zai-payg") &&
+          (route.provider === "zai" ||
+            route.provider === "zai-payg" ||
+            route.provider === "baseten") &&
           isQuotaShaped(message, error);
         if (isLast || !fallbackEligible) {
           throw error;

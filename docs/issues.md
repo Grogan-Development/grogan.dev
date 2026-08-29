@@ -618,9 +618,10 @@ from it, not annotated); control plane stays landlord-only (no agent loop in
       middleman key) into `/etc/nero/host.env`, rebuild/redeploy the daemon
       image, confirm a GLM turn streams via the coding endpoint and falls back
       to PAYG on a forced 429.
-- [ ] Baseten fast model: inject `BASETEN_API_KEY`, pick `glm-5.3-flash-fast`
-      in the model picker, confirm routing (it must NOT be used as an automatic
-      fallback).
+- [ ] GLM speed entries: `glm-5.3-highspeed` is the native Z.ai variant;
+      `glm-5.3-flash-fast` fakes Flash's missing fast tier by routing Flash
+      through Baseten (`BASETEN_API_KEY`) with the Z.ai plan behind it.
+      Confirm both route correctly and that Baseten serves no other chains.
 - [ ] Codex (OpenAI Pro): register the callback URI
       `https://nero.grogan.dev/w/{id}/api/router/codex/callback` for the public
       Codex client (or set `NERO_CODEX_REDIRECT_URI` to whatever OpenAI
