@@ -22,7 +22,10 @@ var (
 
 // opTimeout covers docker stop -t 20 plus inspect. Detached from HTTP cancel
 // so a dropped client cannot leave docker started with StateStopped.
-const opTimeout = 60 * time.Second
+const (
+	opTimeout     = 60 * time.Second
+	maxStartFails = 3
+)
 
 type State string
 
@@ -43,6 +46,7 @@ type Workspace struct {
 	LastHeartbeat  time.Time `json:"lastHeartbeat"`
 	LastDisconnect time.Time `json:"-"`
 	UnpinnedAt     time.Time `json:"-"`
+	StartFails     int       `json:"-"`
 	QueuePosition  int       `json:"queuePosition,omitempty"`
 }
 
@@ -334,10 +338,13 @@ func (l *Landlord) tryStart(id string) error {
 		l.log.Warn("docker start cli", "id", id, "err", startErr)
 	}
 	info, inspErr := l.rtInspect(id)
+	// Inspect failure after a start attempt: do not leave a live container
+	// counted as stopped (that under-counts and over-admits).
+	live := inspErr != nil || info.Running
 	if inspErr != nil {
-		return inspErr
+		l.log.Warn("inspect after start failed; counting as running", "id", id, "err", inspErr)
 	}
-	if !info.Running {
+	if !live {
 		l.mu.Lock()
 		if w := l.workspaces[id]; w != nil && w.State != StateQueued {
 			w.State = StateStopped
@@ -377,6 +384,7 @@ func (l *Landlord) tryStart(id string) error {
 	}
 	now := l.clock.Now()
 	ws.State = StateRunning
+	ws.StartFails = 0
 	ws.LastHeartbeat = now
 	if !pinned(ws) {
 		ws.UnpinnedAt = now
@@ -456,10 +464,18 @@ func (l *Landlord) drainQueue() {
 		if err := l.tryStart(id); err != nil {
 			l.log.Warn("queued start failed", "id", id, "err", err)
 			l.mu.Lock()
-			if w := l.workspaces[id]; w != nil && w.State == StateQueued {
-				l.enqueueLocked(id)
+			if w := l.workspaces[id]; w != nil {
+				w.StartFails++
+				if w.StartFails >= maxStartFails {
+					w.State = StateStopped
+					l.removeFromQueueLocked(id)
+					l.log.Warn("dropped from queue after start failures", "id", id, "fails", w.StartFails)
+				} else if w.State == StateQueued {
+					l.enqueueLocked(id)
+				}
 			}
 			l.mu.Unlock()
+			return
 		}
 	}
 }

@@ -299,6 +299,83 @@ func TestStartCLIErrorInspectRunningCountsTowardAdmission(t *testing.T) {
 	}
 }
 
+func TestCreateInspectFailCountsAsRunning(t *testing.T) {
+	ctx := context.Background()
+	l, rt, _ := newTest(t)
+	rt.InspectErr = errors.New("inspect fail after start")
+
+	a, err := l.Create(ctx, "a")
+	if err != nil {
+		t.Fatalf("inspect-fail after start must still occupy a slot: %v", err)
+	}
+	if a.State != StateRunning {
+		t.Fatalf("state=%s want running (do not under-count)", a.State)
+	}
+	b, err := l.Create(ctx, "b")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if b.State != StateRunning {
+		t.Fatalf("b state=%s", b.State)
+	}
+	c, err := l.Create(ctx, "c")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.State != StateQueued {
+		t.Fatalf("third must queue, got %s", c.State)
+	}
+}
+
+func TestDrainQueueStartFailureDoesNotBusyLoop(t *testing.T) {
+	ctx := context.Background()
+	l, rt, _ := newTest(t)
+	a, err := l.Create(ctx, "a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := l.Create(ctx, "b"); err != nil {
+		t.Fatal(err)
+	}
+	c, err := l.Create(ctx, "c")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.State != StateQueued {
+		t.Fatal(c.State)
+	}
+
+	rt.StartBlocked = errors.New("broken image")
+	done := make(chan error, 1)
+	go func() {
+		_, err := l.Stop(ctx, a.ID)
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("drainQueue busy-looped under opMu")
+	}
+
+	got, _ := l.Get(c.ID)
+	if got.State != StateQueued {
+		t.Fatalf("c should remain queued for next pass, got %s", got.State)
+	}
+	if rt.Running(c.ID) {
+		t.Fatal("c must not have started")
+	}
+	if q := l.Queue(); len(q) != 1 || q[0] != c.ID {
+		t.Fatalf("queue=%v", l.Queue())
+	}
+	// opMu released: a subsequent API call must complete
+	if _, err := l.Get(a.ID); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestStopInspectFailureKeepsRunning(t *testing.T) {
 	ctx := context.Background()
 	l, rt, _ := newTest(t)

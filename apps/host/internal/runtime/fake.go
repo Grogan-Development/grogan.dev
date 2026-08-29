@@ -22,6 +22,7 @@ type Fake struct {
 	ListErr       error
 	StartErr      error
 	InspectErr    error
+	StartBlocked  error // start fails without marking the container running
 }
 
 func NewFake() *Fake {
@@ -72,8 +73,11 @@ func (f *Fake) StartContainer(_ context.Context, id string) error {
 	if !ok {
 		return fmt.Errorf("no container: %s", id)
 	}
-	c.Running = true
 	f.Starts = append(f.Starts, id)
+	if f.StartBlocked != nil {
+		return f.StartBlocked
+	}
+	c.Running = true
 	if f.StartErr != nil {
 		return f.StartErr
 	}
