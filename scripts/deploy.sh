@@ -10,7 +10,8 @@
 #   scripts/deploy.sh --no-image # skip the guest image rebuild (web/host only)
 #
 # What it does, in order:
-#   1. rsync the repo to grid-01:/opt/nero/src (server builds from this tree)
+#   1. rsync the repo to grid-01:/opt/nero/src (server builds from this
+#      tree; ownership is normalized to root so git stays happy)
 #   2. pnpm build locally; rsync apps/web/dist → /var/lib/nero/web
 #   3. go build the host on grid-01; install + restart nero-host
 #   4. install deploy/Caddyfile (validated) + reload caddy
@@ -32,18 +33,18 @@ for arg in "$@"; do
 done
 
 echo "==> sync repo → $HOST_ALIAS:$REMOTE_ROOT"
-rsync -az --delete \
+rsync -az --delete --no-owner --no-group \
   --exclude .git --exclude node_modules --exclude target \
   --exclude 'apps/web/dist' --exclude '.env' --exclude '.env.*' \
   ./ "$HOST_ALIAS:$REMOTE_ROOT/"
 
 echo "==> build + ship web"
 pnpm build >/dev/null
-rsync -az --delete --exclude '.DS_Store' apps/web/dist/ "$HOST_ALIAS:/var/lib/nero/web/"
+rsync -az --delete --no-owner --no-group --exclude '.DS_Store' apps/web/dist/ "$HOST_ALIAS:/var/lib/nero/web/"
 
 echo "==> build + restart host"
 ssh "$HOST_ALIAS" "cd $REMOTE_ROOT/apps/host \
-  && go build -o /tmp/nero-host.new ./cmd/nero-host \
+  && go build -buildvcs=false -o /tmp/nero-host.new ./cmd/nero-host \
   && install -m 0755 /tmp/nero-host.new /usr/local/bin/nero-host \
   && cp $REMOTE_ROOT/deploy/nero-host.service /etc/systemd/system/nero-host.service \
   && cp $REMOTE_ROOT/deploy/tmpfiles/nero-host.conf /etc/tmpfiles.d/nero-host.conf \

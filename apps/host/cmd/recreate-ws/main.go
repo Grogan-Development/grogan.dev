@@ -78,6 +78,9 @@ func main() {
 			ZaiBaseUrl:     env["ZAI_BASE_URL"],
 			NeroModel:      env["NERO_MODEL"],
 		})
+		// Replacing in place: drop the existing container (it holds the
+		// create-time env we are migrating away from). Dataset untouched.
+		_ = exec.Command("docker", "rm", "-f", runtime.ContainerName(id)).Run()
 		if out, err := exec.Command("docker", args...).CombinedOutput(); err != nil {
 			fmt.Printf("create %s failed: %v: %s\n", id, err, out)
 			os.Exit(1)
