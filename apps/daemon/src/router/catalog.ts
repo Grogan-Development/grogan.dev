@@ -10,10 +10,10 @@
  * Grok → xAI OIDC); OpenCode Zen is the fallback for GPT/Grok and the primary
  * route for everything else.
  *
- * GLM-5.3-Flash is the go-to default (price/cost and behavior). The Speed
- * option is GLM-5.3 on Baseten — speed comes from the better provider, not a
- * model variant; it is text-only (no seat images). Baseten never serves
- * chains the user did not explicitly pick.
+ * GLM-5.3-Flash is the go-to default (price/cost and behavior). Its `fast`
+ * bolt is the same Flash model served by Baseten (per-token cost) — selected
+ * only via the explicit speed pick. The separate `glm-5.3-highspeed` entry is
+ * Z.ai's native HighSpeed variant on the coding plan (Z.ai → Z.ai PAYG).
  *
  * Slug/limit/pricing metadata comes from the vendored models.dev snapshot
  * (`modelsdev.json`) — refresh that file, never live-fetch at runtime.

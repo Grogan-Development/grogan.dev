@@ -679,6 +679,21 @@ candidate.
       `glm-5.3-flash-fast` fakes Flash's missing fast tier by routing Flash
       through Baseten (`BASETEN_API_KEY`) with the Z.ai plan behind it.
       Confirm both route correctly and that Baseten serves no other chains.
+- [ ] **PLAN↔catalog drift in the model path — needs a plan decision (found by
+      the docs-consistency validation pass):**
+      (a) PLAN's selector label says the Speed entry routes
+      `Z.ai Highspeed → Baseten`, but the shipped `glm-5.3-highspeed` chain is
+      Z.ai → Z.ai PAYG only (the flash-fast-via-Baseten bolt is a separate
+      toggle on the Flash entry). One of PLAN or the catalog is wrong.
+      (b) PLAN contradicts itself on Baseten: "routed only when the user
+      explicitly picks the fast model — never an automatic fallback" vs
+      "fallback order: … → Baseten (GLM chains only)". The code implements the
+      fallback-order reading (Baseten is the third leg of the default GLM
+      chain, reached without a user pick) while `baseten.ts` comments claim
+      the explicit-pick reading. Changing the fallback policy requires a plan
+      change per the out-of-scope law; until then pick which sentence dies.
+      (c) PLAN names a `glm-5.3` (text-only) model the curated catalog never
+      offered — delete the sentence or add the entry.
 - [x] Codex (OpenAI Pro): tokens borrowed from the local Codex CLI via
       `POST /api/router/codex/import`; `gpt-5.6-sol` streamed a live turn.
       Callback registration + first browser login still pending (import path
