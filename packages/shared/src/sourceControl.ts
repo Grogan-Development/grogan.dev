@@ -81,6 +81,10 @@ export function resolveChangeRequestPresentation(
     case "github":
     case undefined:
       return GITHUB_CHANGE_REQUEST_PRESENTATION;
+    case "loom":
+      // Loom change requests are feature contracts on the private server;
+      // they have no external URL shape to present.
+      return GENERIC_CHANGE_REQUEST_PRESENTATION;
     case "gitlab":
       return GITLAB_CHANGE_REQUEST_PRESENTATION;
     case "azure-devops":

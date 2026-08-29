@@ -29,6 +29,7 @@ import type { Daemon } from "./daemon.ts";
 import { validAttachmentId } from "./daemon.ts";
 import {
   getLoomFeature,
+  getLoomStatus,
   isLoomConfigured,
   listLoomEvents,
   listLoomFeatures,
@@ -542,6 +543,18 @@ export const httpRoutesLayer = (daemon: Daemon) =>
         });
       const loomFeatureList = () =>
         loomResponse(Effect.tryPromise(async () => json(200, await listLoomFeatures())));
+
+      yield* router.add(
+        "GET",
+        "/api/loom/status",
+        recover(
+          Effect.gen(function* () {
+            yield* requireAuth(daemon);
+            return json(200, yield* Effect.promise(() => getLoomStatus()));
+          }),
+        ),
+      );
+
       const loomFeatureDetail = (featureId: string) =>
         loomResponse(Effect.tryPromise(async () => json(200, await getLoomFeature(featureId))));
       const loomEventPage = (limit: number | undefined, since: string | undefined) =>

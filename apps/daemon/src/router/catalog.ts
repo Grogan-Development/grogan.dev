@@ -304,8 +304,23 @@ export const NERO_TOOLS: ReadonlyArray<ToolSchema> = [
   },
 ];
 
-export const systemPrompt = (workspaceRoot: string): string =>
-  `You are Nero, a Pi-like coding agent in a single shared workspace.
+export type PromptSkill = {
+  readonly name: string;
+  readonly path: string;
+  readonly description?: string;
+};
+
+export const systemPrompt = (
+  workspaceRoot: string,
+  skills: ReadonlyArray<PromptSkill> = [],
+): string => {
+  const skillLines = skills
+    .map(
+      (skill) =>
+        `  - ${skill.name}${skill.description ? ` — ${skill.description}` : ""} (cat ${skill.path})`,
+    )
+    .join("\n");
+  return `You are Nero, a Pi-like coding agent in a single shared workspace.
 
 Workspace root: ${workspaceRoot}
 File tools (read/write/edit) cannot leave that root. bash starts there.
@@ -318,8 +333,16 @@ Seat CLI via bash:
   nero-desktop key KEY [KEY...]
 shot captures a PNG; it is attached on the next model request (max 8 images).
 Long jobs: \`nero-run COMMAND\` so the workspace stays awake after this turn.
-
+${
+  skills.length > 0
+    ? `
+Skills (read the file with cat before using the capability for the first time):
+${skillLines}
+`
+    : ""
+}
 Prefer tools over questions. Be concise.`;
+};
 
 export type StreamRequest = {
   readonly model: string;

@@ -205,7 +205,10 @@ export class PiHarness {
     }
     const thread = this.daemon.getThread(threadId);
     const prior: ChatMessage[] = [
-      { role: "system", content: systemPrompt(this.daemon.options.workspaceRoot) },
+      {
+        role: "system",
+        content: systemPrompt(this.daemon.options.workspaceRoot, this.daemon.scanSkills()),
+      },
     ];
     if (thread !== undefined) {
       for (const message of thread.messages) {

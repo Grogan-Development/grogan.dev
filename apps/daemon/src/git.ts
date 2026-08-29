@@ -44,6 +44,7 @@ import {
 import * as Option from "effect/Option";
 
 import { djb2Hex, nextToken, nowUtc, platformOs } from "./runtime.ts";
+import { isLoomConfigured } from "./loom.ts";
 
 const runGit = (
   cwd: string,
@@ -554,7 +555,7 @@ const which = (bin: string): string | undefined => {
 
 export const discoverSourceControl = (): SourceControlDiscoveryResult => {
   const gitVersion = which("git");
-  const ghVersion = which("gh");
+  const loomInstalled = which("loom") !== undefined;
   return {
     versionControlSystems: [
       {
@@ -570,15 +571,17 @@ export const discoverSourceControl = (): SourceControlDiscoveryResult => {
     ],
     sourceControlProviders: [
       {
-        kind: "github",
-        label: "GitHub",
-        executable: "gh",
-        status: ghVersion === undefined ? "missing" : "available",
-        version: ghVersion === undefined ? Option.none() : Option.some(ghVersion.slice(0, 80)),
-        installHint: "Install the GitHub CLI (gh) and run gh auth login.",
+        kind: "loom",
+        label: "Loom",
+        executable: "loom",
+        status: loomInstalled && isLoomConfigured() ? "available" : "missing",
+        version: Option.none(),
+        installHint: loomInstalled
+          ? "Set LOOM_URL and LOOM_TOKEN in the host env (/etc/nero/host.env) to connect this workspace to Loom."
+          : "Install the loom CLI into this workspace image to enable Loom.",
         detail: Option.none(),
         auth: {
-          status: ghVersion === undefined ? "unauthenticated" : "unknown",
+          status: isLoomConfigured() ? "authenticated" : "unauthenticated",
           account: Option.none(),
           host: Option.none(),
           detail: Option.none(),

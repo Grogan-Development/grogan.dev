@@ -12,9 +12,8 @@
 # Runtime auth (never baked into the image): the CLI reads LOOM_URL and
 # LOOM_TOKEN from the environment (see guest/export-container-env).
 #
-# Until the first loom CLI release is cut, this stays off in the
-# Dockerfile (INSTALL_LOOM=0). To enable: cut the release, pin
-# LOOM_CLI_SHA256 below, flip the build-arg to 1.
+# Default: on, pinned to the v0.1.0 release (see the LOOM_CLI_* args in the
+# Dockerfile). Bump the version + SHA256 together when a new release is cut.
 set -eu
 
 VERSION="${LOOM_CLI_VERSION:-v0.1.0}"

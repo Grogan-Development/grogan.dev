@@ -479,6 +479,71 @@ export class Daemon {
     }));
   }
 
+  /**
+   * Native + user agent skills, from ~/.nero/skills/<name>/SKILL.md. The
+   * guest image seeds native skills there on boot (guest/seat/seed-home);
+   * the harness prompt points the agent at the same paths. Failures are
+   * non-fatal: an unreadable skills dir just means no skills advertised.
+   */
+  scanSkills(): Array<{
+    name: string;
+    description?: string;
+    path: string;
+    enabled: boolean;
+    displayName?: string;
+    shortDescription?: string;
+  }> {
+    const root = Path.join(this.options.homeDir, ".nero", "skills");
+    let names: Array<string>;
+    try {
+      names = Fs.readdirSync(root).sort();
+    } catch {
+      return [];
+    }
+    const skills: Array<{
+      name: string;
+      description?: string;
+      path: string;
+      enabled: boolean;
+      displayName?: string;
+      shortDescription?: string;
+    }> = [];
+    for (const name of names) {
+      const path = Path.join(root, name, "SKILL.md");
+      let text: string;
+      try {
+        text = Fs.readFileSync(path, "utf8");
+      } catch {
+        continue;
+      }
+      const frontmatter = /^---\r?\n([\s\S]*?)\r?\n---/.exec(text);
+      const field = (key: string): string | undefined => {
+        const match = frontmatter?.[1]
+          ? new RegExp(`^${key}:\\s*(.+)$`, "m").exec(frontmatter[1])
+          : undefined;
+        const value = match?.[1]?.trim();
+        return value !== undefined && value.length > 0 ? value : undefined;
+      };
+      const displayName = field("name") ?? name;
+      const description = field("description");
+      const firstParagraph = text
+        .slice(frontmatter?.[0].length ?? 0)
+        .split(/\n\s*\n/)
+        .map((block) => block.replace(/^#.*$/gm, "").trim())
+        .find((block) => block.length > 0);
+      const shortDescription = description ?? firstParagraph?.slice(0, 200);
+      skills.push({
+        name,
+        path,
+        enabled: true,
+        displayName,
+        ...(description !== undefined ? { description } : {}),
+        ...(shortDescription !== undefined ? { shortDescription } : {}),
+      });
+    }
+    return skills;
+  }
+
   serverConfig(): ServerConfig {
     return {
       environment: this.environment(),
@@ -501,7 +566,7 @@ export class Daemon {
           availability: "available",
           models: this.catalogModels(),
           slashCommands: [],
-          skills: [],
+          skills: this.scanSkills(),
         },
       ],
       availableEditors: [],

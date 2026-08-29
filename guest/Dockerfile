@@ -140,9 +140,15 @@ RUN chmod 0755 /usr/lib/nero/install-blender.sh \
  && if [ "$INSTALL_BLENDER" = 1 ]; then /usr/lib/nero/install-blender.sh; fi
 
 COPY guest/install-loom.sh /usr/lib/nero/install-loom.sh
-ARG INSTALL_LOOM=0
+# Pinned to the published loom-cli release; workspaces install it at build
+# time. Bump both args together when a new release is cut.
+ARG LOOM_CLI_VERSION=v0.1.0
+ARG LOOM_CLI_SHA256=3b1efef51dea324328347c8e1c47456e08ca9f93d840dde287858ab66321faf4
+ARG INSTALL_LOOM=1
 RUN chmod 0755 /usr/lib/nero/install-loom.sh \
- && if [ "$INSTALL_LOOM" = 1 ]; then /usr/lib/nero/install-loom.sh; fi
+ && if [ "$INSTALL_LOOM" = 1 ]; then LOOM_CLI_VERSION="$LOOM_CLI_VERSION" LOOM_CLI_SHA256="$LOOM_CLI_SHA256" /usr/lib/nero/install-loom.sh; fi
+
+COPY guest/skills /usr/lib/nero/skills
 
 COPY guest/seat/kasmvnc.yaml /etc/kasmvnc/kasmvnc.yaml
 COPY guest/seat/wait-for-display /usr/lib/nero/wait-for-display

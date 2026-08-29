@@ -18,6 +18,21 @@ mkdir -p "$HOME/.vnc"
 chmod 700 "$HOME/.vnc"
 # Quiet DE selection on an empty dataset.
 touch "$HOME/.vnc/.de-was-selected"
+# Native agent skills ship in the image (/usr/lib/nero/skills) and are
+# refreshed into the persistent dataset when the image copy is newer, so an
+# updated image upgrades existing workspaces while user edits (newer mtime)
+# survive.
+if [ -d /usr/lib/nero/skills ]; then
+  for skill in /usr/lib/nero/skills/*; do
+    [ -d "$skill" ] || continue
+    name=$(basename "$skill")
+    target="$HOME/.nero/skills/$name"
+    if [ ! -f "$target/SKILL.md" ] || [ "$skill/SKILL.md" -nt "$target/SKILL.md" ]; then
+      mkdir -p "$target"
+      cp -r "$skill/." "$target/"
+    fi
+  done
+fi
 # The agent's bash cwd / file-tree root is its own folder; $HOME keeps only
 # harness plumbing (.nero state, .vnc, .kasmpasswd) the UI never shows.
 mkdir -p "$HOME/workspace"

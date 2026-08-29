@@ -27,6 +27,48 @@ export const isLoomConfigured = (): boolean => {
   return token !== undefined && token.length > 0;
 };
 
+export type LoomStatus = {
+  readonly configured: boolean;
+  readonly url: string;
+  readonly healthy: boolean;
+  readonly detail: string | undefined;
+};
+
+/** Cheap settings-surface probe: configured state + an unauthenticated healthz. */
+export const getLoomStatus = async (): Promise<LoomStatus> => {
+  const config = loomConfig();
+  if (!isLoomConfigured()) {
+    return {
+      configured: false,
+      url: config.url,
+      healthy: false,
+      detail: "LOOM_TOKEN is not set in this workspace.",
+    };
+  }
+  try {
+    const response = await fetch(`${config.url}/healthz`, {
+      headers: { accept: "application/json" },
+      signal: AbortSignal.timeout(4_000),
+    });
+    if (response.ok) {
+      return { configured: true, url: config.url, healthy: true, detail: undefined };
+    }
+    return {
+      configured: true,
+      url: config.url,
+      healthy: false,
+      detail: `Loom answered healthz with HTTP ${response.status}.`,
+    };
+  } catch (error) {
+    return {
+      configured: true,
+      url: config.url,
+      healthy: false,
+      detail: error instanceof Error ? error.message : "unreachable",
+    };
+  }
+};
+
 export class LoomUnavailableError extends Error {
   constructor(message: string) {
     super(message);

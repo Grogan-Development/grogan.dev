@@ -81,6 +81,30 @@ The tmpfiles entry creates `/run/nero/w` as `root:caddy 0750` **at every boot** 
 
 Caddy reverse-proxies to `/run/nero/w/<id>.sock` (group `caddy`, mode `0660`). Create/wake wait until that workspace’s `:8787` `/healthz` answers.
 
+## Loom (git/repo server, dedicated to Nero)
+
+`loomd` runs on Grid-01 as a container, bound to the docker bridge only (never
+the public interface): `172.17.0.1:8088` → container `:8080`. Data lives in
+`/opt/loom/data` (on the `grid/opt` dataset). The owner token is in
+`/opt/loom/loom.env` (`0600`); workspaces get a **scoped** token
+(`git/features/events/evidence/review` perms on `nero/grogan-dev`), passed via
+`LOOM_URL`/`LOOM_TOKEN` in `host.env` → guest env → `export-container-env`.
+The owner token never enters a workspace.
+
+- Source: `github.com/Grogan-Development/loom` (public; release artifacts for
+  the guest CLI installer live there).
+- Build + run on Grid-01: clone to `/opt/loom/src`, `docker build -t loom:local .`,
+  then the `docker run` above (mirror the `git config --system
+init.defaultBranch main` line from the image).
+- `loom.grogan.dev` DNS does not exist yet; the daemon path does not need it
+  (`host.docker.internal:8088` from containers). When DNS is added, front it
+  with the host Caddy and switch `LOOM_URL` to the public URL.
+- Git gotcha (upstream bug, filed): repos imported over https have **no
+  git_oid mapping**, so every `/git/` request 503s until a git push exists.
+  Seed a repo by cloning it empty, pushing one commit to
+  `refs/heads/workspaces/init`, then `POST /loom/v1/refs/bootstrap` with that
+  `git_oid` (owner token).
+
 ### 4. WorkOS dashboard
 
 Redirect URIs:
