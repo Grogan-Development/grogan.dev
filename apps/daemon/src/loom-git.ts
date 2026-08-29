@@ -61,7 +61,8 @@ const remoteUrl = (): string => {
     throw new LoomGitError("Loom is not configured on this workspace (LOOM_TOKEN missing).", 503);
   }
   const encoded = encodeURIComponent(config.token);
-  return `${config.url.replace(/^https:\/\//, "http://")}/git`;
+  const host = config.url.replace(/^https?:\/\//, "");
+  return `http://nero:${encoded}@${host}/git`;
 };
 
 /** Bare mirror under <dataDir>/loom-cache/<repo>.git, updated on every call. */
