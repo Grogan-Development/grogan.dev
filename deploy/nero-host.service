@@ -13,6 +13,17 @@ ExecStart=/usr/local/bin/nero-host
 # docker.service restart SIGTERMs us (exit 0). always bring the landlord back.
 Restart=always
 RestartSec=2
+# Root is required (zfs, docker CLI, cgroupfs writes, socket chown), so keep
+# what hardening the privileged workspaces still allow. Note: workspace
+# containers run --privileged by design (guest systemd + cgroup scopes), so a
+# guest escape is effectively host root — see deploy/README.md.
+NoNewPrivileges=yes
+ProtectHome=read
+ProtectSystem=full
+PrivateTmp=no
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictSUIDSGID=yes
+UMask=0077
 
 [Install]
 WantedBy=multi-user.target

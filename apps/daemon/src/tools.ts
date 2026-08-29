@@ -31,7 +31,15 @@ const BASH_ENV_ALLOW = new Set([
   "TEMP",
 ]);
 
-const BASH_ENV_DENY = new Set(["OPENROUTER_API_KEY", "NERO_ACCESS_TOKEN"]);
+const BASH_ENV_DENY = new Set([
+  "OPENROUTER_API_KEY",
+  "NERO_ACCESS_TOKEN",
+  // Host control-plane wiring: the host token authorizes job-heartbeat for
+  // ANY workspace id, so it must never reach agent bash.
+  "NERO_HOST_TOKEN",
+  "NERO_HOST_URL",
+  "NERO_WORKSPACE_ID",
+]);
 
 export type ShotImage = {
   readonly mimeType: "image/png";

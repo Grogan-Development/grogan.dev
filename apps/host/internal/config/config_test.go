@@ -22,8 +22,18 @@ func TestAuthReady(t *testing.T) {
 	if err := ok.AuthReady(); err != nil {
 		t.Fatal(err)
 	}
-	if err := (Config{DevBypass: true}).AuthReady(); err != nil {
+	if err := (Config{DevBypass: true, Listen: "127.0.0.1:8080"}).AuthReady(); err != nil {
 		t.Fatal(err)
+	}
+	if err := (Config{DevBypass: true, Listen: "localhost:8080"}).AuthReady(); err != nil {
+		t.Fatal(err)
+	}
+	// Dev bypass disables every auth check, so it must refuse any listener
+	// that is not loopback (including "" = all interfaces).
+	for _, listen := range []string{"", ":8080", "0.0.0.0:8080", "104.238.222.91:8080"} {
+		if err := (Config{DevBypass: true, Listen: listen}).AuthReady(); err == nil {
+			t.Fatalf("dev bypass should refuse listener %q", listen)
+		}
 	}
 	if err := (Config{}).AuthReady(); err == nil {
 		t.Fatal("empty should fail")

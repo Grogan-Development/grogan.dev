@@ -195,7 +195,13 @@ export const makeRpcLayer = (daemon: Daemon) =>
         expiresAt: DateTime.toEpochMillis(laterMs(10 * 60_000)),
       });
     },
-    "attachments.delete": () => Effect.void,
+    "attachments.delete": (input) => {
+      // Id pattern doubles as traversal protection for the attachments dir.
+      if (/^[A-Za-z0-9]{4,64}$/.test(input.attachmentId)) {
+        daemon.deleteAttachment(input.attachmentId);
+      }
+      return Effect.void;
+    },
     "provider.uploadFeedback": () => Effect.succeed({ feedbackId: "noop" }),
     subscribeVcsStatus: (input) => {
       const snapshot = vcsStatus(input);

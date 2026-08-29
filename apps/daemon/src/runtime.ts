@@ -1,3 +1,4 @@
+import * as Crypto from "node:crypto";
 import * as Fs from "node:fs";
 import * as Os from "node:os";
 import * as Path from "node:path";
@@ -62,6 +63,14 @@ export const nextToken = (prefix: string): string => {
   seq += 1;
   return `${prefix}_${DateTime.toEpochMillis(nowUtc()).toString(36)}_${seq.toString(36)}`;
 };
+
+/**
+ * CSPRNG secret for anything an unauthenticated caller must not be able to
+ * guess (websocket tickets, session tokens, pairing credentials). Never use
+ * `nextToken` for these — it is a predictable timestamp+counter.
+ */
+export const nextSecret = (prefix: string): string =>
+  `${prefix}_${Crypto.randomBytes(24).toString("base64url")}`;
 
 export const platformOs = (): "darwin" | "linux" | "windows" | "unknown" => {
   switch (Process.platform) {

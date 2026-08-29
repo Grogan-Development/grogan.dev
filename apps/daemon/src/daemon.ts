@@ -66,6 +66,7 @@ import {
   SESSION_COOKIE,
   ensureDir,
   laterMs,
+  nextSecret,
   nextToken,
   nowIso,
   nowUtc,
@@ -156,8 +157,11 @@ const TURN_PULSE_INTERVAL_MS = 30_000;
 class HostTurnPulse {
   private readonly turnIds = new Set<string>();
   private timer: ReturnType<typeof setInterval> | undefined;
+  private readonly options: DaemonOptions;
 
-  constructor(private readonly options: DaemonOptions) {}
+  constructor(options: DaemonOptions) {
+    this.options = options;
+  }
 
   begin(turnId: string): void {
     const { hostUrl, hostToken, workspaceId } = this.options;
@@ -503,7 +507,7 @@ export class Daemon {
   }
 
   issueTicket(): AuthWebSocketTicketResult {
-    const ticket = nextToken("tkt");
+    const ticket = nextSecret("tkt");
     const expiresAt = laterMs(60_000);
     this.tickets.set(ticket, {
       ticket,
@@ -514,7 +518,7 @@ export class Daemon {
   }
 
   issueSession(): { token: string; expiresAt: DateTime.Utc } {
-    const token = nextToken("sess");
+    const token = nextSecret("sess");
     const expiresAt = laterMs(24 * 60 * 60 * 1000);
     this.sessions.set(token, {
       sessionId: token,
@@ -540,7 +544,7 @@ export class Daemon {
 
   issuePairing(label: string | undefined): AuthPairingCredentialResult {
     const id = nextToken("pair");
-    const credential = nextToken("cred");
+    const credential = nextSecret("cred");
     const createdAt = nowUtc();
     const expiresAt = laterMs(24 * 60 * 60 * 1000);
     this.pairing.set(id, { id, credential, label, createdAt, expiresAt });
@@ -1127,6 +1131,13 @@ export class Daemon {
     return project;
   }
 
+  /** Public read for HTTP routes; null for unknown or deleted projects. */
+  projectSnapshot(projectId: string): OrchestrationProject | undefined {
+    const project = this.projects.get(projectId);
+    if (project === undefined || project.deletedAt !== null) return undefined;
+    return project;
+  }
+
   private requireThread(threadId: string): OrchestrationThread {
     const thread = this.threads.get(threadId);
     if (thread === undefined || thread.deletedAt !== null) {
@@ -1566,6 +1577,22 @@ export class Daemon {
     const dest = Path.join(this.options.dataDir, "attachments", id);
     ensureDir(Path.dirname(dest));
     Fs.writeFileSync(dest, dataUrl, "utf8");
+  }
+
+  /** Store raw upload bytes for a minted attachment id (POST /api/attachments/:id). */
+  writeAttachmentBytes(id: string, bytes: Buffer): void {
+    const dest = Path.join(this.options.dataDir, "attachments", id);
+    ensureDir(Path.dirname(dest));
+    Fs.writeFileSync(dest, bytes);
+  }
+
+  /** Remove a stored attachment; missing files are already the desired state. */
+  deleteAttachment(id: string): void {
+    try {
+      Fs.unlinkSync(Path.join(this.options.dataDir, "attachments", id));
+    } catch {
+      // Unlinking a nonexistent attachment is a no-op.
+    }
   }
 
   readAttachmentDataUrl(id: string): string | undefined {

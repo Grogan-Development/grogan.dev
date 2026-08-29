@@ -16,9 +16,12 @@ KEYS = {
     "NERO_WORKSPACE_ID",
     "NERO_ENVIRONMENT_ID",
     "NERO_LABEL",
-    "NERO_DEV_BYPASS",
     "NERO_HOST_URL",
 }
+# NERO_DEV_BYPASS is deliberately NOT forwarded: it disables every daemon
+# auth check. Guests always run the daemon with the X-Nero-Access/bearer
+# contract; a developer who truly wants an open guest daemon must set the
+# variable inside the guest by hand.
 
 OUT = Path("/etc/nero/guest.env")
 

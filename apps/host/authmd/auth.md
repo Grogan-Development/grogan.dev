@@ -98,7 +98,7 @@ Cookie: wos-session=<sealed session>
 
 Guest keep-awake (`POST /api/workspaces/{id}/job-heartbeat`) is a separate host token for `nero-run` inside the workspace. It is not an agent access_token and is not obtained from this file.
 
-Workspace `/w/{workspaceId}/` is not wired in v1 yet (Caddy 501).
+Workspace routes live under `nero.grogan.dev/w/{workspaceId}/` (Caddy reverse-proxies to that workspace's daemon). They require the same `wos-session` cookie as `/api/workspaces*`.
 
 If you get a 401, return to [Step 1](#step-1--discover) and send the human through AuthKit again. Do not retry with a Bearer token.
 
@@ -109,7 +109,7 @@ If you get a 401, return to [Step 1](#step-1--discover) and send the human throu
 | `401 unauthorized` | `/api/workspaces*`              | No valid `wos-session`, or the email is not allowlisted. Read `WWW-Authenticate` and send the human to AuthKit (`GET /auth/login`). |
 | `403 forbidden`    | `/auth/callback`                | Signed-in email is not on the allowlist. Stop.                                                                                      |
 | `400`              | `/auth/login`, `/auth/callback` | Bad host, missing code, or invalid state/PKCE. Restart at `GET /auth/login`.                                                        |
-| `501`              | `/w/*`                          | Workspace proxy not wired.                                                                                                          |
+| `401 unauthorized` | `/w/{id}/*`                     | Same session requirement as `/api/workspaces*`. The daemon under `/w/{id}/` additionally issues its own tickets.                    |
 
 ## Revocation
 

@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"net"
 	"os"
 	"strings"
 	"time"
@@ -54,6 +55,9 @@ func FromEnv() Config {
 }
 
 func (c Config) AuthReady() error {
+	if err := c.DevBypassRefused(); err != nil {
+		return err
+	}
 	if c.DevBypass {
 		return nil
 	}
@@ -72,6 +76,29 @@ func (c Config) AuthReady() error {
 	}
 	if len(missing) > 0 {
 		return fmt.Errorf("auth not configured: %s", strings.Join(missing, ", "))
+	}
+	return nil
+}
+
+// DevBypassRefused rejects NERO_DEV_BYPASS on any listener that is not
+// loopback: the flag disables every session/allowlist/token check, so it must
+// be unreachable from the network. An empty host (":8080") means all
+// interfaces and is refused.
+func (c Config) DevBypassRefused() error {
+	if !c.DevBypass {
+		return nil
+	}
+	host := c.Listen
+	if h, _, err := net.SplitHostPort(c.Listen); err == nil {
+		host = h
+	}
+	if host == "" || host == "*" {
+		return fmt.Errorf("NERO_DEV_BYPASS=1 refuses listener %q: bind a loopback address instead", c.Listen)
+	}
+	if ip := net.ParseIP(host); ip == nil || !ip.IsLoopback() {
+		if host != "localhost" {
+			return fmt.Errorf("NERO_DEV_BYPASS=1 refuses non-loopback listener %q", c.Listen)
+		}
 	}
 	return nil
 }

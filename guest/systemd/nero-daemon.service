@@ -23,7 +23,7 @@ Environment=NERO_HOST=0.0.0.0
 Environment=PORT=8787
 Environment=NODE_PATH=/usr/lib/nero/daemon/node_modules
 EnvironmentFile=-/etc/nero/guest.env
-PassEnvironment=OPENROUTER_API_KEY NERO_ACCESS_TOKEN NERO_HOST_TOKEN NERO_WORKSPACE_ID NERO_ENVIRONMENT_ID NERO_LABEL NERO_DEV_BYPASS
+PassEnvironment=OPENROUTER_API_KEY NERO_ACCESS_TOKEN NERO_HOST_TOKEN NERO_WORKSPACE_ID NERO_ENVIRONMENT_ID NERO_LABEL
 ExecStart=/usr/local/bin/nero-daemon
 Restart=on-failure
 RestartSec=2

@@ -261,7 +261,10 @@ func (s *Server) jobHeartbeat(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "invalid json")
 		return
 	}
-	running := true
+	// An empty/absent body must not pin: a heartbeat that says nothing has no
+	// evidence of a live job, and "running" defaults are how a stray or
+	// malformed ping would keep a workspace awake forever.
+	running := false
 	switch {
 	case body.Running != nil:
 		running = *body.Running

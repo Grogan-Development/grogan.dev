@@ -69,15 +69,32 @@ func NewDocker(cfg DockerSettings, log *slog.Logger) *Docker {
 	}
 }
 
+// argvForErrors joins args for error messages with secret-carrying
+// `--env KEY=VALUE` pairs redacted: these strings reach API error responses
+// and logs when a docker/zfs command fails.
+func argvForErrors(args []string) string {
+	redacted := make([]string, len(args))
+	copy(redacted, args)
+	for i, arg := range redacted {
+		if arg == "--env" && i+1 < len(redacted) {
+			if key, _, ok := strings.Cut(redacted[i+1], "="); ok {
+				redacted[i+1] = key+"=<redacted>"
+			}
+		}
+	}
+	return strings.Join(redacted, " ")
+}
+
 func runCmd(ctx context.Context, name string, args ...string) (string, error) {
 	cmd := exec.CommandContext(ctx, name, args...)
 	out, err := cmd.CombinedOutput()
 	s := strings.TrimSpace(string(out))
+	argv := argvForErrors(args)
 	if err != nil {
 		if s != "" {
-			return s, fmt.Errorf("%s %s: %w: %s", name, strings.Join(args, " "), err, s)
+			return s, fmt.Errorf("%s %s: %w: %s", name, argv, err, s)
 		}
-		return s, fmt.Errorf("%s %s: %w", name, strings.Join(args, " "), err)
+		return s, fmt.Errorf("%s %s: %w", name, argv, err)
 	}
 	return s, nil
 }

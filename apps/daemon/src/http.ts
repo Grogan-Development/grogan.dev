@@ -19,14 +19,71 @@ import {
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
+import * as Fs from "node:fs";
+import * as Path from "node:path";
 import * as HttpRouter from "effect/unstable/http/HttpRouter";
 import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 
 import type { Daemon } from "./daemon.ts";
-import { SESSION_COOKIE, nextToken } from "./runtime.ts";
+import { resolveContained } from "./files.ts";
+import { SESSION_COOKIE, djb2Hex, nextToken } from "./runtime.ts";
 
 const json = (status: number, body: unknown) => HttpServerResponse.jsonUnsafe(body, { status });
+
+const MAX_ASSET_BYTES = 25 * 1024 * 1024;
+const MAX_ATTACHMENT_UPLOAD_BYTES = 10 * 1024 * 1024;
+// Minted attachment ids are `nextToken("att")` with underscores stripped —
+// the pattern doubles as traversal protection on the attachments dir.
+const ATTACHMENT_ID_PATTERN = /^[A-Za-z0-9]{4,64}$/;
+
+const ASSET_MIME_BY_EXT: Record<string, string> = {
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".gif": "image/gif",
+  ".webp": "image/webp",
+  ".svg": "image/svg+xml",
+  ".bmp": "image/bmp",
+  ".ico": "image/x-icon",
+  ".pdf": "application/pdf",
+  ".txt": "text/plain; charset=utf-8",
+};
+
+const sniffImageMime = (bytes: Buffer): string => {
+  if (
+    bytes.length >= 8 &&
+    bytes.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))
+  ) {
+    return "image/png";
+  }
+  if (bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) {
+    return "image/jpeg";
+  }
+  if (bytes.length >= 6 && bytes.toString("ascii", 0, 3) === "GIF") {
+    return "image/gif";
+  }
+  if (
+    bytes.length >= 12 &&
+    bytes.toString("ascii", 0, 4) === "RIFF" &&
+    bytes.toString("ascii", 8, 12) === "WEBP"
+  ) {
+    return "image/webp";
+  }
+  return "application/octet-stream";
+};
+
+const projectFaviconSvg = (cwd: string): string => {
+  const name = Path.basename(cwd) || "workspace";
+  const initial = /^[A-Za-z0-9]$/.test(name[0] ?? "") ? (name[0] as string).toUpperCase() : "N";
+  const hue = Math.round((Number.parseInt(djb2Hex(name).slice(0, 2), 16) / 255) * 360);
+  return (
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">` +
+    `<rect width="32" height="32" rx="7" fill="hsl(${hue} 55% 42%)"/>` +
+    `<text x="16" y="22" font-family="system-ui,sans-serif" font-size="17" font-weight="600" ` +
+    `fill="#fff" text-anchor="middle">${initial}</text></svg>`
+  );
+};
 
 const encode = (schema: Schema.Top, value: unknown) =>
   Schema.encodeUnknownSync(schema as never)(value);
@@ -102,7 +159,6 @@ export const httpRoutesLayer = (daemon: Daemon) =>
       yield* router.add("GET", "/healthz", HttpServerResponse.text("ok"));
 
       const descriptor = json(200, encode(ExecutionEnvironmentDescriptor, daemon.environment()));
-      yield* router.add("GET", "/.well-known/t3/environment", descriptor);
       yield* router.add("GET", "/.well-known/nero/environment", descriptor);
 
       yield* router.add(
@@ -316,6 +372,133 @@ export const httpRoutesLayer = (daemon: Daemon) =>
               body.driving === true;
             const result = yield* Effect.promise(() => daemon.setHumanDriving(driving));
             return json(200, result);
+          }),
+        ),
+      );
+
+      yield* router.add(
+        "GET",
+        "/api/assets/workspace",
+        recover(
+          Effect.gen(function* () {
+            yield* requireAuth(daemon);
+            const request = yield* HttpServerRequest.HttpServerRequest;
+            const query = new URL(request.url, "http://localhost").searchParams;
+            const threadId = query.get("threadId") ?? "";
+            const relativePath = query.get("path") ?? "";
+            const snapshot = daemon.threadSnapshot(threadId);
+            const thread = snapshot?.thread;
+            if (thread === undefined || relativePath.length === 0) {
+              return yield* Effect.fail(notFound());
+            }
+            // Workspace-file paths are relative to the thread's working
+            // directory (worktree when set, else the project root).
+            const project = daemon.projectSnapshot(thread.projectId);
+            const root = Path.resolve(
+              thread.worktreePath ?? project?.workspaceRoot ?? daemon.options.workspaceRoot,
+            );
+            const contained = resolveContained(root, relativePath);
+            if (!contained.ok) {
+              return yield* Effect.fail(notFound());
+            }
+            let bytes: Buffer;
+            try {
+              const stat = Fs.statSync(contained.path);
+              if (!stat.isFile() || stat.size > MAX_ASSET_BYTES) {
+                return yield* Effect.fail(notFound());
+              }
+              bytes = Fs.readFileSync(contained.path);
+            } catch {
+              return yield* Effect.fail(notFound());
+            }
+            const contentType =
+              ASSET_MIME_BY_EXT[Path.extname(contained.path).toLowerCase()] ??
+              "application/octet-stream";
+            return HttpServerResponse.uint8Array(new Uint8Array(bytes), {
+              contentType,
+              headers: { "cache-control": "private, max-age=60" },
+            });
+          }),
+        ),
+      );
+
+      yield* router.add(
+        "GET",
+        "/api/assets/favicon",
+        recover(
+          Effect.gen(function* () {
+            yield* requireAuth(daemon);
+            const request = yield* HttpServerRequest.HttpServerRequest;
+            const query = new URL(request.url, "http://localhost").searchParams;
+            const cwd = query.get("cwd") ?? "";
+            const contained = resolveContained(Path.resolve(daemon.options.workspaceRoot), cwd);
+            if (!contained.ok) {
+              return yield* Effect.fail(notFound());
+            }
+            return HttpServerResponse.uint8Array(
+              new Uint8Array(Buffer.from(projectFaviconSvg(contained.path), "utf8")),
+              {
+                contentType: "image/svg+xml",
+                headers: { "cache-control": "private, max-age=300" },
+              },
+            );
+          }),
+        ),
+      );
+
+      yield* router.add(
+        "GET",
+        "/api/attachments/:attachmentId",
+        recover(
+          Effect.gen(function* () {
+            yield* requireAuth(daemon);
+            const params = yield* HttpRouter.params;
+            const attachmentId = params.attachmentId ?? "";
+            if (!ATTACHMENT_ID_PATTERN.test(attachmentId)) {
+              return yield* Effect.fail(notFound());
+            }
+            const file = Path.join(daemon.options.dataDir, "attachments", attachmentId);
+            let bytes: Buffer;
+            try {
+              bytes = Fs.readFileSync(file);
+            } catch {
+              return yield* Effect.fail(notFound());
+            }
+            const asText = bytes.toString("utf8");
+            if (asText.startsWith("data:")) {
+              const comma = asText.indexOf(",");
+              const header = comma >= 0 ? asText.slice(5, comma) : "";
+              const payload =
+                comma >= 0 ? Buffer.from(asText.slice(comma + 1), "base64") : Buffer.alloc(0);
+              return HttpServerResponse.uint8Array(new Uint8Array(payload), {
+                contentType: header.split(";")[0] || "application/octet-stream",
+              });
+            }
+            return HttpServerResponse.uint8Array(new Uint8Array(bytes), {
+              contentType: sniffImageMime(bytes),
+            });
+          }),
+        ),
+      );
+
+      yield* router.add(
+        "POST",
+        "/api/attachments/:attachmentId",
+        recover(
+          Effect.gen(function* () {
+            yield* requireAuth(daemon);
+            const params = yield* HttpRouter.params;
+            const attachmentId = params.attachmentId ?? "";
+            if (!ATTACHMENT_ID_PATTERN.test(attachmentId)) {
+              return yield* Effect.fail(notFound());
+            }
+            const request = yield* HttpServerRequest.HttpServerRequest;
+            const bytes = Buffer.from(yield* request.arrayBuffer);
+            if (bytes.byteLength === 0 || bytes.byteLength > MAX_ATTACHMENT_UPLOAD_BYTES) {
+              return json(413, { error: "attachment size out of range" });
+            }
+            daemon.writeAttachmentBytes(attachmentId, bytes);
+            return json(200, {});
           }),
         ),
       );

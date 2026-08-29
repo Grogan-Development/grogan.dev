@@ -429,14 +429,6 @@ export function terminalStatusFromRunningIds(
   };
 }
 
-export function ThreadWorktreeIndicator({
-  thread: _thread,
-}: {
-  thread: Pick<SidebarThreadSummary, "id" | "branch" | "worktreePath">;
-}) {
-  return null;
-}
-
 export function ThreadStatusLabel({
   status,
   compact = false,
