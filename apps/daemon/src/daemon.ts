@@ -162,9 +162,11 @@ const TURN_PULSE_INTERVAL_MS = 30_000;
 
 /**
  * While agent turns are live, tell the host control plane so it keeps the
- * workspace awake (job-heartbeat, `NERO_HOST_TOKEN`) — an agent busy in a
- * long turn must pin the workspace even with no browser attached. Ref-counted
- * per turn; inert when the guest has no host wiring (local dev).
+ * workspace awake (job-heartbeat, per-workspace derived `NERO_HOST_TOKEN`) —
+ * an agent busy in a long turn must pin the workspace even with no browser
+ * attached. Ref-counted per turn; inert when the guest has no host wiring
+ * (local dev). The pulse claims `agentWorking`, deliberately distinct from
+ * `nero-run`'s `running` pin: a finishing turn must never unpin a live bake.
  */
 class HostTurnPulse {
   private readonly turnIds = new Set<string>();
@@ -195,7 +197,7 @@ class HostTurnPulse {
     }
   }
 
-  private async pulse(running: boolean): Promise<void> {
+  private async pulse(working: boolean): Promise<void> {
     const { hostUrl, hostToken, workspaceId } = this.options;
     if (hostUrl === undefined || hostToken === undefined || workspaceId === undefined) return;
     try {
@@ -205,7 +207,7 @@ class HostTurnPulse {
           "content-type": "application/json",
           authorization: `Bearer ${hostToken}`,
         },
-        body: JSON.stringify({ running }),
+        body: JSON.stringify({ agentWorking: working }),
       });
     } catch {
       // Transient host unreachability: the next tick (or the final false)

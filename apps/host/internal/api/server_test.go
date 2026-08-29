@@ -675,7 +675,7 @@ func TestJobHeartbeatUsesHostToken(t *testing.T) {
 	}
 
 	req, _ = http.NewRequest(http.MethodPost, ts.URL+"/api/workspaces/"+ws.ID+"/job-heartbeat", strings.NewReader(`{"running":true}`))
-	req.Header.Set("Authorization", "Bearer host-token-test")
+	req.Header.Set("Authorization", "Bearer "+runtime.DeriveWorkspaceToken("host-token-test", ws.ID))
 	req.Header.Set("Content-Type", "application/json")
 	res, err = client.Do(req)
 	if err != nil {
@@ -694,7 +694,7 @@ func TestJobHeartbeatUsesHostToken(t *testing.T) {
 	}
 
 	req, _ = http.NewRequest(http.MethodPost, ts.URL+"/api/workspaces/"+ws.ID+"/job-heartbeat", strings.NewReader(`{"running":false}`))
-	req.Header.Set("X-Nero-Host-Token", "host-token-test")
+	req.Header.Set("X-Nero-Host-Token", runtime.DeriveWorkspaceToken("host-token-test", ws.ID))
 	req.Header.Set("Content-Type", "application/json")
 	res, err = client.Do(req)
 	if err != nil {
@@ -720,6 +720,89 @@ func TestJobHeartbeatUsesHostToken(t *testing.T) {
 	res.Body.Close()
 	if res.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("human heartbeat status=%d", res.StatusCode)
+	}
+}
+
+// The raw host secret must not authorize anything for a workspace: guests
+// only ever hold the per-workspace derived token.
+func TestJobHeartbeatRejectsRawHostToken(t *testing.T) {
+	ts, ll, _, _ := testServer(t, false)
+	ws, err := ll.Create(context.Background(), "rawtok")
+	if err != nil {
+		t.Fatal(err)
+	}
+	req, _ := http.NewRequest(http.MethodPost, ts.URL+"/api/workspaces/"+ws.ID+"/job-heartbeat", strings.NewReader(`{"running":true}`))
+	req.Header.Set("Authorization", "Bearer host-token-test")
+	req.Header.Set("Content-Type", "application/json")
+	res, err := noRedirect(ts).Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	res.Body.Close()
+	if res.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("raw token status=%d", res.StatusCode)
+	}
+	// A token derived for a DIFFERENT workspace must not cross over.
+	req, _ = http.NewRequest(http.MethodPost, ts.URL+"/api/workspaces/"+ws.ID+"/job-heartbeat", strings.NewReader(`{"running":true}`))
+	req.Header.Set("Authorization", "Bearer "+runtime.DeriveWorkspaceToken("host-token-test", "ffffffffffffffff"))
+	req.Header.Set("Content-Type", "application/json")
+	res, err = noRedirect(ts).Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	res.Body.Close()
+	if res.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("cross-workspace token status=%d", res.StatusCode)
+	}
+}
+
+// A live agent turn and a nero-run job are independent pins: finishing one
+// must not unpin the other.
+func TestJobHeartbeatAgentWorkingIndependentOfJob(t *testing.T) {
+	ts, ll, _, _ := testServer(t, false)
+	ws, err := ll.Create(context.Background(), "pins")
+	if err != nil {
+		t.Fatal(err)
+	}
+	post := func(body string) {
+		req, _ := http.NewRequest(http.MethodPost, ts.URL+"/api/workspaces/"+ws.ID+"/job-heartbeat", strings.NewReader(body))
+		req.Header.Set("Authorization", "Bearer "+runtime.DeriveWorkspaceToken("host-token-test", ws.ID))
+		req.Header.Set("Content-Type", "application/json")
+		res, err := noRedirect(ts).Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		res.Body.Close()
+		if res.StatusCode != 200 {
+			t.Fatal(res.Status)
+		}
+	}
+	post(`{"agentWorking":true,"running":true}`)
+	got, err := ll.Get(ws.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !got.AgentWorking || !got.JobRunning {
+		t.Fatalf("both should pin: %+v", got)
+	}
+	// Turn finishes; the job must stay pinned.
+	post(`{"agentWorking":false}`)
+	got, err = ll.Get(ws.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.AgentWorking || !got.JobRunning {
+		t.Fatalf("job pin must survive turn end: %+v", got)
+	}
+	// Job finishes; empty body clears only the job bit.
+	post(`{"running":false}`)
+	post(`{}`)
+	got, err = ll.Get(ws.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.JobRunning || got.AgentWorking {
+		t.Fatalf("both should be clear: %+v", got)
 	}
 }
 
@@ -799,8 +882,8 @@ func TestCaddyAuthIssuesDial(t *testing.T) {
 	if authRes.StatusCode != http.StatusNoContent {
 		t.Fatal(authRes.Status)
 	}
-	if got := authRes.Header.Get(headerAccess); got != "guest-token" {
-		t.Fatalf("access=%q", got)
+	if got, want := authRes.Header.Get(headerAccess), runtime.DeriveWorkspaceToken("guest-token", ws.ID); got != want {
+		t.Fatalf("access=%q want derived %q", got, want)
 	}
 	if authRes.Header.Get("Authorization") != "" {
 		t.Fatal("must not set Authorization (clobbers Kasm Basic)")
@@ -895,8 +978,10 @@ func TestCaddyAuthSessionAndDial(t *testing.T) {
 	if res.StatusCode != http.StatusNoContent {
 		t.Fatal(res.Status)
 	}
-	if got := res.Header.Get(headerAccess); got != "guest-token" {
-		t.Fatalf("access=%q", got)
+	// The header must carry the token derived for THIS workspace — the only
+	// value the guest daemon could possibly hold.
+	if want := runtime.DeriveWorkspaceToken("guest-token", ws.ID); res.Header.Get(headerAccess) != want {
+		t.Fatalf("access=%q want derived %q", res.Header.Get(headerAccess), want)
 	}
 }
 

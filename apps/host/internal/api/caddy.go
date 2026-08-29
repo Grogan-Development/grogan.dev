@@ -48,7 +48,9 @@ func (s *Server) caddyAuth(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if s.cfg.AccessToken != "" {
-		w.Header().Set(headerAccess, s.cfg.AccessToken)
+		// The daemon in this workspace holds the token derived for it; hand
+		// Caddy the same value so forward_auth matches what the guest can know.
+		w.Header().Set(headerAccess, runtime.DeriveWorkspaceToken(s.cfg.AccessToken, id))
 	}
 	w.WriteHeader(http.StatusNoContent)
 }

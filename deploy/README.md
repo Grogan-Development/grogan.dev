@@ -69,11 +69,15 @@ ZFS parent dataset (once): `sudo zfs create -p -o mountpoint=/var/lib/nero/ws gr
 ```bash
 sudo cp deploy/Caddyfile /etc/caddy/Caddyfile
 sudo cp deploy/nero-host.service /etc/systemd/system/nero-host.service
+sudo cp deploy/tmpfiles/nero-host.conf /etc/tmpfiles.d/nero-host.conf
+sudo systemd-tmpfiles --create /etc/tmpfiles.d/nero-host.conf
 sudo mkdir -p /run/nero/w /var/lib/nero/ws
 sudo systemctl daemon-reload
 sudo systemctl enable --now nero-host
 sudo systemctl reload caddy
 ```
+
+The tmpfiles entry creates `/run/nero/w` as `root:caddy 0750` **at every boot** — `/run` is tmpfs, and without it a reboot leaves the dir root-only (the unit's `UMask=0077`), 502ing every workspace route. `nero-host.service` self-heals the same mode at start; the unit's `ExecStartPre` lines and the tmpfiles entry are redundant on purpose.
 
 Caddy reverse-proxies to `/run/nero/w/<id>.sock` (group `caddy`, mode `0660`). Create/wake wait until that workspace’s `:8787` `/healthz` answers.
 
@@ -112,37 +116,41 @@ Caddy reverse_proxies to `unix//run/nero/w/<id>.sock` (id from the `/w/:id` path
 
 Stopped / queued / not-yet-healthy workspaces: Caddy auth returns 503. Wake via `POST /api/workspaces/:id/wake`. Create/wake block until `/healthz` on the published port succeeds (or fail).
 
-`nero-run` POSTs `/api/workspaces/:id/job-heartbeat` with `NERO_HOST_TOKEN` while the scope is alive (host is `host.docker.internal:8080`).
+`nero-run` POSTs `/api/workspaces/:id/job-heartbeat` while the scope is alive (host is `host.docker.internal:8080`), authenticated with the **per-workspace derived token** the landlord injected at create: guests never hold `NERO_HOST_TOKEN` itself, only `HMAC-SHA256(secret, "nero-workspace-token:" + id)` — a leaked guest token authorizes this workspace's keep-awake bits and nothing else. The same derivation applies to `NERO_ACCESS_TOKEN`.
+
+> **Upgrading from shared-token workspaces:** containers created before the derived-token change hold the raw secrets in their env. Their heartbeats and Caddy auth will 401 until each container is recreated (`docker rm nero-ws-<id>`, then create a replacement workspace — or delete + recreate the workspace outright; datasets are per-id). Afterwards, rotating `NERO_HOST_TOKEN`/`NERO_ACCESS_TOKEN` in `host.env` invalidates everything derived from the old values at once.
 
 ## Environment
 
 Put values in `/etc/nero/host.env` (mode `0600`, **not in git**). systemd `EnvironmentFile=-/etc/nero/host.env`.
 
-| Variable                  | Default                                            | Notes                                                                                                                                                                                                                       |
-| ------------------------- | -------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `NERO_LISTEN`             | `:8080`                                            | Landlord HTTP bind                                                                                                                                                                                                          |
-| `NERO_DEV_BYPASS`         | unset                                              | `1` skips auth. **Local tests only.** nero-host refuses to boot with it on a non-loopback listener, and it is never forwarded into guest containers.                                                                        |
-| `WORKOS_API_KEY`          | empty                                              | User Management API key (`client_secret` on `authorization_code` exchange).                                                                                                                                                 |
-| `WORKOS_CLIENT_ID`        | empty                                              | AuthKit / User Management client id.                                                                                                                                                                                        |
-| `WORKOS_AUTHKIT_URL`      | `https://api.workos.com/user_management/authorize` | Hosted UI start URL. `/auth/login` redirects here with `provider=authkit`.                                                                                                                                                  |
-| `WORKOS_COOKIE_PASSWORD`  | empty                                              | Seals the `wos-session` cookie. **≥32 characters.** `openssl rand -base64 32`. Without `NERO_DEV_BYPASS`, nero-host will not listen if this, `WORKOS_CLIENT_ID`, `WORKOS_API_KEY`, or `NERO_ACCESS_TOKEN` is missing/short. |
-| `NERO_ALLOWED_EMAILS`     | empty                                              | Comma-separated allowlist (v1: your email). Empty + no bypass **fail closed** (callback 403, APIs 401).                                                                                                                     |
-| `NERO_HOST_TOKEN`         | empty                                              | Shared secret for guest `POST /api/workspaces/:id/job-heartbeat`. Injected into containers as `NERO_HOST_TOKEN`. Empty + no bypass → that route 401.                                                                        |
-| `NERO_ACCESS_TOKEN`       | empty                                              | **Required** unless `NERO_DEV_BYPASS`. Injected into guests. Caddy sends `X-Nero-Access` (never overwrites `Authorization`). `openssl rand -hex 32`.                                                                        |
-| `ZAI_API_KEY`             | empty                                              | Nero Router main route: Z.ai GLM Coding Plan (`glm-5.3-flash` default). Injected into guests at create. **Not in git.**                                                                                                     |
-| `BASETEN_API_KEY`         | empty                                              | Nero Router fast mode (per-token). Optional; the fast model needs it. **Not in git.**                                                                                                                                       |
-| `NERO_CODEX_REDIRECT_URI` | empty                                              | Callback for the OpenAI Pro (Codex) login flow, e.g. `https://nero.grogan.dev/w/{id}/api/router/codex/callback`. Without it the Codex route stays local-only.                                                               |
-| `NERO_GUEST_IMAGE`        | `nero-guest:v1`                                    | Image from `guest/Dockerfile` (daemon + seat). `docker create` requires the image; failure rolls back the dataset.                                                                                                          |
-| `NERO_ZFS_POOL`           | `grid`                                             | Datasets at `{pool}/nero/{id}`                                                                                                                                                                                              |
-| `NERO_WS_MOUNT`           | `/var/lib/nero/ws`                                 | Bind-mounted at `/home/nero` in the container                                                                                                                                                                               |
-| `NERO_SOCK_DIR`           | `/run/nero/w`                                      | Unix sockets `{dir}/{id}.sock`                                                                                                                                                                                              |
-| `NERO_IDLE_TICK`          | `10s`                                              | How often the host reconciles idle stop                                                                                                                                                                                     |
+| Variable                  | Default                                            | Notes                                                                                                                                                                                                                                                                                                                   |
+| ------------------------- | -------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `NERO_LISTEN`             | `:8080`                                            | Landlord HTTP bind                                                                                                                                                                                                                                                                                                      |
+| `NERO_DEV_BYPASS`         | unset                                              | `1` skips auth. **Local tests only.** nero-host refuses to boot with it on a non-loopback listener, and it is never forwarded into guest containers.                                                                                                                                                                    |
+| `WORKOS_API_KEY`          | empty                                              | User Management API key (`client_secret` on `authorization_code` exchange).                                                                                                                                                                                                                                             |
+| `WORKOS_CLIENT_ID`        | empty                                              | AuthKit / User Management client id.                                                                                                                                                                                                                                                                                    |
+| `WORKOS_AUTHKIT_URL`      | `https://api.workos.com/user_management/authorize` | Hosted UI start URL. `/auth/login` redirects here with `provider=authkit`.                                                                                                                                                                                                                                              |
+| `WORKOS_COOKIE_PASSWORD`  | empty                                              | Seals the `wos-session` cookie. **≥32 characters.** `openssl rand -base64 32`. Without `NERO_DEV_BYPASS`, nero-host will not listen if this, `WORKOS_CLIENT_ID`, `WORKOS_API_KEY`, or `NERO_ACCESS_TOKEN` is missing/short.                                                                                             |
+| `NERO_ALLOWED_EMAILS`     | empty                                              | Comma-separated allowlist (v1: your email). Empty + no bypass **fail closed** (callback 403, APIs 401).                                                                                                                                                                                                                 |
+| `NERO_HOST_TOKEN`         | empty                                              | Host secret from which per-workspace guest tokens are derived (`HMAC-SHA256(secret, "nero-workspace-token:" + id)`). The raw value **never enters a container**; it only authorizes derived tokens on `job-heartbeat`. Empty + no bypass → boot warns and that route 401s (workspaces idle-stop under live turns/jobs). |
+| `NERO_ACCESS_TOKEN`       | empty                                              | **Required** unless `NERO_DEV_BYPASS`. Injected into guests as the per-workspace derived token; Caddy sends the matching `X-Nero-Access` (never overwrites `Authorization`). `openssl rand -hex 32`.                                                                                                                    |
+| `LOOM_URL`                | empty                                              | Loom git/repo server (`https://loom.grogan.dev`). Injected into guests at create (`LOOM_URL`/`LOOM_TOKEN`); the FR/CI pages proxy through the daemon and 503 without it.                                                                                                                                                |
+| `LOOM_TOKEN`              | empty                                              | Loom token with **scoped** git/features/events perms — never the owner token.                                                                                                                                                                                                                                           |
+| `ZAI_API_KEY`             | empty                                              | Nero Router main route: Z.ai GLM Coding Plan (`glm-5.3-flash` default). Injected into guests at create. **Not in git.**                                                                                                                                                                                                 |
+| `BASETEN_API_KEY`         | empty                                              | Nero Router fast mode (per-token). Optional; the fast model needs it. **Not in git.**                                                                                                                                                                                                                                   |
+| `NERO_CODEX_REDIRECT_URI` | empty                                              | Callback for the OpenAI Pro (Codex) login flow, e.g. `https://nero.grogan.dev/w/{id}/api/router/codex/callback`. Without it the Codex route stays local-only.                                                                                                                                                           |
+| `NERO_GUEST_IMAGE`        | `nero-guest:v1`                                    | Image from `guest/Dockerfile` (daemon + seat). `docker create` requires the image; failure rolls back the dataset.                                                                                                                                                                                                      |
+| `NERO_ZFS_POOL`           | `grid`                                             | Datasets at `{pool}/nero/{id}`                                                                                                                                                                                                                                                                                          |
+| `NERO_WS_MOUNT`           | `/var/lib/nero/ws`                                 | Bind-mounted at `/home/nero` in the container                                                                                                                                                                                                                                                                           |
+| `NERO_SOCK_DIR`           | `/run/nero/w`                                      | Unix sockets `{dir}/{id}.sock`                                                                                                                                                                                                                                                                                          |
+| `NERO_IDLE_TICK`          | `10s`                                              | How often the host reconciles idle stop                                                                                                                                                                                                                                                                                 |
 
 WorkOS keys, allowlist, host token, access token, router keys (Z.ai, Baseten), and AuthKit cookie material belong in that env file — never in this repo.
 
 In the WorkOS dashboard: **Authentication → disable Sign up** (email+password sign-up is on by default). v1 is one human; the app still fail-closes on `NERO_ALLOWED_EMAILS`.
 
-Human `GET/POST /api/workspaces*` (list/create/wake/stop/heartbeat) requires a valid `wos-session` whose email is on the allowlist, unless `NERO_DEV_BYPASS=1`. Guest job keep-awake is `POST /api/workspaces/:id/job-heartbeat` with `Authorization: Bearer $NERO_HOST_TOKEN` (or `X-Nero-Host-Token`) — not the human cookie. A body without `running`/`jobRunning` (or an empty body) means `running=false`: only an explicit `true` pins. Healthz, landing, `/auth.md`, `/auth/login`, `/auth/callback`, and `/auth/logout` are public. Humans still AuthKit-only. `GET /auth.md` describes that fact; it is not an OAuth AS. Unauthenticated `/api/workspaces*` returns `WWW-Authenticate: Bearer resource_metadata="https://nero.grogan.dev/auth.md"`.
+Human `GET/POST /api/workspaces*` (list/create/wake/stop/heartbeat) requires a valid `wos-session` whose email is on the allowlist, unless `NERO_DEV_BYPASS=1`. Guest keep-awake is `POST /api/workspaces/:id/job-heartbeat` with the workspace's derived token (or `X-Nero-Host-Token`) — not the human cookie. `running`/`jobRunning` (the `nero-run` pin) and `agentWorking` (a live daemon turn) are independent: a field-specific update never touches the other pin, and a body with no fields clears both so a stray ping cannot keep a workspace awake forever. Healthz, landing, `/auth.md`, `/auth/login`, `/auth/callback`, and `/auth/logout` are public. Humans still AuthKit-only. `GET /auth.md` describes that fact; it is not an OAuth AS. Unauthenticated `/api/workspaces*` returns `WWW-Authenticate: Bearer resource_metadata="https://nero.grogan.dev/auth.md"`.
 
 `GET /internal/caddy-auth` is **loopback-only** (Caddy → nero-host). Do not expose `:8080` on the public interface if you can avoid it; Caddy is the public listener.
 
@@ -162,7 +170,7 @@ JSON. Path IDs are workspace ids.
 - `DELETE /api/workspaces/:id` — permanently destroys the workspace: stops and removes the container, destroys the dataset (all threads/files gone), and drops it from landlord state
 - `POST /api/workspaces/:id/stop` — `docker stop -t 20`; disk stays
 - `POST /api/workspaces/:id/heartbeat` body `{ "connected", "agentWorking", "jobRunning" }` (optional bools) — human UI / agent; AuthKit session
-- `POST /api/workspaces/:id/job-heartbeat` body `{ "running": true }` — guest `nero-run` keep-awake; `NERO_HOST_TOKEN`
+- `POST /api/workspaces/:id/job-heartbeat` body `{ "running": true }` (nero-run job) or `{ "agentWorking": true }` (live daemon turn) — independent pins; workspace-derived token
 
 ## Docker / cgroup flags
 
@@ -188,12 +196,12 @@ docker create \
   ...
 ```
 
-After `docker start`, write on the container cgroup (not `--memory-reservation`; Moby has left `memory.high=max`, moby#49599):
+After `docker start`, the landlord finds the container's cgroup — PID 1's innermost cgroup is usually its `init.scope`, so it walks up to the ancestor carrying the container's `memory.max` — and writes there (not `--memory-reservation`; Moby has left `memory.high=max`, moby#49599):
 
 - `memory.high` = 48 GiB (throttle)
 - `memory.oom.group` = 1
 
-`memory.min` / `memory.low` stay 0. 32 GiB is a label/warning, not a kernel reservation.
+`memory.min` / `memory.low` stay 0. 32 GiB is a label/warning, not a kernel reservation. If cgroupfs is present but the write fails, **start fails** — an unthrottled workspace is the host-OOM scenario this design forbids.
 
 The guest image runs `nero-daemon.service` (Node, `/usr/local/bin/nero-daemon` → `/usr/lib/nero/daemon/main.js`) on port 8787.
 

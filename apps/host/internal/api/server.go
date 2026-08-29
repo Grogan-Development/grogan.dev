@@ -14,6 +14,7 @@ import (
 	"nero-host/internal/auth"
 	"nero-host/internal/config"
 	"nero-host/internal/landlord"
+	"nero-host/internal/runtime"
 	"nero-host/landing"
 )
 
@@ -247,12 +248,21 @@ func (s *Server) heartbeat(w http.ResponseWriter, r *http.Request) {
 }
 
 type jobHeartbeatBody struct {
-	Running    *bool `json:"running"`
-	JobRunning *bool `json:"jobRunning"`
+	Running      *bool `json:"running"`
+	JobRunning   *bool `json:"jobRunning"`
+	AgentWorking *bool `json:"agentWorking"`
 }
 
+// jobHeartbeat is the guest→host keep-awake channel, authorized by the
+// per-workspace token derived from NERO_HOST_TOKEN (see runtime.DeriveWorkspaceToken).
+// Two independent pins live here: `running` (a nero-run job) and
+// `agentWorking` (a live daemon turn) — they must not share one boolean, or a
+// finishing turn unpins a running bake and vice versa. An empty/absent field
+// never pins; an entirely empty body still reports jobRunning=false so a
+// stray or malformed ping cannot keep a workspace awake forever.
 func (s *Server) jobHeartbeat(w http.ResponseWriter, r *http.Request) {
-	if !s.cfg.DevBypass && !hostTokenOK(r, s.cfg.HostToken) {
+	id := r.PathValue("id")
+	if !s.cfg.DevBypass && !hostTokenOK(r, runtime.DeriveWorkspaceToken(s.cfg.HostToken, id)) {
 		writeErr(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
@@ -261,17 +271,25 @@ func (s *Server) jobHeartbeat(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "invalid json")
 		return
 	}
-	// An empty/absent body must not pin: a heartbeat that says nothing has no
-	// evidence of a live job, and "running" defaults are how a stray or
-	// malformed ping would keep a workspace awake forever.
-	running := false
-	switch {
-	case body.Running != nil:
-		running = *body.Running
-	case body.JobRunning != nil:
-		running = *body.JobRunning
+	hb := landlord.Heartbeat{}
+	if body.Running != nil {
+		hb.JobRunning = body.Running
+	} else if body.JobRunning != nil {
+		hb.JobRunning = body.JobRunning
 	}
-	ws, err := s.ll.Heartbeat(r.PathValue("id"), landlord.Heartbeat{JobRunning: &running})
+	if body.AgentWorking != nil {
+		hb.AgentWorking = body.AgentWorking
+	}
+	if hb.JobRunning == nil && hb.AgentWorking == nil {
+		// An entirely empty body says nothing is running: clear both pins so
+		// a stray or malformed ping cannot keep a workspace awake forever.
+		// Field-specific updates (e.g. only agentWorking) never touch the
+		// other pin — a finishing turn must not unpin a running job.
+		no := false
+		hb.JobRunning = &no
+		hb.AgentWorking = &no
+	}
+	ws, err := s.ll.Heartbeat(id, hb)
 	if err != nil {
 		writeLandlordErr(w, err)
 		return

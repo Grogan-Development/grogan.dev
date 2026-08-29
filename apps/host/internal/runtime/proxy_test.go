@@ -21,7 +21,15 @@ func shortSockDir(t *testing.T) string {
 	return dir
 }
 
+func stubCaddyChown(t *testing.T) {
+	t.Helper()
+	prev := chownToCaddy
+	chownToCaddy = func(string) error { return nil }
+	t.Cleanup(func() { chownToCaddy = prev })
+}
+
 func TestUnixProxyForwardsHTTP(t *testing.T) {
+	stubCaddyChown(t)
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
@@ -75,6 +83,7 @@ func TestUnixProxyForwardsHTTP(t *testing.T) {
 }
 
 func TestUnixProxyRebindSamePortIdempotent(t *testing.T) {
+	stubCaddyChown(t)
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)

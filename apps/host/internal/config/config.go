@@ -23,6 +23,8 @@ type Config struct {
 	ZaiAPIKey      string
 	BasetenAPIKey  string
 	OpenCodeAPIKey string
+	LoomURL        string
+	LoomToken      string
 	GuestImage     string
 	ZFSPool        string
 	MountRoot      string
@@ -50,6 +52,8 @@ func FromEnv() Config {
 		ZaiAPIKey:      os.Getenv("ZAI_API_KEY"),
 		BasetenAPIKey:  os.Getenv("BASETEN_API_KEY"),
 		OpenCodeAPIKey: os.Getenv("OPENCODE_API_KEY"),
+		LoomURL:        strings.TrimRight(os.Getenv("LOOM_URL"), "/"),
+		LoomToken:      os.Getenv("LOOM_TOKEN"),
 		GuestImage:     env("NERO_GUEST_IMAGE", "nero-guest:v1"),
 		ZFSPool:        env("NERO_ZFS_POOL", "grid"),
 		MountRoot:      env("NERO_WS_MOUNT", "/var/lib/nero/ws"),

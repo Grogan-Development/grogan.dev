@@ -8,7 +8,14 @@ Requires=docker.service
 Type=simple
 User=root
 EnvironmentFile=-/etc/nero/host.env
+# /run/nero/w must be traversable by the caddy group (sockets below are
+# 0660 root:caddy). tmpfiles (deploy/tmpfiles/nero-host.conf) creates it at
+# boot; these ExecStartPre lines self-heal if that file is not installed.
+# UMask=0077 below would otherwise leave the dir root-only after a reboot.
 ExecStartPre=/bin/mkdir -p /run/nero/w
+ExecStartPre=/bin/chmod 0755 /run/nero
+ExecStartPre=-/bin/chgrp caddy /run/nero/w
+ExecStartPre=/bin/chmod 0750 /run/nero/w
 ExecStart=/usr/local/bin/nero-host
 # docker.service restart SIGTERMs us (exit 0). always bring the landlord back.
 Restart=always

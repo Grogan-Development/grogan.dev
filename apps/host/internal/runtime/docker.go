@@ -1,6 +1,7 @@
 package runtime
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -99,12 +100,17 @@ func argvForErrors(args []string) string {
 
 func runCmd(ctx context.Context, name string, args ...string) (string, error) {
 	cmd := exec.CommandContext(ctx, name, args...)
-	out, err := cmd.CombinedOutput()
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	out, err := cmd.Output()
+	// Only stdout is returned: docker/zfs payloads are stdout JSON or ids, and
+	// stray stderr warnings merged into them used to wedge JSON parsing
+	// downstream.
 	s := strings.TrimSpace(string(out))
 	argv := argvForErrors(args)
 	if err != nil {
-		if s != "" {
-			return s, fmt.Errorf("%s %s: %w: %s", name, argv, err, s)
+		if msg := strings.TrimSpace(stderr.String()); msg != "" {
+			return s, fmt.Errorf("%s %s: %w: %s", name, argv, err, msg)
 		}
 		return s, fmt.Errorf("%s %s: %w", name, argv, err)
 	}
@@ -136,9 +142,11 @@ func (d *Docker) CreateContainer(ctx context.Context, spec WorkspaceSpec) error 
 		return fmt.Errorf("NERO_ACCESS_TOKEN is required")
 	}
 	mp := MountPath(d.MountRoot, spec.ID)
+	// Guests never see the host secrets themselves: they get the tokens
+	// derived for THIS workspace, so a leak cannot touch any other workspace.
 	args := DockerCreateArgs(d.Image, spec.ID, spec.Name, mp, GuestEnv{
-		HostToken:      d.HostToken,
-		AccessToken:    d.AccessToken,
+		HostToken:      DeriveWorkspaceToken(d.HostToken, spec.ID),
+		AccessToken:    DeriveWorkspaceToken(d.AccessToken, spec.ID),
 		ZaiAPIKey:      d.ZaiAPIKey,
 		BasetenAPIKey:  d.BasetenAPIKey,
 		OpenCodeAPIKey: d.OpenCodeAPIKey,
@@ -155,9 +163,16 @@ func (d *Docker) StartContainer(ctx context.Context, id string) error {
 	if _, err := d.run(ctx, "docker", "start", ContainerName(id)); err != nil {
 		return err
 	}
-	// Best-effort: --memory already set memory.max. Do not fail start if
-	// cgroupfs is missing (dev) or the path differs across Docker versions.
-	_ = d.ApplyCgroup(ctx, id)
+	// --memory already set memory.max on the container cgroup; memory.high is
+	// the throttle that keeps a pig from squeezing the host. If cgroupfs is
+	// present but the write fails, start fails: an unthrottled workspace is
+	// exactly the host-OOM scenario PLAN forbids. Dev hosts (macOS) have no
+	// cgroupfs and keep the old best-effort behavior.
+	if err := d.ApplyCgroup(ctx, id); err != nil && cgroupfsPresent() {
+		d.CloseProxy(id)
+		_, _ = d.run(ctx, "docker", "stop", "-t", strconv.Itoa(StopTimeoutSec), ContainerName(id))
+		return fmt.Errorf("cgroup apply: %w", err)
+	}
 	if err := d.EnsureProxy(ctx, id); err != nil {
 		stopCtx, cancel := context.WithTimeout(context.Background(), time.Duration(StopTimeoutSec+5)*time.Second)
 		defer cancel()
@@ -166,6 +181,13 @@ func (d *Docker) StartContainer(ctx context.Context, id string) error {
 		return err
 	}
 	return nil
+}
+
+// cgroupfsPresent reports whether a cgroup v2 hierarchy is mounted. Stubbed
+// in tests; dev hosts (macOS) have no /sys/fs/cgroup and skip cgroup writes.
+var cgroupfsPresent = func() bool {
+	_, err := os.Stat("/sys/fs/cgroup/cgroup.controllers")
+	return err == nil
 }
 
 func (d *Docker) StopContainer(ctx context.Context, id string) error {
@@ -237,7 +259,14 @@ func (d *Docker) applyCgroup(ctx context.Context, id string) (string, error) {
 	if rel == "" {
 		return "", fmt.Errorf("no cgroup v2 path for pid %d", pid)
 	}
-	dir := filepath.Join("/sys/fs/cgroup", rel)
+	// PID 1's innermost cgroup is usually its init.scope (guest systemd moved
+	// it there), a sibling of the slices that hold the workload. The throttle
+	// must land on the ancestor that carries the container's memory.max — the
+	// cgroup Docker created for --memory=64g — or it fences nothing.
+	dir, err := d.containerCgroupDir(filepath.Join(cgroupRoot, rel))
+	if err != nil {
+		return filepath.Join(cgroupRoot, rel), err
+	}
 	high := []byte(strconv.FormatInt(MemoryHighBytes, 10))
 	if err := d.writeFile(filepath.Join(dir, "memory.high"), high, 0o644); err != nil {
 		return dir, err
@@ -246,6 +275,27 @@ func (d *Docker) applyCgroup(ctx context.Context, id string) (string, error) {
 		return dir, err
 	}
 	return dir, nil
+}
+
+const cgroupRoot = "/sys/fs/cgroup"
+
+// containerCgroupDir ascends from pid 1's innermost cgroup to the ancestor
+// whose memory.max equals the container cap (Docker wrote it there), stopping
+// before the cgroupfs root so host-wide slices are never touched.
+func (d *Docker) containerCgroupDir(start string) (string, error) {
+	want := strconv.FormatInt(MemoryMaxBytes, 10)
+	dir := start
+	for {
+		if b, err := d.readFile(filepath.Join(dir, "memory.max")); err == nil &&
+			strings.TrimSpace(string(b)) == want {
+			return dir, nil
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir || parent == cgroupRoot {
+			return "", fmt.Errorf("no cgroup with memory.max=%s at or above %s", want, start)
+		}
+		dir = parent
+	}
 }
 
 const hostPortFormat = `{{with (index .NetworkSettings.Ports "8787/tcp")}}{{with (index . 0)}}{{.HostPort}}{{end}}{{end}}`
@@ -308,13 +358,17 @@ func waitDaemon(ctx context.Context, ping func() error) error {
 	}
 }
 
+// daemonPingClient is shared across health pings: a fresh http.Client per
+// ping allocates a Transport (and idle conns) per 200ms health poll while
+// the start lock is held.
+var daemonPingClient = &http.Client{Timeout: time.Second}
+
 func pingDaemonHealthz(ctx context.Context, addr string) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://"+addr+"/healthz", nil)
 	if err != nil {
 		return err
 	}
-	client := &http.Client{Timeout: time.Second}
-	res, err := client.Do(req)
+	res, err := daemonPingClient.Do(req)
 	if err != nil {
 		return err
 	}

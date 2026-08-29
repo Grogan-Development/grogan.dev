@@ -344,6 +344,18 @@ func (l *Landlord) ReconcileIdle(_ context.Context) []string {
 
 	var stopped []string
 	for _, id := range ids {
+		// Re-check freshness: earlier stops in this loop held opMu (and their
+		// docker stop takes up to 20s), but heartbeats only need mu — a
+		// workspace re-pinned while we worked must not be stopped on stale
+		// snapshot data. Re-evaluating the predicate (not just the pin) keeps
+		// the stale-heartbeat zombie path intact.
+		l.mu.Lock()
+		ws, ok := l.workspaces[id]
+		stillIdle := ok && ws.State == StateRunning && shouldIdleStop(ws, l.clock.Now())
+		l.mu.Unlock()
+		if !stillIdle {
+			continue
+		}
 		if _, err := l.stopOp(id, false); err != nil {
 			l.log.Warn("idle stop failed", "id", id, "err", err)
 			continue
@@ -614,12 +626,32 @@ func (l *Landlord) enforceBudget() {
 				running = append(running, id)
 			}
 		}
-		sort.Strings(running)
 		if len(running) <= MaxAwake() {
 			l.mu.Unlock()
 			return
 		}
-		id := running[len(running)-1]
+		// Demote unpinned workspaces first (longest-unpinned first); ids are
+		// only the tiebreak so packing stays deterministic otherwise.
+		unpinnedAt := func(id string) time.Time {
+			ws := l.workspaces[id]
+			if ws == nil || ws.UnpinnedAt.IsZero() {
+				return time.Time{}
+			}
+			return ws.UnpinnedAt
+		}
+		sort.Slice(running, func(i, j int) bool {
+			a, b := running[i], running[j]
+			pa, pb := pinned(l.workspaces[a]), pinned(l.workspaces[b])
+			if pa != pb {
+				return pb // unpinned sorts before pinned
+			}
+			ua, ub := unpinnedAt(a), unpinnedAt(b)
+			if !ua.Equal(ub) {
+				return ua.Before(ub)
+			}
+			return a > b
+		})
+		id := running[0]
 		l.mu.Unlock()
 		l.log.Info("stopping extra workspace to keep packing", "id", id)
 		if _, err := l.stopOp(id, true); err != nil {

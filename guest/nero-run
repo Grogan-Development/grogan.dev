@@ -34,8 +34,10 @@ if [ -n "${NERO_JOB_ID:-}" ]; then
 fi
 
 bus="${XDG_RUNTIME_DIR}/bus"
-# Same -p set the real job uses. User manager in Docker may reject resource
-# properties; slice + container memory.max still fence the pig.
+# Same -p set the real job uses. The user manager in Docker may reject
+# resource properties; fall back in steps (memory ceiling alone, then none)
+# instead of dropping every limit at once — the slice + container memory.max
+# still fence the pig in the worst case.
 resource_args="-p MemoryHigh=48G -p MemoryMax=64G -p CPUWeight=100"
 
 if [ "${NERO_RUN_DRY:-}" != 1 ]; then
@@ -46,7 +48,12 @@ if [ "${NERO_RUN_DRY:-}" != 1 ]; then
   # shellcheck disable=SC2086
   if ! systemd-run --user --quiet --scope --slice=nero-job.slice \
       $resource_args --collect -- true; then
-    resource_args=""
+    resource_args="-p MemoryMax=64G"
+    # shellcheck disable=SC2086
+    if ! systemd-run --user --quiet --scope --slice=nero-job.slice \
+        $resource_args --collect -- true; then
+      resource_args=""
+    fi
   fi
 fi
 
@@ -59,10 +66,12 @@ if [ "${NERO_RUN_DRY:-}" = 1 ]; then
 fi
 
 load_guest_env() {
-  if [ -z "${NERO_HOST_TOKEN:-}" ] && [ -r /etc/nero/guest.env ]; then
+  if [ -z "${NERO_HOST_TOKEN:-}" ] && [ -r /run/nero/nero-run.env ]; then
+    # Workspace-scoped keep-awake wiring only (see export-container-env);
+    # provider keys never live here.
     # shellcheck disable=SC1091
     set -a
-    . /etc/nero/guest.env
+    . /run/nero/nero-run.env
     set +a
   fi
 }
@@ -74,24 +83,55 @@ job_heartbeat() {
   [ -n "${NERO_WORKSPACE_ID:-}" ] || return 0
   command -v curl >/dev/null 2>&1 || return 0
   host="${NERO_HOST_URL:-http://host.docker.internal:8080}"
-  curl -fsS --max-time 5 \
+  # The token goes to curl through a 0600 config file, not argv: /proc/*/cmdline
+  # would otherwise show it to every process in the workspace.
+  cfg=$(mktemp)
+  chmod 0600 "$cfg"
+  {
+    printf 'header = "Authorization: Bearer %s"\n' "$NERO_HOST_TOKEN"
+    printf 'header = "Content-Type: application/json"\n'
+  } >"$cfg"
+  curl -fsS --max-time 5 --config "$cfg" \
     -X POST \
-    -H "Authorization: Bearer ${NERO_HOST_TOKEN}" \
-    -H "Content-Type: application/json" \
     -d "{\"running\":${running}}" \
     "${host}/api/workspaces/${NERO_WORKSPACE_ID}/job-heartbeat" >/dev/null 2>&1 || true
+  rm -f "$cfg"
 }
 
+errtmp=$(mktemp)
 hb_pid=""
-stop_heartbeat() {
+job_pid=""
+job_unit=""
+
+cleanup() {
   trap - EXIT INT TERM
   if [ -n "${hb_pid}" ]; then
     kill "${hb_pid}" 2>/dev/null || true
     wait "${hb_pid}" 2>/dev/null || true
     hb_pid=""
   fi
+  rm -f "${errtmp}"
+  # Unpin only after the job is gone: posting false while the scope is still
+  # alive lets idle-stop reap a live bake after the grace period.
   job_heartbeat false
 }
+
+# A harness timeout or interrupt kills only this wrapper; without stopping
+# the scope unit the payload keeps running while the host thinks it is not.
+on_signal() {
+  trap '' INT TERM
+  if [ -n "${job_unit}" ]; then
+    systemctl --user stop "${job_unit}" 2>/dev/null || true
+  elif [ -n "${job_pid}" ]; then
+    kill "${job_pid}" 2>/dev/null || true
+  fi
+  [ -n "${job_pid}" ] && wait "${job_pid}" 2>/dev/null || true
+  cleanup
+  exit 128
+}
+
+trap cleanup EXIT
+trap on_signal INT TERM
 
 job_heartbeat true
 (
@@ -100,8 +140,24 @@ job_heartbeat true
   done
 ) &
 hb_pid=$!
-trap stop_heartbeat EXIT INT TERM
 
+# Intentionally unquoted resource/unit args so empty values disappear.
+# stderr is captured to learn the scope unit name for signal teardown.
 # shellcheck disable=SC2086
 systemd-run --user --scope --slice=nero-job.slice \
-  $resource_args --collect $unit_args -- "$cmd" "$@"
+  $resource_args --collect $unit_args -- "$cmd" "$@" 2>"$errtmp" &
+job_pid=$!
+
+# systemd-run prints "Running scope as unit: <name>" early in its life; poll
+# briefly rather than racing it.
+for _ in 1 2 3 4 5 6 7 8 9 10; do
+  job_unit=$(sed -n 's/.*Running scope as unit: \([^ ]*\).*/\1/p' "$errtmp" | head -n 1)
+  [ -n "$job_unit" ] && break
+  sleep 0.1
+done
+
+set +e
+wait "$job_pid"
+code=$?
+set -e
+exit "$code"

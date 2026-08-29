@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import os
 import pwd
-import grp
 from pathlib import Path
 
 KEYS = {
@@ -30,11 +29,23 @@ KEYS = {
 # variable inside the guest by hand.
 
 OUT = Path("/etc/nero/guest.env")
+# nero-run runs as the agent's own uid, so anything it can read, agent bash
+# can read too. It gets a separate file holding only the workspace-scoped
+# keep-awake wiring: the host token is derived per workspace
+# (runtime.DeriveWorkspaceToken), so a leak from here can pin/unpin this
+# workspace's job flag and nothing else. Provider keys never appear here.
+RUN_OUT = Path("/run/nero/nero-run.env")
+RUN_KEYS = {
+    "NERO_HOST_TOKEN",
+    "NERO_HOST_URL",
+    "NERO_WORKSPACE_ID",
+}
 
 
 def main() -> None:
     raw = Path("/proc/1/environ").read_bytes()
     lines: list[str] = []
+    run_lines: list[str] = []
     for item in raw.split(b"\0"):
         if not item or b"=" not in item:
             continue
@@ -43,14 +54,24 @@ def main() -> None:
             key = key_b.decode("ascii")
         except UnicodeDecodeError:
             continue
-        if key not in KEYS:
-            continue
         val = val_b.decode("utf-8", "surrogateescape")
-        lines.append(f"{key}={val}\n")
+        if key in KEYS:
+            lines.append(f"{key}={val}\n")
+        if key in RUN_KEYS:
+            run_lines.append(f"{key}={val}\n")
     OUT.parent.mkdir(parents=True, exist_ok=True)
     OUT.write_text("".join(lines), encoding="utf-8")
-    os.chown(OUT, pwd.getpwnam("root").pw_uid, grp.getgrnam("nero").gr_gid)
-    os.chmod(OUT, 0o640)
+    # Provider keys and the daemon contract live here; only root (i.e. the
+    # systemd EnvironmentFile= reader) may read the file. The nero group does
+    # NOT need it: the daemon gets the values injected into its own
+    # environment by systemd.
+    os.chown(OUT, pwd.getpwnam("root").pw_uid, 0)
+    os.chmod(OUT, 0o600)
+    RUN_OUT.parent.mkdir(parents=True, exist_ok=True)
+    RUN_OUT.write_text("".join(run_lines), encoding="utf-8")
+    nero = pwd.getpwnam("nero")
+    os.chown(RUN_OUT, 0, nero.pw_gid)
+    os.chmod(RUN_OUT, 0o640)
 
 
 if __name__ == "__main__":

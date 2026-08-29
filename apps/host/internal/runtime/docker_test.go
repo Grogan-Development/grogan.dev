@@ -52,8 +52,22 @@ func TestParseDockerPSEmpty(t *testing.T) {
 	}
 }
 
+var testMemoryMax = strconv.FormatInt(MemoryMaxBytes, 10)
+
+// stubCgroupfs forces the "no cgroupfs" (dev host) behavior so tests do not
+// depend on the machine running them. Cgroup-present behavior is covered by
+// dedicated tests that stub cgroupfsPresent themselves.
+func stubCgroupfs(t *testing.T) {
+	t.Helper()
+	prev := cgroupfsPresent
+	cgroupfsPresent = func() bool { return false }
+	t.Cleanup(func() { cgroupfsPresent = prev })
+}
+
 func TestStartContainerWritesMemoryHigh(t *testing.T) {
+	stubCgroupfs(t)
 	writes := map[string]string{}
+	containerDir := "/sys/fs/cgroup/system.slice/docker-abc.scope"
 	d := &Docker{
 		run: func(_ context.Context, name string, args ...string) (string, error) {
 			if name == "docker" && len(args) > 0 && args[0] == "start" {
@@ -69,10 +83,13 @@ func TestStartContainerWritesMemoryHigh(t *testing.T) {
 			return "", nil
 		},
 		readFile: func(name string) ([]byte, error) {
-			if name != "/proc/42/cgroup" {
-				t.Fatalf("read %s", name)
+			if name == "/proc/42/cgroup" {
+				return []byte("0::/system.slice/docker-abc.scope\n"), nil
 			}
-			return []byte("0::/system.slice/docker-abc.scope\n"), nil
+			if name == containerDir+"/memory.max" {
+				return []byte(testMemoryMax + "\n"), nil
+			}
+			return nil, os.ErrNotExist
 		},
 		writeFile: func(name string, data []byte, perm os.FileMode) error {
 			writes[name] = string(data)
@@ -82,7 +99,7 @@ func TestStartContainerWritesMemoryHigh(t *testing.T) {
 	if err := d.StartContainer(context.Background(), "abc"); err != nil {
 		t.Fatal(err)
 	}
-	dir := filepath.Join("/sys/fs/cgroup", "system.slice/docker-abc.scope")
+	dir := containerDir
 	if writes[filepath.Join(dir, "memory.high")] != strconv.FormatInt(MemoryHighBytes, 10) {
 		t.Fatalf("memory.high=%q", writes[filepath.Join(dir, "memory.high")])
 	}
@@ -91,7 +108,87 @@ func TestStartContainerWritesMemoryHigh(t *testing.T) {
 	}
 }
 
+// After guest systemd boots, PID 1 sits in the container cgroup's init.scope;
+// the throttle must land on the ancestor holding memory.max, not init.scope.
+func TestStartContainerWritesMemoryHighAboveInitScope(t *testing.T) {
+	stubCgroupfs(t)
+	writes := map[string]string{}
+	scopeDir := "/sys/fs/cgroup/system.slice/docker-abc.scope"
+	d := &Docker{
+		run: func(_ context.Context, name string, args ...string) (string, error) {
+			if name == "docker" && len(args) > 0 && args[0] == "start" {
+				return "", nil
+			}
+			if name == "docker" && len(args) > 0 && args[0] == "inspect" {
+				if strings.Contains(strings.Join(args, " "), "HostPort") {
+					return "32768", nil
+				}
+				return "42", nil
+			}
+			return "", nil
+		},
+		readFile: func(name string) ([]byte, error) {
+			if name == "/proc/42/cgroup" {
+				return []byte("0::/system.slice/docker-abc.scope/init.scope\n"), nil
+			}
+			if name == scopeDir+"/init.scope/memory.max" {
+				return []byte("max\n"), nil
+			}
+			if name == scopeDir+"/memory.max" {
+				return []byte(testMemoryMax), nil
+			}
+			return nil, os.ErrNotExist
+		},
+		writeFile: func(name string, data []byte, perm os.FileMode) error {
+			writes[name] = string(data)
+			return nil
+		},
+	}
+	if err := d.StartContainer(context.Background(), "abc"); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := writes[scopeDir+"/init.scope/memory.high"]; ok {
+		t.Fatal("init.scope must not be throttled")
+	}
+	if writes[scopeDir+"/memory.high"] != strconv.FormatInt(MemoryHighBytes, 10) {
+		t.Fatalf("memory.high on container cgroup: %q", writes)
+	}
+}
+
+// With cgroupfs present, a failed cgroup apply fails the start: an
+// unthrottled workspace is the host-OOM scenario the plan forbids.
+func TestStartContainerCgroupFailureFailsStartWhenCgroupfsPresent(t *testing.T) {
+	prev := cgroupfsPresent
+	cgroupfsPresent = func() bool { return true }
+	t.Cleanup(func() { cgroupfsPresent = prev })
+	d := &Docker{
+		run: func(_ context.Context, name string, args ...string) (string, error) {
+			if name == "docker" && len(args) > 0 && args[0] == "start" {
+				return "", nil
+			}
+			if name == "docker" && len(args) > 0 && args[0] == "inspect" {
+				if strings.Contains(strings.Join(args, " "), "HostPort") {
+					return "32768", nil
+				}
+				return "42", nil
+			}
+			return "", nil
+		},
+		readFile: func(name string) ([]byte, error) {
+			if name == "/proc/42/cgroup" {
+				return []byte("0::/system.slice/docker-abc.scope\n"), nil
+			}
+			// No memory.max anywhere: the walk-up fails.
+			return nil, os.ErrNotExist
+		},
+	}
+	if err := d.StartContainer(context.Background(), "abc"); err == nil {
+		t.Fatal("start must fail when cgroupfs is present and apply fails")
+	}
+}
+
 func TestStartContainerCgroupFailureDoesNotFailStart(t *testing.T) {
+	stubCgroupfs(t)
 	d := &Docker{
 		run: func(_ context.Context, name string, args ...string) (string, error) {
 			if name == "docker" && len(args) > 0 && args[0] == "start" {

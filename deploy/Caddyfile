@@ -44,6 +44,12 @@ www.grogan.dev {
 
 grogan.dev {
 	encode gzip
+	# Landing + AuthKit only. The control plane (/api/workspaces) and the
+	# forward_auth endpoint (/internal/caddy-auth, which mints X-Nero-Access)
+	# belong to nero.grogan.dev; proxying them from the public landing host
+	# would publish privileged control surfaces on two domains.
+	@host_control_plane path /internal/* /api/*
+	respond @host_control_plane 404
 	reverse_proxy 127.0.0.1:8080
 }
 

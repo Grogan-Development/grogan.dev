@@ -33,8 +33,16 @@ func main() {
 		ZaiAPIKey:      cfg.ZaiAPIKey,
 		BasetenAPIKey:  cfg.BasetenAPIKey,
 		OpenCodeAPIKey: cfg.OpenCodeAPIKey,
+		LoomURL:        cfg.LoomURL,
+		LoomToken:      cfg.LoomToken,
 		SocketDir:      cfg.SocketDir,
 	}, log)
+	if !cfg.DevBypass && cfg.HostToken == "" {
+		// Boot is allowed (auth surfaces still work), but every guest
+		// keep-awake heartbeat will 401: workspaces idle-stop under live
+		// turns and jobs. Say so loudly instead of failing silently later.
+		log.Warn("NERO_HOST_TOKEN is empty: guest heartbeats will be rejected and workspaces will not stay awake")
+	}
 	ll := landlord.New(rt, landlord.RealClock{}, log)
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()

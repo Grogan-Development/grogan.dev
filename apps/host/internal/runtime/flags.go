@@ -12,6 +12,7 @@ import "fmt"
 const (
 	MemoryMax        = "64g"
 	MemorySwap       = "64g" // equal to memory → no extra swap for this cgroup
+	MemoryMaxBytes   = int64(64) << 30
 	CPUShares        = "1024"
 	StopTimeoutSec   = 20
 	MemoryHighBytes  = 48 << 30
