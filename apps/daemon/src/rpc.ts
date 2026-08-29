@@ -314,7 +314,10 @@ export const makeRpcLayer = (daemon: Daemon) =>
         daemon.previewClose(input.threadId, input.tabId);
       }),
     "preview.list": (input) => Effect.succeed(daemon.previewList(input.threadId)),
-    "preview.reportStatus": () => Effect.void,
+    "preview.reportStatus": (input) =>
+      Effect.sync(() => {
+        daemon.previewReportStatus(input);
+      }),
     "previewAutomation.connect": () =>
       liveQueue(
         [

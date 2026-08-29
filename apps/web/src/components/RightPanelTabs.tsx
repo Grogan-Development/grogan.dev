@@ -95,7 +95,7 @@ export interface PullRequestTabStatus {
 }
 
 const SURFACE_DISABLED_REASONS = {
-  browser: "Agent seat preview is not connected yet.",
+  browser: "Agent seat preview is unavailable in this context.",
   terminal: "Terminal surfaces are only available from a project thread.",
   files: "Files are only available when a project is open.",
   diff: "Diff is only available for server threads in Git repositories.",
@@ -117,7 +117,7 @@ const LAUNCHER_SHORTCUT_BLOCKING_LAYERS = [
 
 /** One-line unavailability hints for the empty-state cards. */
 const SURFACE_UNAVAILABLE_HINTS = {
-  browser: "KasmVNC seat preview ships in a later PR.",
+  browser: "Agent seat (KasmVNC) is available from a thread.",
   terminal: "Available when a project is open.",
   files: "Available when a project is open.",
   diff: "Available for Git repositories.",
@@ -266,7 +266,7 @@ function RightPanelEmptyState(props: {
   const actions = [
     {
       label: "Browser",
-      description: "Open a local app or URL.",
+      description: "Open the agent seat (KasmVNC).",
       icon: Globe2,
       shortcut: "B",
       available: props.browserAvailable,

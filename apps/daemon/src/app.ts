@@ -1,5 +1,3 @@
-import { createServer } from "node:http";
-
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as HttpRouter from "effect/unstable/http/HttpRouter";
@@ -16,6 +14,7 @@ import { makeRpcLayer } from "./rpc.ts";
 import type { DaemonOptions } from "./runtime.ts";
 import { EnvironmentAuthInvalidError } from "@t3tools/contracts";
 import { nextToken } from "./runtime.ts";
+import { createNeroHttpServer } from "./vnc-proxy.ts";
 
 const wsUnauthorized = () =>
   HttpServerResponse.schemaJson(EnvironmentAuthInvalidError)(
@@ -62,7 +61,7 @@ export const daemonLayer = (options: DaemonOptions) => {
     daemon,
     layer: HttpRouter.serve(App).pipe(
       Layer.provide(
-        NodeHttpServer.layer(createServer, {
+        NodeHttpServer.layer(createNeroHttpServer(daemon), {
           host: options.host,
           port: options.port,
         }),

@@ -1,5 +1,6 @@
-# KasmVNC serves the agent seat. Bind loopback only; Caddy on the host
-# will reverse-proxy this later. TLS stays off inside the container.
+# KasmVNC serves the agent seat. Bind loopback only. The workspace daemon
+# reverse-proxies same-origin /vnc/ to 127.0.0.1:8444; Caddy on the host
+# will strip /w/:id later. TLS stays off inside the container.
 desktop:
   resolution:
     width: 1920

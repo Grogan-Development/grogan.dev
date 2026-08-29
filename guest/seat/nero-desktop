@@ -5,6 +5,11 @@ Injects via xdotool; captures via scrot. Every real inject/shot takes an
 exclusive flock so only one CLI or VNC helper drives the seat at a time
 (queue, not overlap). Cage/weston are Wayland; KasmVNC is X11, so the seat
 is openbox on KasmVNC's Xvnc (display :1).
+
+Human driving: the daemon holds this same exclusive flock on $NERO_SEAT_LOCK
+while the preview/VNC tab is focused (`POST /api/seat/human-driving`).
+Agent `click`/`type`/`key` block on the flock and therefore queue until the
+human blurs the seat, the idle timeout fires, or the daemon exits.
 """
 from __future__ import annotations
 
@@ -70,6 +75,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     lock = sub.add_parser("lock", help="hold the seat lock and run a command (VNC helper / queue)")
     lock.add_argument("command", nargs=argparse.REMAINDER, help="command after --")
+    sub.add_parser(
+        "hold",
+        help="hold the exclusive seat lock until stdin EOF / SIGTERM (human driving)",
+    )
     return p
 
 
@@ -110,6 +119,8 @@ def tool_argv(args: argparse.Namespace) -> list[str]:
         return ["xdotool", "key", "--clearmodifiers", "--", *args.keys]
     if args.cmd == "lock":
         return list(args.command)
+    if args.cmd == "hold":
+        return ["hold"]
     raise AssertionError(args.cmd)
 
 
@@ -154,6 +165,11 @@ def run_tool(args: argparse.Namespace) -> int:
         # Stay in this process so the flock FD remains open for the helper's
         # lifetime. os.execvpe would drop it (O_CLOEXEC since Python 3.4).
         subprocess.run(args.command, check=True, env=env)
+        return 0
+    if args.cmd == "hold":
+        import sys
+
+        sys.stdin.read()
         return 0
     # scrot --file - writes PNG to stdout (Debian trixie scrot 1.12).
     subprocess.run(tool_argv(args), check=True, env=env)

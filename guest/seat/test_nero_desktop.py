@@ -87,6 +87,11 @@ class ParseTests(unittest.TestCase):
         args = self.m.parse_args(["shot", "--out", "/tmp/a.png"])
         self.assertEqual(self.m.tool_argv(args), ["scrot", "--overwrite", "--file", "/tmp/a.png"])
 
+    def test_hold_subcommand(self):
+        args = self.m.parse_args(["hold"])
+        self.assertEqual(args.cmd, "hold")
+        self.assertEqual(self.m.tool_argv(args), ["hold"])
+
     def test_lock_strips_ddash(self):
         args = self.m.parse_args(["lock", "--", "sleep", "1"])
         self.assertEqual(args.command, ["sleep", "1"])
@@ -215,6 +220,40 @@ class LockTests(unittest.TestCase):
                     os.unlink(leftover)
                 except OSError:
                     pass
+
+    def test_hold_blocks_until_stdin_closes(self):
+        fd, path = tempfile.mkstemp(prefix="nero-seat-")
+        os.close(fd)
+        proc = subprocess.Popen(
+            [
+                sys.executable,
+                str(SCRIPT),
+                "--lock-file",
+                path,
+                "--lock-timeout",
+                "2",
+                "hold",
+            ],
+            stdin=subprocess.PIPE,
+        )
+        try:
+            time.sleep(0.15)
+            with self.assertRaises(SystemExit):
+                with self.m.seat_lock(path, timeout=0.15):
+                    pass
+            assert proc.stdin is not None
+            proc.stdin.close()
+            self.assertEqual(proc.wait(timeout=2), 0)
+            with self.m.seat_lock(path, timeout=0.5):
+                pass
+        finally:
+            if proc.poll() is None:
+                proc.kill()
+                proc.wait(timeout=2)
+            try:
+                os.unlink(path)
+            except OSError:
+                pass
 
 
 if __name__ == "__main__":

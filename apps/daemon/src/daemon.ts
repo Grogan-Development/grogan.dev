@@ -30,6 +30,7 @@ import {
   type PreviewListResult,
   type PreviewOpenInput,
   type PreviewNavigateInput,
+  type PreviewReportStatusInput,
   type PreviewResizeInput,
   ProjectId,
   ProviderDriverKind,
@@ -64,7 +65,27 @@ import {
   readJson,
   writeJsonAtomic,
 } from "./runtime.ts";
+import { HumanDrivingLock } from "./seat-lock.ts";
 import { TerminalHub } from "./terminal.ts";
+
+/** Collaborative preview tab that is the agent seat (KasmVNC), not a URL browser. */
+export const SEAT_PREVIEW_TAB_ID = "seat";
+export const SEAT_VNC_URL = "/vnc/";
+export const SEAT_VNC_TITLE = "Agent seat";
+
+export const isSeatVncUrl = (url: string | undefined): boolean => {
+  if (url === undefined || url.length === 0) return true;
+  const path = url.startsWith("/")
+    ? (url.split("?")[0] ?? url)
+    : (() => {
+        try {
+          return new URL(url, "http://nero.local").pathname;
+        } catch {
+          return url;
+        }
+      })();
+  return path === "/vnc" || path === "/vnc/" || path.startsWith("/vnc/");
+};
 
 export class Hub<T> {
   readonly listeners = new Set<(item: T) => void>();
@@ -174,9 +195,11 @@ export class Daemon {
   private previewRevision = 0;
   readonly serverEpoch = nextToken("epoch");
   private persistTimer: ReturnType<typeof setTimeout> | undefined;
+  readonly humanDriving: HumanDrivingLock;
 
   constructor(options: DaemonOptions) {
     this.options = options;
+    this.humanDriving = new HumanDrivingLock(options.seatLockPath);
     this.settings = patchedSettings(DEFAULT_SERVER_SETTINGS);
     ensureDir(options.dataDir);
     ensureDir(Path.join(options.dataDir, "logs"));
@@ -1245,15 +1268,33 @@ export class Daemon {
   }
 
   previewOpen(input: PreviewOpenInput): PreviewSessionSnapshot {
-    const tabId = nextToken("tab");
+    if (isSeatVncUrl(input.url)) {
+      const existing = this.previews.get(`${input.threadId}:${SEAT_PREVIEW_TAB_ID}`);
+      if (existing !== undefined) {
+        if (input.viewport !== undefined && existing.viewport !== input.viewport) {
+          return this.previewResize({
+            threadId: input.threadId,
+            tabId: SEAT_PREVIEW_TAB_ID,
+            viewport: input.viewport,
+          });
+        }
+        return existing;
+      }
+    }
+    const tabId = isSeatVncUrl(input.url) ? SEAT_PREVIEW_TAB_ID : nextToken("tab");
     const at = nowIso();
+    const url = isSeatVncUrl(input.url) ? SEAT_VNC_URL : input.url;
     const snapshot: PreviewSessionSnapshot = {
       threadId: input.threadId,
       tabId,
       navStatus:
-        input.url === undefined
+        url === undefined
           ? { _tag: "Idle" }
-          : { _tag: "Success", url: input.url, title: input.url },
+          : {
+              _tag: "Success",
+              url,
+              title: isSeatVncUrl(url) ? SEAT_VNC_TITLE : url,
+            },
       canGoBack: false,
       canGoForward: false,
       viewport: input.viewport,
@@ -1346,6 +1387,39 @@ export class Daemon {
   previewList(threadId: string): PreviewListResult {
     const sessions = [...this.previews.values()].filter((session) => session.threadId === threadId);
     return { sessions, serverEpoch: this.serverEpoch, revision: this.previewRevision };
+  }
+
+  previewReportStatus(input: PreviewReportStatusInput): void {
+    const key = `${input.threadId}:${input.tabId}`;
+    const current = this.previews.get(key);
+    if (current === undefined) return;
+    const snapshot: PreviewSessionSnapshot = {
+      ...current,
+      navStatus: input.navStatus,
+      canGoBack: input.canGoBack,
+      canGoForward: input.canGoForward,
+      updatedAt: nowIso(),
+    };
+    this.previews.set(key, snapshot);
+    this.previewRevision += 1;
+    this.previewHub.emit({
+      type: "navigated",
+      threadId: snapshot.threadId,
+      tabId: snapshot.tabId,
+      createdAt: snapshot.updatedAt,
+      serverEpoch: this.serverEpoch,
+      revision: this.previewRevision,
+      snapshot,
+    });
+  }
+
+  setHumanDriving(driving: boolean): { driving: boolean; lockPath: string } {
+    this.humanDriving.setDriving(driving);
+    return { driving: this.humanDriving.driving, lockPath: this.humanDriving.lockPath };
+  }
+
+  dispose(): void {
+    this.humanDriving.dispose();
   }
 
   pid(): number {

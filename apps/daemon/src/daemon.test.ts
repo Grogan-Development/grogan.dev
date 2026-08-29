@@ -1,3 +1,4 @@
+import { spawnSync } from "node:child_process";
 import * as Fs from "node:fs";
 import * as Http from "node:http";
 import * as Net from "node:net";
@@ -20,6 +21,7 @@ import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 
 import { daemonLayer } from "./app.ts";
+import { SEAT_PREVIEW_TAB_ID, SEAT_VNC_TITLE, SEAT_VNC_URL } from "./daemon.ts";
 import type { DaemonOptions } from "./runtime.ts";
 import { nowIso } from "./runtime.ts";
 
@@ -222,6 +224,8 @@ const tmpDaemon = (port: number, extra: Partial<DaemonOptions> = {}) => {
       label: "Nero test",
       devBypass: false,
       accessToken: undefined,
+      seatLockPath: Path.join(root, "seat.lock"),
+      vncOrigin: "http://127.0.0.1:8444",
       ...extra,
     } satisfies DaemonOptions,
   };
@@ -516,6 +520,170 @@ describe("nero daemon", () => {
         }),
       );
       conn.close();
+      yield* Fiber.interrupt(fiber);
+    }),
+  );
+
+  it.live("preview.open/list represent the KasmVNC seat display", () =>
+    Effect.gen(function* () {
+      const port = yield* Effect.promise(allocatePort);
+      const tmp = tmpDaemon(port, { devBypass: true });
+      const fiber = yield* launch(tmp.options);
+      const wsUrl = `ws://127.0.0.1:${port}/ws`;
+
+      const opened = (yield* Effect.promise(() =>
+        rpcCall(wsUrl, WS_METHODS.previewOpen, { threadId: "thread-seat" }),
+      )) as { tabId: string; navStatus: { _tag: string; url?: string; title?: string } };
+      expect(opened.tabId).toBe(SEAT_PREVIEW_TAB_ID);
+      expect(opened.navStatus).toMatchObject({
+        _tag: "Success",
+        url: SEAT_VNC_URL,
+        title: SEAT_VNC_TITLE,
+      });
+
+      const again = (yield* Effect.promise(() =>
+        rpcCall(wsUrl, WS_METHODS.previewOpen, { threadId: "thread-seat" }),
+      )) as { tabId: string };
+      expect(again.tabId).toBe(SEAT_PREVIEW_TAB_ID);
+
+      const listed = (yield* Effect.promise(() =>
+        rpcCall(wsUrl, WS_METHODS.previewList, { threadId: "thread-seat" }),
+      )) as { sessions: { tabId: string; navStatus: { url?: string } }[] };
+      expect(listed.sessions).toHaveLength(1);
+      expect(listed.sessions[0]?.tabId).toBe(SEAT_PREVIEW_TAB_ID);
+      expect(listed.sessions[0]?.navStatus.url).toBe(SEAT_VNC_URL);
+
+      yield* Fiber.interrupt(fiber);
+    }),
+  );
+
+  it.live("reverse-proxies /vnc/ to the KasmVNC origin", () =>
+    Effect.gen(function* () {
+      const vncPort = yield* Effect.promise(allocatePort);
+      const vnc = Http.createServer((req, res) => {
+        res.writeHead(200, { "content-type": "text/plain; charset=utf-8" });
+        res.end(`kasm:${req.url}`);
+      });
+      vnc.on("upgrade", (_req, socket) => {
+        socket.write(
+          "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n\r\n",
+        );
+        socket.end("vnc-upgraded");
+      });
+      yield* Effect.promise(
+        () =>
+          new Promise<void>((resolve) => {
+            vnc.listen(vncPort, "127.0.0.1", () => resolve());
+          }),
+      );
+
+      const port = yield* Effect.promise(allocatePort);
+      const tmp = tmpDaemon(port, {
+        devBypass: true,
+        vncOrigin: `http://127.0.0.1:${vncPort}`,
+      });
+      const fiber = yield* launch(tmp.options);
+
+      const page = yield* Effect.promise(() => httpRequest(port, "GET", "/vnc/"));
+      expect(page.status).toBe(200);
+      expect(page.text).toBe("kasm:/");
+
+      const asset = yield* Effect.promise(() => httpRequest(port, "GET", "/vnc/index.html"));
+      expect(asset.text).toBe("kasm:/index.html");
+
+      const upgraded = yield* Effect.promise(
+        () =>
+          new Promise<string>((resolve, reject) => {
+            const req = Http.request({
+              hostname: "127.0.0.1",
+              port,
+              path: "/vnc/websockify",
+              method: "GET",
+              headers: {
+                connection: "Upgrade",
+                upgrade: "websocket",
+                "sec-websocket-version": "13",
+                "sec-websocket-key": "dGhlIHNhbXBsZSBub25jZQ==",
+              },
+            });
+            req.on("upgrade", (_res, socket, head) => {
+              const chunks: Buffer[] = [Buffer.from(head)];
+              socket.on("data", (chunk) => chunks.push(chunk as Buffer));
+              socket.on("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
+              socket.on("error", reject);
+            });
+            req.on("error", reject);
+            req.end();
+          }),
+      );
+      expect(upgraded).toContain("vnc-upgraded");
+
+      yield* Fiber.interrupt(fiber);
+      yield* Effect.promise(
+        () =>
+          new Promise<void>((resolve, reject) => {
+            vnc.close((error) => (error ? reject(error) : resolve()));
+          }),
+      );
+    }),
+  );
+
+  it.live("human driving holds the seat flock so agent inject queues", () =>
+    Effect.gen(function* () {
+      const port = yield* Effect.promise(allocatePort);
+      const tmp = tmpDaemon(port, { devBypass: true });
+      const fiber = yield* launch(tmp.options);
+
+      const on = yield* Effect.promise(() =>
+        httpRequest(port, "POST", "/api/seat/human-driving", { json: { driving: true } }),
+      );
+      expect(on.status).toBe(200);
+      expect(on.json).toMatchObject({ driving: true, lockPath: tmp.options.seatLockPath });
+
+      const busy = yield* Effect.promise(async () => {
+        const deadline = Date.now() + 3_000;
+        while (Date.now() < deadline) {
+          const result = spawnSync(
+            "python3",
+            [
+              "-c",
+              "import fcntl, os, sys; p=sys.argv[1]\nraise SystemExit(2) if not os.path.exists(p) else None\nfd=os.open(p, os.O_RDWR)\ntry:\n fcntl.flock(fd, fcntl.LOCK_EX|fcntl.LOCK_NB)\nexcept BlockingIOError:\n raise SystemExit(1)\nraise SystemExit(0)",
+              tmp.options.seatLockPath,
+            ],
+            { encoding: "utf8" },
+          );
+          if (result.status === 1) return true;
+          await new Promise((resolve) => setTimeout(resolve, 50));
+        }
+        return false;
+      });
+      expect(busy).toBe(true);
+
+      const off = yield* Effect.promise(() =>
+        httpRequest(port, "POST", "/api/seat/human-driving", { json: { driving: false } }),
+      );
+      expect(off.status).toBe(200);
+      expect(off.json).toMatchObject({ driving: false });
+
+      const free = yield* Effect.promise(async () => {
+        const deadline = Date.now() + 3_000;
+        while (Date.now() < deadline) {
+          const result = spawnSync(
+            "python3",
+            [
+              "-c",
+              "import fcntl, os, sys; fd=os.open(sys.argv[1], os.O_RDWR); fcntl.flock(fd, fcntl.LOCK_EX|fcntl.LOCK_NB); fcntl.flock(fd, fcntl.LOCK_UN)",
+              tmp.options.seatLockPath,
+            ],
+            { encoding: "utf8" },
+          );
+          if (result.status === 0) return true;
+          await new Promise((resolve) => setTimeout(resolve, 50));
+        }
+        return false;
+      });
+      expect(free).toBe(true);
+
       yield* Fiber.interrupt(fiber);
     }),
   );

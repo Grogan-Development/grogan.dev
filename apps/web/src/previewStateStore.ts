@@ -453,8 +453,8 @@ export function removePreviewThread(ref: ScopedThreadRef): void {
 }
 
 export function isPreviewSupportedInRuntime(): boolean {
-  if (typeof window === "undefined") return false;
-  return Boolean(window.desktopBridge?.preview);
+  // Nero's preview tab is the in-browser KasmVNC seat, not Electron <webview>.
+  return typeof window !== "undefined";
 }
 
 export function resetPreviewStateForTests(): void {

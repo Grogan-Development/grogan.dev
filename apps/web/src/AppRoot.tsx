@@ -6,7 +6,7 @@ import type { AppRouter } from "./router";
 
 /**
  * Owns renderer-wide providers. Preview automation hosts sit outside the
- * router so a later KasmVNC guest (PR 7) can survive route transitions.
+ * router so the KasmVNC seat guest can survive route transitions.
  */
 export function AppRoot({ router }: { readonly router: AppRouter }) {
   return (

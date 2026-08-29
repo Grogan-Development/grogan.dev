@@ -11,5 +11,8 @@ export function isPreviewFocused(): boolean {
   if (!(activeElement instanceof HTMLElement)) return false;
   if (!activeElement.isConnected) return false;
   if (activeElement.tagName.toLowerCase() === "webview") return true;
+  if (activeElement.tagName.toLowerCase() === "iframe") {
+    return activeElement.closest("[data-preview-panel-mode], [data-seat-vnc]") !== null;
+  }
   return activeElement.closest("[data-preview-panel-mode]") !== null;
 }
