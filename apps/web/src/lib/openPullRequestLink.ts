@@ -306,20 +306,12 @@ export function useOpenChangeRequestLink(
         });
         return true;
       }
+      // Loom owns the FR page now; a pasted GitHub link just lands on the
+      // workspace's FR list (the git mirror keeps loom as source of truth).
       void navigate({
         to: "/w/$workspaceId/pull-requests",
         params: { workspaceId: project.environmentId },
-        search: {
-          involvement: "all",
-          // Every state, so the pull request being opened is also in the list behind it whether
-          // it is open, merged or closed.
-          state: "all",
-          repository: parsed.repository,
-          number: parsed.number,
-          selectedProjectId: project.id,
-          // Named so the page opens the right one of two servers holding this project.
-          selectedEnvironmentId: project.environmentId,
-        },
+        search: { involvement: "all", state: "all" },
       });
       return true;
     },

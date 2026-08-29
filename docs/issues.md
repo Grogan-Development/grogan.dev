@@ -117,11 +117,13 @@ Law: "After adapt there is no T3 product left." Survivors at main:
       error toast), `server.signalProcess` (diagnostics Kill buttons silently
       no-op). `getSettings`/`updateSettings` are real now. Typed rejection is not
       deletion — delete each with its client-runtime binding.
-- [ ] gh/PR RPCs — `git.ts:485-501` throw; all 20+ `pullRequests.*` handlers are
-      stubs (`rpc.ts:133-157`). Meanwhile a routable `/w/:id/pull-requests` page
-      with a sidebar link (`SidebarChrome.tsx:176`), `PullRequestThreadDialog`,
-      and `sourceControlActions.ts:308-335` can only ever render empty/error —
-      unship the surface (route + link + RPCs) or implement gh.
+- [x] gh/PR surface — resolved by the Loom integration (2026-08-29): the
+      `/w/:id/pull-requests` page now lists Loom features (FRs) via the daemon's
+      `/api/loom/*` proxy, and a new `/w/:id/ci` page shows the Loom event log
+      (candidate verifications, CI results, promotions). The old GitHub
+      machinery (pullRequests.\* stubs, git.resolvePullRequest/prepare) has no
+      page calling it anymore — delete the RPC stubs in the next contracts pass.
+      Graceful 503 state until LOOM_URL/LOOM_TOKEN land in host.env.
 - [x] assets/attachments backing routes — implemented in `apps/daemon/src/http.ts`
       (4ecfb70): `GET /api/assets/workspace` (thread-cwd rooted, traversal-guarded,
       25 MiB cap), `GET /api/assets/favicon` (deterministic SVG monogram,

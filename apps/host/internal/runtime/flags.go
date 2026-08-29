@@ -31,6 +31,8 @@ type GuestEnv struct {
 	ZaiAPIKey      string
 	BasetenAPIKey  string
 	OpenCodeAPIKey string
+	LoomURL        string
+	LoomToken      string
 	// Routing knobs for the harness (non-secret); empty means daemon defaults.
 	ZaiBaseUrl string
 	NeroModel  string
@@ -77,6 +79,8 @@ func DockerCreateArgs(image, id, name, mount string, env GuestEnv) []string {
 	args = appendEnv(args, "ZAI_BASE_URL", env.ZaiBaseUrl)
 	args = appendEnv(args, "BASETEN_API_KEY", env.BasetenAPIKey)
 	args = appendEnv(args, "OPENCODE_API_KEY", env.OpenCodeAPIKey)
+	args = appendEnv(args, "LOOM_URL", env.LoomURL)
+	args = appendEnv(args, "LOOM_TOKEN", env.LoomToken)
 	args = appendEnv(args, "NERO_MODEL", env.NeroModel)
 	return append(args, image)
 }

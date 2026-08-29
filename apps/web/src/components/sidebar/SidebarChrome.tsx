@@ -1,4 +1,4 @@
-import { ArrowLeftIcon, GitPullRequestIcon, SettingsIcon } from "lucide-react";
+import { ArrowLeftIcon, GitPullRequestIcon, SettingsIcon, WorkflowIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import { memo, useCallback } from "react";
 import { Link, useCanGoBack, useLocation, useNavigate, useParams } from "@tanstack/react-router";
@@ -178,6 +178,15 @@ export const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
       search: { involvement: "all", state: "open" },
     });
   }, [closeMobileSidebar, environments, navigate, routeWorkspaceId]);
+  const handleCiClick = useCallback(() => {
+    closeMobileSidebar();
+    const workspaceId = routeWorkspaceId ?? readLastWorkspaceId() ?? environments[0]?.environmentId;
+    if (!workspaceId) {
+      return;
+    }
+    void navigate({ to: "/w/$workspaceId/ci", params: { workspaceId } });
+  }, [closeMobileSidebar, environments, navigate, routeWorkspaceId]);
+
   const handleSettingsClick = useCallback(() => {
     closeMobileSidebar();
     void navigate({ to: "/settings" });
@@ -214,6 +223,9 @@ export const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
               label="Pull Requests"
               onClick={handlePullRequestsClick}
             />
+          ) : null}
+          {pullRequestsSupported ? (
+            <SidebarUtilityItem icon={<WorkflowIcon />} label="CI" onClick={handleCiClick} />
           ) : null}
         </>
       )}

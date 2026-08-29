@@ -25,6 +25,8 @@ type DockerSettings struct {
 	ZaiAPIKey      string
 	BasetenAPIKey  string
 	OpenCodeAPIKey string
+	LoomURL        string
+	LoomToken      string
 	SocketDir      string
 }
 
@@ -37,6 +39,8 @@ type Docker struct {
 	ZaiAPIKey      string
 	BasetenAPIKey  string
 	OpenCodeAPIKey string
+	LoomURL        string
+	LoomToken      string
 	log            *slog.Logger
 	run            func(ctx context.Context, name string, args ...string) (string, error)
 	readFile       func(name string) ([]byte, error)
@@ -65,6 +69,8 @@ func NewDocker(cfg DockerSettings, log *slog.Logger) *Docker {
 		ZaiAPIKey:      cfg.ZaiAPIKey,
 		BasetenAPIKey:  cfg.BasetenAPIKey,
 		OpenCodeAPIKey: cfg.OpenCodeAPIKey,
+		LoomURL:        cfg.LoomURL,
+		LoomToken:      cfg.LoomToken,
 		log:            log,
 		run:            runCmd,
 		readFile:       os.ReadFile,
@@ -136,6 +142,8 @@ func (d *Docker) CreateContainer(ctx context.Context, spec WorkspaceSpec) error 
 		ZaiAPIKey:      d.ZaiAPIKey,
 		BasetenAPIKey:  d.BasetenAPIKey,
 		OpenCodeAPIKey: d.OpenCodeAPIKey,
+		LoomURL:        d.LoomURL,
+		LoomToken:      d.LoomToken,
 		ZaiBaseUrl:     os.Getenv("ZAI_BASE_URL"),
 		NeroModel:      os.Getenv("NERO_MODEL"),
 	})

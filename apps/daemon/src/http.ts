@@ -26,6 +26,13 @@ import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 
 import type { Daemon } from "./daemon.ts";
+import {
+  getLoomFeature,
+  isLoomConfigured,
+  listLoomEvents,
+  listLoomFeatures,
+  LoomUnavailableError,
+} from "./loom.ts";
 import { resolveContained } from "./files.ts";
 import { SESSION_COOKIE, djb2Hex, nextToken } from "./runtime.ts";
 
@@ -514,6 +521,79 @@ export const httpRoutesLayer = (daemon: Daemon) =>
             const body = yield* request.json;
             daemon.router.importCodexTokens(body);
             return json(200, { signedIn: true });
+          }),
+        ),
+      );
+
+      // ——— Loom (FRs + CI events) ———
+      const loomNotConfigured = () =>
+        json(503, { error: "Loom is not configured on this workspace (LOOM_TOKEN missing)." });
+      const loomResponse = (
+        outcome: Effect.Effect<HttpServerResponse.HttpServerResponse, unknown>,
+      ): Effect.Effect<HttpServerResponse.HttpServerResponse> =>
+        Effect.match(outcome, {
+          onFailure: (error: unknown) =>
+            json(
+              503,
+              error instanceof LoomUnavailableError
+                ? { error: error.message }
+                : { error: "Loom request failed." },
+            ),
+          onSuccess: (response) => response,
+        });
+      const loomFeatureList = () =>
+        loomResponse(Effect.tryPromise(async () => json(200, await listLoomFeatures())));
+      const loomFeatureDetail = (featureId: string) =>
+        loomResponse(Effect.tryPromise(async () => json(200, await getLoomFeature(featureId))));
+      const loomEventPage = (limit: number | undefined, since: string | undefined) =>
+        loomResponse(
+          Effect.tryPromise(async () => json(200, await listLoomEvents({ limit, since }))),
+        );
+
+      yield* router.add(
+        "GET",
+        "/api/loom/features",
+        recover(
+          Effect.gen(function* () {
+            yield* requireAuth(daemon);
+            if (!isLoomConfigured()) {
+              return loomNotConfigured();
+            }
+            return yield* loomFeatureList();
+          }),
+        ),
+      );
+
+      yield* router.add(
+        "GET",
+        "/api/loom/features/:featureId",
+        recover(
+          Effect.gen(function* () {
+            yield* requireAuth(daemon);
+            const params = yield* HttpRouter.params;
+            if (!isLoomConfigured()) {
+              return loomNotConfigured();
+            }
+            return yield* loomFeatureDetail(params.featureId ?? "");
+          }),
+        ),
+      );
+
+      yield* router.add(
+        "GET",
+        "/api/loom/events",
+        recover(
+          Effect.gen(function* () {
+            yield* requireAuth(daemon);
+            if (!isLoomConfigured()) {
+              return loomNotConfigured();
+            }
+            const request = yield* HttpServerRequest.HttpServerRequest;
+            const query = new URL(request.url, "http://localhost").searchParams;
+            const limitRaw = query.get("limit");
+            const limit =
+              limitRaw !== null && Number.isFinite(Number(limitRaw)) ? Number(limitRaw) : undefined;
+            return yield* loomEventPage(limit, query.get("since") ?? undefined);
           }),
         ),
       );
