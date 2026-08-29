@@ -204,15 +204,64 @@ export async function pinNeroWorkspace(workspaceId: string): Promise<void> {
 /**
  * Unpin without awaiting — used on `visibilitychange→hidden`, `pagehide`, and
  * workspace-route unmount so the host can re-arm its idle timer promptly.
+ * Uses `fetch` keepalive so the unpin is never silently dropped where
+ * `sendBeacon` is unavailable (keepalive survives page transitions too).
  */
 export function unpinNeroWorkspace(workspaceId: string): void {
-  if (typeof navigator === "undefined" || typeof navigator.sendBeacon !== "function") {
-    return;
+  void fetch(`${NERO_WORKSPACES_PATH}/${encodeURIComponent(workspaceId)}/heartbeat`, {
+    method: "POST",
+    keepalive: true,
+    credentials: "same-origin",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ connected: false }),
+  }).catch(() => {
+    // Best-effort: the host's zombie grace bounds how long a missed unpin
+    // can keep a dead tab's workspace awake.
+  });
+}
+
+/**
+ * A pin POST that was in flight when an unpin happened may still land on the
+ * host afterwards (last-write-wins), re-pinning a hidden or closed tab. Call
+ * this after such a pin settles to send a corrective unpin that is guaranteed
+ * to arrive after the pin response. Fire-and-forget; never throws.
+ */
+export function correctiveUnpinNeroWorkspace(workspaceId: string): void {
+  void fetch(`${NERO_WORKSPACES_PATH}/${encodeURIComponent(workspaceId)}/heartbeat`, {
+    method: "POST",
+    keepalive: true,
+    credentials: "same-origin",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ connected: false }),
+  }).catch(() => {
+    // Same bound as above: the zombie timer is the backstop.
+  });
+}
+
+/**
+ * A freshly created workspace can come back `queued` when admission is full
+ * (two workspaces awake). Navigating into a queued workspace dead-ends into
+ * 502s, so poll the list until the host reports it running. Throws when the
+ * workspace leaves the list (deleted) or the wait budget is exhausted.
+ */
+export async function waitForNeroWorkspaceRunning(
+  workspaceId: string,
+  timeoutMs = 10 * 60_000,
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    await new Promise((resolve) => setTimeout(resolve, 2_000));
+    const workspaces = await listNeroWorkspaces();
+    const match = workspaces.find((workspace) => workspace.id === workspaceId);
+    if (match !== undefined) {
+      if (match.state === "running") return;
+    } else {
+      throw new NeroHostApiError("The workspace left the host list while queued.", 0);
+    }
+    if (Date.now() >= deadline) {
+      throw new NeroHostApiError("The workspace is still waiting for admission to free up.", 0);
+    }
   }
-  navigator.sendBeacon(
-    `${NERO_WORKSPACES_PATH}/${encodeURIComponent(workspaceId)}/heartbeat`,
-    new Blob([JSON.stringify({ connected: false })], { type: "application/json" }),
-  );
 }
 
 /** Workspace id embedded in a same-origin daemon path (`/w/:id/...`), if any. */

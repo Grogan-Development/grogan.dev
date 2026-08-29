@@ -22,6 +22,14 @@ two §8 items were false positives; several “fixed” claims were incomplete
 (attachment RPC, `BASH_ENV_DENY`, git argv). §0–7 ~20 open; §8 has 3 P1 +
 10 P2 + 26 P3 open; §9 has 4 P1 + 14 P2 + 6 P3 open.
 
+Readiness wave the same day (main @ `67d4311`+): every P1 from §8/§9 is now
+closed — daemon OOM reads (`df3a45d`), revert data loss + harness poison
+(`67d4311`), host-secret exposure / heartbeat split / cgroup placement /
+reboot socket perms (`538f575`), plus the P2/P3 backlog listed per item
+below and the Loom guest wiring + stale docker-flags test (`90e85da`).
+Remaining open items are P2/P3 leftovers (pairing-password reuse, git argv
+injection, privileged-guest threat model, seat-latch polish).
+
 ---
 
 ## 0. In-plan remainder
@@ -231,7 +239,7 @@ P1s still open (revert, harness poison, unbounded read).
 
 ### P1
 
-- [ ] **`thread.checkpoint.revert` semantics disagree three ways → durable data
+- [x] **`thread.checkpoint.revert` semantics disagree three ways → durable data
       loss.** Web sends "keep N" — the clicked turn's checkpoint count minus 1
       (`ChatView.tsx:2637-2642`, dialog at `:5204`, send at `:5216-5222`). Daemon
       reads it as "remove N user turns": `keepUsers = userTurns.length -
@@ -243,7 +251,7 @@ command.turnCount` (`daemon.ts:1076-1091`). Client reducer keeps
       checks out the stored tree** — chat rewinds, workspace files stay at
       HEAD. Fix: pick one meaning and align all three; prune checkpoint state;
       restore the tree; abort/evict the harness conversation.
-- [ ] **Superseding a turn while a tool approval is pending poisons the shared
+- [x] **Superseding a turn while a tool approval is pending poisons the shared
       LLM conversation.** `PiHarness.conversations` is one array per thread
       reused across turns (`harness.ts:115-147`); supersede only aborts at the
       next await. A turn parked in `approveTool` resolves "cancel" on abort and
@@ -260,7 +268,7 @@ command.turnCount` (`daemon.ts:1076-1091`). Client reducer keeps
       `location.assign`s without a state check (`_chat.index.tsx:110-111`,
       `WorkspaceSwitcher.tsx:183-186`) — if admission returns `queued`, same
       502 dead-end. Tracked as §9 P2.
-- [ ] **Unbounded `readFileSync` in file tools can OOM-kill the daemon.**
+- [x] **Unbounded `readFileSync` in file tools can OOM-kill the daemon.**
       `files.ts:113-135` (read) and `:323-331` (searchProjectContents, per file
       walked up to 8k entries) read the whole file before the 1 MiB cap /
       binary check; `stat.size` is in hand and unchecked. Same pattern:
@@ -277,7 +285,7 @@ command.turnCount` (`daemon.ts:1076-1091`). Client reducer keeps
       job-heartbeat for ANY workspace id — a prompt-injected agent could pin or
       unpin every workspace. Deny list extended to
       `NERO_HOST_TOKEN`/`NERO_HOST_URL`/`NERO_WORKSPACE_ID` (4ecfb70).
-- [ ] **Idle-stop TOCTOU.** `ReconcileIdle` snapshots ids then stops without
+- [x] **Idle-stop TOCTOU.** `ReconcileIdle` snapshots ids then stops without
       re-checking `pinned(ws)`; each `docker stop -t 20` makes later decisions
       20s+ stale, so a freshly re-pinned workspace is stopped under the user
       (`landlord.go:335-353`, `stopOp` at `:455-464` only checks `wasRunning`).
@@ -294,7 +302,7 @@ command.turnCount` (`daemon.ts:1076-1091`). Client reducer keeps
       throws in the constructor before `runMain`, and `Restart=on-failure`
       boot-loops until the file is deleted by hand. The encode-side comment
       promises the opposite behavior.
-- [ ] **`nero-run` reports `running:false` on INT/TERM without killing the
+- [x] **`nero-run` reports `running:false` on INT/TERM without killing the
       job.** The trap posts the heartbeat but never signals the `systemd-run
 --scope` child (`guest/nero-run:86-103`): a harness timeout kills only the
       wrapper → live job unpinned → idle-stop kills it after grace.
@@ -314,7 +322,7 @@ command.turnCount` (`daemon.ts:1076-1091`). Client reducer keeps
       but `authorizeHttp` still compares non-constant-time
       (`daemon.ts:467-477`) and mint endpoints have no rate limit. Caddy
       forward_auth shields it today.
-- [ ] **Checkpoint trees keyed by per-thread turn count; revert doesn't prune.**
+- [x] **Checkpoint trees keyed by per-thread turn count; revert doesn't prune.**
       Counts restart after revert → next capture overwrites old trees, duplicate
       "Turn N" checkpoints, old `getTurnDiff` resolves to the new turn's diff
       (`checkpoints.ts:190-195`; compounds the P1 revert bug).
@@ -328,7 +336,7 @@ command.turnCount` (`daemon.ts:1076-1091`). Client reducer keeps
       old pty's exit closure fires against the new session (listeners Set is
       reused), so "restart terminal" renders a dead terminal
       (`terminal.ts:293-305,339-409`).
-- [ ] **Revert never invalidates harness conversations.** The model keeps
+- [x] **Revert never invalidates harness conversations.** The model keeps
       receiving pre-revert history on every later turn — the user-visible point
       of revert is silently defeated (`harness.ts:137-165`, no eviction path);
       relatedly `deltaAssistant` can resurrect messages deleted mid-stream
@@ -347,17 +355,17 @@ command.turnCount` (`daemon.ts:1076-1091`). Client reducer keeps
       relay surface; daemon typecheck was broken (erasableSyntaxOnly param
       property + DaemonOptions test helpers); stale `remoteDpopTokens` fixture;
       orphaned UsagePage tests. All fixed (4ecfb70); 2623 tests green.
-- [ ] `enforceBudget` demotes by lexicographic id, ignoring pinned/in-use state
+- [x] `enforceBudget` demotes by lexicographic id, ignoring pinned/in-use state
       (`landlord.go:608-623`) — bites when `syncRuntime` adopts an externally
       started container.
-- [ ] `serveUnixProxy` exits permanently on a transient `Accept` error (EMFILE)
+- [x] `serveUnixProxy` exits permanently on a transient `Accept` error (EMFILE)
       and `hub.bind`'s same-port early-return never rebinds → wedged proxy, no
       self-heal (`proxy.go:66-67,121-129`).
-- [ ] `tightenSocket` silently skips the caddy-group chown when group lookup
+- [x] `tightenSocket` silently skips the caddy-group chown when group lookup
       fails → all workspace routes 502 silently on non-apt Caddy installs
       (`proxy.go:89-103`). Even when lookup succeeds, `Chown` errors are
       discarded (`proxy.go:101`) — §9 P2.
-- [ ] `runCmd` uses `CombinedOutput`, merging stderr into JSON parsed
+- [x] `runCmd` uses `CombinedOutput`, merging stderr into JSON parsed
       downstream (`docker.go:72-75`) — stray docker CLI stderr wedges the
       lifecycle loop.
 - [ ] `Create` leaves a registered orphan (dataset + exited container) when
@@ -370,7 +378,7 @@ command.turnCount` (`daemon.ts:1076-1091`). Client reducer keeps
 - [ ] Diagnostics "Kill" is a dead flow: `server.signalProcess` stub never
       matches `isStaleProcessSignalMessage`; destructive UI + honest toast
       (`DiagnosticsSettings.tsx:911-977`, `rpc.ts:109-115`).
-- [ ] First heartbeat pin fires even when the tab mounts hidden
+- [x] First heartbeat pin fires even when the tab mounts hidden
       (`_chat.tsx:84-90`) → background-tab loads pin the 20-min zombie grace.
 - [x] `KasmVncFrame` src teardown on every render — **false positive.**
       `seatVncClientUrl()` is prefix-stable under `/w/:id/*`; an identical
@@ -448,7 +456,7 @@ wake → `stat.size` before `readFileSync` → prefix all daemon URLs with
 
 ### P1
 
-- [ ] **Agent can read every host secret.** `BASH_ENV_DENY` only strips the
+- [x] **Agent can read every host secret.** `BASH_ENV_DENY` only strips the
       **child** env (`tools.ts:34-42,133-147`; `printenv` test at
       `tools.test.ts:143`). Agent bash is UID `nero`, same as the daemon.
       `/etc/nero/guest.env` is `0640 root:nero` (`export-container-env:46-47`)
@@ -461,8 +469,14 @@ wake → `stat.size` before `readFileSync` → prefix all daemon URLs with
       **any** workspace id (`server.go:254-279`). Fix: `chmod 0600 root:root`
       on `guest.env`; drop secrets from the daemon process env after load;
       per-workspace host tokens; heartbeat helper that is not agent-readable;
-      `ProtectProc=` / split UID / `hidepid=`.
-- [ ] **Live agent turns and `nero-run` share one boolean.** `HostTurnPulse`
+      `ProtectProc=` / split UID / `hidepid=`. Closed in `538f575` for the
+      host-wide part: guests now hold only per-workspace derived tokens
+      (the raw host/access secrets never enter a container), guest.env is
+      0600 root:root, and nero-run keeps its token off argv in a 0600
+      curl config. Remaining exposure: provider keys still ride the
+      daemon process env, same-uid readable via /proc — see the open
+      split-UID note.
+- [x] **Live agent turns and `nero-run` share one boolean.** `HostTurnPulse`
       (`daemon.ts:157-202,1362,1764`) POSTs `{running}` to **job-heartbeat**.
       `nero-run` does the same (`guest/nero-run:70-93`). Landlord last-write
       wins on `JobRunning` (`landlord.go:228-229`). A finishing turn unpins a
@@ -470,8 +484,11 @@ wake → `stat.size` before `readFileSync` → prefix all daemon URLs with
       until the next 30s pulse. UI never sends `agentWorking`
       (`neroHost.ts:177-183`). PLAN keep-awake is three independent pins. Fix:
       pulse `agentWorking` (host-token on `/heartbeat`, or a third route);
-      refcount jobs.
-- [ ] **`memory.high` is written on the wrong cgroup.** `ApplyCgroup` uses
+      refcount jobs. Closed in `538f575`: the daemon pulses `agentWorking`
+      and nero-run keeps `running` on the token-gated job-heartbeat route;
+      the pins are independent and field-specific updates never touch the
+      other bit.
+- [x] **`memory.high` is written on the wrong cgroup.** `ApplyCgroup` uses
       PID 1’s current cgroup (`docker.go:207-232`). After guest systemd
       starts, that is typically `docker-….scope/init.scope`, not the Docker
       container cgroup where `--memory=64g` landed. User slices (`nero-daemon`,
@@ -480,8 +497,10 @@ wake → `stat.size` before `readFileSync` → prefix all daemon URLs with
       `0::/system.slice/docker-abc.scope` (`docker_test.go:16-18`) and miss
       this. Start ignores apply errors (`docker.go:144`). `--memory=64g` still
       caps the workspace. Fix: walk up to the cgroup that has `memory.max=64g`;
-      fail start if cgroupfs is present and the write fails.
-- [ ] **`/run/nero/w` is `0700` after reboot → all workspace routes 502.**
+      fail start if cgroupfs is present and the write fails. Done in
+      `538f575` exactly that way (`containerCgroupDir` + start fails when
+      cgroupfs is present).
+- [x] **`/run/nero/w` is `0700` after reboot → all workspace routes 502.**
       `deploy/nero-host.service` has `UMask=0077` and
       `ExecStartPre=/bin/mkdir -p /run/nero/w`. `/run` is tmpfs. First reboot
       creates `root:root 0700`. Caddy cannot traverse to `0660` sockets even
@@ -489,6 +508,9 @@ wake → `stat.size` before `readFileSync` → prefix all daemon URLs with
       (`proxy.go:70-72`) will not chmod an existing dir. README’s `sudo mkdir`
       does not survive reboot. Fix: tmpfiles `d /run/nero/w 0750 root caddy`,
       or `RuntimeDirectory=` + `RuntimeDirectoryMode=0750` + `Group=caddy`.
+      Shipped in `538f575`: deploy/tmpfiles/nero-host.conf (created at boot),
+      the unit self-heals the same mode in ExecStartPre, and the proxy hub
+      chmods on every bind with loud chown failures.
 
 ### P2
 
@@ -503,7 +525,7 @@ wake → `stat.size` before `readFileSync` → prefix all daemon URLs with
       once privileged). Fix: drop `--privileged` for `--cgroupns=host` +
       explicit caps if possible; private networks; per-workspace access
       tokens; document the threat model.
-- [ ] **Attachment RPC persist skipped the id check.** HTTP/delete validate
+- [x] **Attachment RPC persist skipped the id check.** HTTP/delete validate
       `^[A-Za-z0-9]{4,64}$` (4ecfb70). `persistIncomingAttachment` /
       `writeAttachmentDataUrl` (`daemon.ts:1232-1239,1576-1579`) still
       `Path.join(dataDir, "attachments", id)` the client-supplied id.
@@ -516,14 +538,14 @@ wake → `stat.size` before `readFileSync` → prefix all daemon URLs with
       From inside the guest, `curl localhost:8787` bypasses Caddy. Combined
       with guest.env, the agent mints daemon sessions. `pairingLinks()` also
       **returns the credential** (`daemon.ts:556-571`).
-- [ ] **`/internal/caddy-auth` is published on `grogan.dev`.** That vhost is a
+- [x] **`/internal/caddy-auth` is published on `grogan.dev`.** That vhost is a
       blanket reverse_proxy (`Caddyfile:45-47`). Caddy is always loopback to
       `:8080`, so `RemoteLoopback` (`caddy.go:22-25`) passes. An authenticated
       GET returns `X-Nero-Access` to the client. PLAN topology is landing +
       AuthKit only; create/wake/delete are also live on `grogan.dev`. Fix:
       do not proxy `/internal/*` (or `/api/workspaces*`) on `grogan.dev`;
       require a Caddy-to-host secret header on caddy-auth.
-- [ ] **Pin/unpin race stretches idle to zombie grace.** `pin()` is an
+- [x] **Pin/unpin race stretches idle to zombie grace.** `pin()` is an
       in-flight `fetch`; hide/unmount `sendBeacon`s `{connected:false}`
       without aborting the pin (`_chat.tsx:84-99`, `neroHost.ts:190-198`). A
       late `true` leaves `Connected=true` with the interval skipping hidden
@@ -531,13 +553,13 @@ wake → `stat.size` before `readFileSync` → prefix all daemon URLs with
       `Blob type: application/json` — that content-type is a known silent
       failure, which would make close-tab never unpin. Distinct from “first
       pin while already hidden” (§8 P3).
-- [ ] **Create can still land on a queued workspace.** `29d96a2` wakes before
+- [x] **Create can still land on a queued workspace.** `29d96a2` wakes before
       navigate for `/` and the switcher row. First-run create
       (`_chat.index.tsx:110-111`) and switcher create
       (`WorkspaceSwitcher.tsx:183-186`) `location.assign` without checking
       `state`. Host create may return `queued` (`landlord.go:371-377`);
       heartbeat does not start Docker.
-- [ ] **`isNeroRunCommand` is `/\bnero-run\b/` on the whole string**
+- [x] **`isNeroRunCommand` is `/\bnero-run\b/` on the whole string**
       (`tools.ts:233-247,299-307`). Any command that _mentions_ `nero-run`
       skips process-group kill on abort **and** timeout, so
       `sleep 9999; nero-run true` outlives interrupt. Parse argv; only skip
@@ -547,7 +569,7 @@ wake → `stat.size` before `readFileSync` → prefix all daemon URLs with
       **without** `zfs destroy` (`docker.go:102-113`). Create never inserts
       the workspace (`landlord.go:149-151`). Distinct from the tracked
       tryStart orphan. Not API-deletable.
-- [ ] **`tightenSocket` swallows `Chown` errors.** Related to the tracked
+- [x] **`tightenSocket` swallows `Chown` errors.** Related to the tracked
       group-lookup skip (`proxy.go:93-96`): even after a successful `caddy`
       lookup, `_ = os.Chown(...)` (`proxy.go:101`) can leave `root:root 0660`
       sockets Caddy cannot use (silent 502). Treat chown failure as bind
@@ -558,7 +580,7 @@ wake → `stat.size` before `readFileSync` → prefix all daemon URLs with
       (`git.ts:259-288,503-546,601-616`). `reviewDiffFileContents`
       `Path.join(cwd, filePath)` follows `../`. Reject operands starting with
       `-`; `resolveContained` every path; `--` before refs.
-- [ ] **`NERO_HOST_TOKEN` is not required in `AuthReady`.** Empty token →
+- [x] **`NERO_HOST_TOKEN` is not required in `AuthReady`.** Empty token →
       `hostTokenOK` is false (`server.go:282-294`) → job-heartbeat 401 →
       turns and jobs silently do not pin. Deploy README lists it; boot
       succeeds without it (`config.go:57-80`).
@@ -572,7 +594,7 @@ wake → `stat.size` before `readFileSync` → prefix all daemon URLs with
 - [ ] **Daemon browser-session cookie has no `Secure`.** `http.ts:244-248`:
       `httpOnly` + `sameSite: "lax"` only. Pairing is a dead path through
       Caddy today, but the cookie is still minted.
-- [ ] **`nero-run` resource `-p` probe can disable all job limits.** Probe
+- [x] **`nero-run` resource `-p` probe can disable all job limits.** Probe
       `systemd-run -p MemoryHigh=48G … -- true` on failure **clears all job
       `-p`** (`guest/nero-run:41-50`). User manager in Docker often rejects
       those properties. Slice `MemoryMax=64G` may also be inert without
@@ -581,7 +603,7 @@ wake → `stat.size` before `readFileSync` → prefix all daemon URLs with
 
 ### P3
 
-- [ ] `pingDaemonHealthz` allocates a new `http.Client` per ping
+- [x] `pingDaemonHealthz` allocates a new `http.Client` per ping
       (`docker.go:295-301`). Each 200ms health wait (up to `opTimeout`)
       creates a Transport and keeps idle conns. FD spike while `opMu` is held.
 - [ ] `searchProjectContents` compiles a client-supplied regex per line

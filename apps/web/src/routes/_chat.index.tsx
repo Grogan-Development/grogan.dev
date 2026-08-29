@@ -14,6 +14,7 @@ import {
   NERO_LOGIN_PATH,
   neroHostErrorMessage,
   type NeroWorkspace,
+  waitForNeroWorkspaceRunning,
 } from "../lib/neroHost";
 import { readLastWorkspaceId } from "../workspaceIdentity";
 
@@ -108,6 +109,12 @@ function ChatIndexRedirect() {
     setError(null);
     try {
       const workspace = await createNeroWorkspace(name.trim().length > 0 ? name.trim() : null);
+      // Admission can return `queued` when two workspaces are awake; the
+      // button already shows progress, so wait it out instead of navigating
+      // into a workspace whose daemon does not exist yet.
+      if (workspace.state !== "running") {
+        await waitForNeroWorkspaceRunning(workspace.id);
+      }
       window.location.assign(`/w/${workspace.id}/`);
     } catch (error) {
       if (isNeroHostAuthError(error)) {

@@ -23,6 +23,7 @@ import {
   neroWorkspaceIdFromPath,
   NERO_LOGIN_PATH,
   stopNeroWorkspace,
+  waitForNeroWorkspaceRunning,
   wakeNeroWorkspace,
   type NeroWorkspace,
 } from "~/lib/neroHost";
@@ -180,8 +181,12 @@ export function WorkspaceSwitcher() {
         newName.trim().length > 0 ? newName.trim() : null,
       );
       setNewName("");
-      // createNeroWorkspace blocks until the daemon is healthy, so the new
-      // workspace is already running — navigate straight in.
+      // createNeroWorkspace blocks until the daemon is healthy — unless
+      // admission queued the workspace, in which case navigating now would
+      // dead-end into 502s. Keep the row busy until it actually runs.
+      if (workspace.state !== "running") {
+        await waitForNeroWorkspaceRunning(workspace.id);
+      }
       setOpen(false);
       window.location.assign(`/w/${workspace.id}/`);
     } catch (error) {

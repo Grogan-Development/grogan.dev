@@ -13,6 +13,7 @@ import { dispatchPreviewAction } from "../components/preview/previewActionBus";
 import { useHandleNewThread } from "../hooks/useHandleNewThread";
 import { startNewThreadFromContext } from "../lib/chatThreadActions";
 import {
+  correctiveUnpinNeroWorkspace,
   isNeroHostAuthError,
   NERO_LOGIN_PATH,
   neroWorkspaceIdFromPath,
@@ -44,6 +45,13 @@ function NeroWorkspaceHeartbeat({ workspaceId }: { readonly workspaceId: string 
   useEffect(() => {
     let timer: ReturnType<typeof setInterval> | null = null;
     let isStopped = false;
+    // Monotonic watermark for the unpin-vs-inflight-pin race: an unpin
+    // beacon can reach the host BEFORE a pin that is still in flight, and
+    // the host applies last-write-wins — which would re-pin a hidden or
+    // closed tab for the whole zombie grace. Any unpin bumps the watermark;
+    // when a pin started before it settles, a corrective unpin follows.
+    let seq = 0;
+    let unpinRequestedAt = -1;
     const stopPolling = () => {
       if (timer !== null) {
         clearInterval(timer);
@@ -51,6 +59,7 @@ function NeroWorkspaceHeartbeat({ workspaceId }: { readonly workspaceId: string 
       }
     };
     const pin = async () => {
+      const startedAt = ++seq;
       try {
         await pinNeroWorkspace(workspaceId);
       } catch (error) {
@@ -79,16 +88,16 @@ function NeroWorkspaceHeartbeat({ workspaceId }: { readonly workspaceId: string 
             },
           }),
         );
-      }
-    };
-    void pin();
-    timer = setInterval(() => {
-      if (isStopped || document.visibilityState !== "visible") {
         return;
       }
-      void pin();
-    }, WORKSPACE_HEARTBEAT_INTERVAL_MS);
+      if (unpinRequestedAt >= startedAt && !isStopped) {
+        correctiveUnpinNeroWorkspace(workspaceId);
+      }
+    };
     const unpin = () => {
+      // The unpin consumes a sequence number: a pin that starts afterwards
+      // (e.g. visible again) outranks it and must not be corrected away.
+      unpinRequestedAt = ++seq;
       unpinNeroWorkspace(workspaceId);
     };
     const onVisibilityChange = () => {
@@ -98,6 +107,17 @@ function NeroWorkspaceHeartbeat({ workspaceId }: { readonly workspaceId: string 
         void pin();
       }
     };
+    // A tab that mounts hidden (background restore) must not pin: the
+    // interval skips hidden tabs, so one stray pin would last 20 minutes.
+    if (document.visibilityState === "visible" && !isStopped) {
+      void pin();
+    }
+    timer = setInterval(() => {
+      if (isStopped || document.visibilityState !== "visible") {
+        return;
+      }
+      void pin();
+    }, WORKSPACE_HEARTBEAT_INTERVAL_MS);
     document.addEventListener("visibilitychange", onVisibilityChange);
     window.addEventListener("pagehide", unpin);
     return () => {
