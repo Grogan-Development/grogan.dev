@@ -1,0 +1,34 @@
+# Nero v1 — Grid-01
+# TLS via Caddy defaults (Let's Encrypt). Set NERO_ACME_EMAIL if you want a contact on the account.
+#
+# grogan.dev      landing + AuthKit start (GET /auth/login, /auth/callback, /auth/logout)
+# www.grogan.dev  → grogan.dev
+# nero.grogan.dev control plane + AuthKit callback + GET /auth.md (nero-host :8080)
+# /auth.md        public skill (canonical on this host; humans stay AuthKit-only)
+# /w/*            placeholder until PR 10; strip Cookie wos-session on that proxy
+
+www.grogan.dev {
+	redir https://grogan.dev{uri} permanent
+}
+
+grogan.dev {
+	encode gzip
+	reverse_proxy 127.0.0.1:8080
+}
+
+nero.grogan.dev {
+	encode gzip
+
+	handle /auth.md {
+		reverse_proxy 127.0.0.1:8080
+	}
+
+	handle /w/* {
+		# PR 10: reverse_proxy to the workspace Nero daemon
+		respond "workspace proxy not wired yet" 501
+	}
+
+	handle {
+		reverse_proxy 127.0.0.1:8080
+	}
+}
