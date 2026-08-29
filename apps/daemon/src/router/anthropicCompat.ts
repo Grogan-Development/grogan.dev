@@ -27,6 +27,8 @@ export type AnthropicStreamInput = {
   readonly timeoutMs: number;
   readonly idleMs: number;
   readonly label: string;
+  /** Reasoning level ("low" | "medium" | "high"); omitted = provider default. */
+  readonly reasoningEffort?: string | undefined;
 };
 
 type ContentBlock =
@@ -109,6 +111,9 @@ export const streamAnthropic = (input: AnthropicStreamInput): Promise<StreamChat
     const { system, messages } = toAnthropicMessages(input.messages);
     const url = new URL(input.url);
     const lib = url.protocol === "https:" ? Https : Http;
+    const thinkingBudget = { low: 4096, medium: 10_240, high: 24_576 }[
+      input.reasoningEffort ?? "none"
+    ];
     const body = JSON.stringify({
       model: input.model,
       max_tokens: input.maxTokens,
@@ -119,6 +124,9 @@ export const streamAnthropic = (input: AnthropicStreamInput): Promise<StreamChat
         description: tool.function.description,
         input_schema: tool.function.parameters,
       })),
+      ...(thinkingBudget === undefined
+        ? {}
+        : { thinking: { type: "enabled", budget_tokens: thinkingBudget } }),
       stream: true,
     });
     let settled = false;

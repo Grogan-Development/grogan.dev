@@ -145,6 +145,7 @@ export const streamCodexResponses = async (
     onText: request.onText,
     timeoutMs: request.timeoutMs,
     idleMs: request.idleMs,
+    reasoningEffort: request.reasoningEffort,
     label: "Codex (ChatGPT Pro)",
   });
 };

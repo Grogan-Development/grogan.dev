@@ -41,6 +41,8 @@ export const streamZai = async (
       messages: request.messages,
       tools: NERO_TOOLS,
       tool_choice: "auto",
+      // Z.ai gates GLM reasoning with the thinking object (no effort levels).
+      ...(request.reasoningEffort === undefined ? {} : { thinking: { type: "enabled" } }),
     },
     signal: request.signal,
     onText: request.onText,

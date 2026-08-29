@@ -3,6 +3,7 @@ import * as Path from "node:path";
 import * as Process from "node:process";
 
 import {
+  ModelCapabilities,
   AuthAdministrativeScopes,
   type AuthAccessStreamEvent,
   type AuthPairingCredentialResult,
@@ -58,7 +59,7 @@ import * as Schema from "effect/Schema";
 import { CheckpointStore } from "./checkpoints.ts";
 import { PiHarness } from "./harness.ts";
 import { NeroRouter } from "./router/router.ts";
-import { CATALOG } from "./router/catalog.ts";
+import { CATALOG, capabilityDescriptors } from "./router/catalog.ts";
 import type { DaemonOptions } from "./runtime.ts";
 import {
   DAEMON_VERSION,
@@ -417,7 +418,7 @@ export class Daemon {
     name: string;
     isCustom: boolean;
     isDefault: boolean;
-    capabilities: null;
+    capabilities: ModelCapabilities | null;
   }> {
     const status = this.router.status();
     return CATALOG.filter((model) => {
@@ -429,7 +430,7 @@ export class Daemon {
       name: model.name,
       isCustom: false,
       isDefault: model.default === true,
-      capabilities: null,
+      capabilities: capabilityDescriptors(model),
     }));
   }
 

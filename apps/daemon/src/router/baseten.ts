@@ -31,6 +31,9 @@ export const streamBaseten = (
       messages: request.messages,
       tools: NERO_TOOLS,
       tool_choice: "auto",
+      ...(request.reasoningEffort === undefined
+        ? {}
+        : { reasoning_effort: request.reasoningEffort }),
     },
     signal: request.signal,
     onText: request.onText,

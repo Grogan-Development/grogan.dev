@@ -130,7 +130,12 @@ export class NeroRouter {
   /** Stream a turn, walking the model's provider chain until one succeeds. */
   async stream(request: StreamRequest): Promise<StreamChatResult> {
     const model = resolveCatalogModel(request.model);
-    const chain = model.chain;
+    // The speed bolt prepends the fast route; the normal chain stays behind
+    // it as the fallback.
+    const chain =
+      request.fast === true && model.fast !== undefined
+        ? [model.fast, ...model.chain]
+        : model.chain;
     const errors: string[] = [];
     for (const [index, route] of chain.entries()) {
       if (request.signal.aborted) throw new Error("aborted");

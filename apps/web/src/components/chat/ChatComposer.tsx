@@ -5,6 +5,7 @@ import type {
   PreviewAnnotationPayload,
   ProviderApprovalDecision,
   ProviderInteractionMode,
+  ProviderOptionDescriptor,
   ResolvedKeybindingsConfig,
   RuntimeMode,
   ScopedThreadRef,
@@ -21,7 +22,11 @@ import {
 } from "@t3tools/contracts";
 import type { EnvironmentConnectionPresentation } from "@t3tools/client-runtime/connection";
 import { serializeComposerFileLink } from "@t3tools/shared/composerTrigger";
-import { createModelSelection, normalizeModelSlug } from "@t3tools/shared/model";
+import {
+  buildProviderOptionSelectionsFromDescriptors,
+  createModelSelection,
+  normalizeModelSlug,
+} from "@t3tools/shared/model";
 import {
   memo,
   type ReactNode,
@@ -249,9 +254,14 @@ import {
   RotateCcwIcon,
   SparklesIcon,
   XIcon,
+  ZapIcon,
+  BrainIcon,
 } from "lucide-react";
 import { proposedPlanTitle } from "../../proposedPlan";
-import { getProviderInteractionModeToggle } from "../../providerModels";
+import {
+  getProviderInteractionModeToggle,
+  getProviderModelCapabilities,
+} from "../../providerModels";
 import {
   applyProviderInstanceSettings,
   deriveProviderInstanceEntries,
@@ -1283,30 +1293,100 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     [composerDraftTarget, promptRef, scheduleComposerFocus, setComposerDraftPrompt],
   );
 
-  const providerTraitsMenuContent = renderProviderTraitsMenuContent({
-    provider: selectedProvider,
-    instanceId: selectedInstanceId,
-    ...(routeKind === "server" ? { threadRef: routeThreadRef } : {}),
-    ...(routeKind === "draft" && draftId ? { draftId } : {}),
-    model: selectedModel,
-    models: selectedProviderModels,
-    modelOptions: composerModelOptions?.[selectedInstanceId],
-    prompt,
-    onPromptChange: setPromptFromTraits,
-    planModeEnabled: settings.planModeEnabled,
-  });
-  const providerTraitsPicker = renderProviderTraitsPicker({
-    provider: selectedProvider,
-    instanceId: selectedInstanceId,
-    ...(routeKind === "server" ? { threadRef: routeThreadRef } : {}),
-    ...(routeKind === "draft" && draftId ? { draftId } : {}),
-    model: selectedModel,
-    models: selectedProviderModels,
-    modelOptions: composerModelOptions?.[selectedInstanceId],
-    prompt,
-    onPromptChange: setPromptFromTraits,
-    planModeEnabled: settings.planModeEnabled,
-  });
+  const setProviderModelOptions = useComposerDraftStore((store) => store.setProviderModelOptions);
+  // Reasoning level: a compact cycler (Default → Low → Medium → High) driven
+  // by the model's models.dev reasoning capability — no dropdown chrome.
+  const reasoningDescriptor = useMemo(() => {
+    const caps = getProviderModelCapabilities(
+      selectedProviderModels,
+      selectedModel,
+      selectedProvider,
+      settings.planModeEnabled,
+    );
+    return (
+      caps.optionDescriptors?.find(
+        (descriptor): descriptor is Extract<ProviderOptionDescriptor, { type: "select" }> =>
+          descriptor.id === "reasoningEffort" && descriptor.type === "select",
+      ) ?? null
+    );
+  }, [selectedProviderModels, selectedModel, selectedProvider, settings.planModeEnabled]);
+  const reasoningLevel = useMemo(() => {
+    const raw = composerModelOptions?.[selectedInstanceId]?.find(
+      (option) => option.id === "reasoningEffort",
+    )?.value;
+    return typeof raw === "string" ? raw : null;
+  }, [composerModelOptions, selectedInstanceId]);
+  const cycleReasoning = useCallback(() => {
+    if (!reasoningDescriptor) return;
+    const levels = reasoningDescriptor.options.map((option) => option.id);
+    const next =
+      reasoningLevel === null
+        ? (levels[0] ?? null)
+        : (levels[(levels.indexOf(reasoningLevel) + 1) % (levels.length + 1)] ?? null);
+    setProviderModelOptions(
+      composerDraftTarget,
+      selectedProvider,
+      buildProviderOptionSelectionsFromDescriptors([
+        { ...reasoningDescriptor, ...(next === null ? {} : { currentValue: next }) },
+      ]),
+      {
+        ...(selectedInstanceId ? { instanceId: selectedInstanceId } : {}),
+        model: selectedModel,
+        persistSticky: true,
+      },
+    );
+  }, [
+    composerDraftTarget,
+    reasoningDescriptor,
+    reasoningLevel,
+    selectedInstanceId,
+    selectedModel,
+    selectedProvider,
+    setProviderModelOptions,
+  ]);
+
+  // Lightning-bolt speed toggle: the daemon advertises a `fastMode` boolean
+  // descriptor on models with a fast route; flipping it writes the selection
+  // through the same draft path the traits picker uses.
+  const fastModeDescriptor = useMemo(() => {
+    const caps = getProviderModelCapabilities(
+      selectedProviderModels,
+      selectedModel,
+      selectedProvider,
+      settings.planModeEnabled,
+    );
+    return (
+      caps.optionDescriptors?.find(
+        (descriptor): descriptor is Extract<ProviderOptionDescriptor, { type: "boolean" }> =>
+          descriptor.id === "fastMode" && descriptor.type === "boolean",
+      ) ?? null
+    );
+  }, [selectedProviderModels, selectedModel, selectedProvider, settings.planModeEnabled]);
+  const fastModeOn =
+    composerModelOptions?.[selectedInstanceId]?.some(
+      (option) => option.id === "fastMode" && option.value === true,
+    ) ?? false;
+  const toggleFastMode = useCallback(() => {
+    if (!fastModeDescriptor) return;
+    const nextDescriptors = (fastModeDescriptor ? [fastModeDescriptor] : []).map((descriptor) => ({
+      ...descriptor,
+      currentValue: !fastModeOn,
+    }));
+    const nextOptions = buildProviderOptionSelectionsFromDescriptors([...nextDescriptors]);
+    setProviderModelOptions(composerDraftTarget, selectedProvider, nextOptions, {
+      ...(selectedInstanceId ? { instanceId: selectedInstanceId } : {}),
+      model: selectedModel,
+      persistSticky: true,
+    });
+  }, [
+    composerDraftTarget,
+    fastModeDescriptor,
+    fastModeOn,
+    selectedInstanceId,
+    selectedModel,
+    selectedProvider,
+    setProviderModelOptions,
+  ]);
   const pendingPrimaryAction = useMemo(
     () =>
       activePendingProgress
@@ -3480,26 +3560,65 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     />
                   )}
 
+                  {fastModeDescriptor !== null && !isComposerFooterCompact ? (
+                    <Separator orientation="vertical" className="mx-0.5 hidden h-4 sm:block" />
+                  ) : null}
+                  {fastModeDescriptor !== null && !isComposerFooterCompact ? (
+                    <button
+                      type="button"
+                      aria-pressed={fastModeOn}
+                      aria-label={fastModeOn ? "Speed mode on" : "Speed mode off"}
+                      data-slot="tooltip-trigger"
+                      className={cn(
+                        "relative inline-flex h-7 min-h-7 cursor-pointer items-center justify-center gap-1 rounded-[var(--control-radius)] border px-2 text-sm outline-none transition-none sm:h-6 sm:text-xs",
+                        fastModeOn
+                          ? "border-amber-500/40 bg-amber-500/10 text-amber-500 hover:bg-amber-500/15"
+                          : "border-transparent text-secondary-label hover:bg-accent hover:text-foreground",
+                      )}
+                      onClick={toggleFastMode}
+                    >
+                      <ZapIcon
+                        aria-hidden
+                        data-composer-control-icon="true"
+                        className={cn("size-4 shrink-0", fastModeOn && "fill-amber-400/40")}
+                      />
+                      <span className="hidden @2xl/composer-controls:inline">Speed</span>
+                    </button>
+                  ) : null}
+                  {reasoningDescriptor !== null && !isComposerFooterCompact ? (
+                    <button
+                      type="button"
+                      aria-label="Reasoning level"
+                      className={cn(
+                        "relative inline-flex h-7 min-h-7 cursor-pointer items-center justify-center gap-1 rounded-[var(--control-radius)] border border-transparent px-2 text-sm outline-none transition-none hover:bg-accent hover:text-foreground sm:h-6 sm:text-xs",
+                        reasoningLevel !== null ? "text-foreground" : "text-secondary-label",
+                      )}
+                      onClick={cycleReasoning}
+                    >
+                      <BrainIcon
+                        aria-hidden
+                        data-composer-control-icon="true"
+                        className="size-4 shrink-0"
+                      />
+                      <span className="hidden @2xl/composer-controls:inline">
+                        {reasoningLevel === null
+                          ? "Reasoning"
+                          : (reasoningDescriptor.options.find(
+                              (option) => option.id === reasoningLevel,
+                            )?.label ?? reasoningLevel)}
+                      </span>
+                    </button>
+                  ) : null}
                   {isComposerFooterCompact ? (
                     <CompactComposerControlsMenu
                       interactionMode={interactionMode}
                       runtimeMode={runtimeMode}
                       showInteractionModeToggle={composerProviderControls.showInteractionModeToggle}
-                      traitsMenuContent={providerTraitsMenuContent}
                       onToggleInteractionMode={toggleInteractionMode}
                       onRuntimeModeChange={handleRuntimeModeChange}
                     />
                   ) : (
                     <>
-                      {providerTraitsPicker ? (
-                        <>
-                          <Separator
-                            orientation="vertical"
-                            className="mx-0.5 hidden h-4 sm:block"
-                          />
-                          {providerTraitsPicker}
-                        </>
-                      ) : null}
                       <ComposerFooterModeControls
                         showInteractionModeToggle={
                           composerProviderControls.showInteractionModeToggle

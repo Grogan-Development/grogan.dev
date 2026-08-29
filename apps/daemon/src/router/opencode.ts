@@ -45,6 +45,9 @@ export const streamOpenCode = (
           messages: request.messages,
           tools: NERO_TOOLS,
           tool_choice: "auto",
+          ...(request.reasoningEffort === undefined
+            ? {}
+            : { reasoning_effort: request.reasoningEffort }),
         },
         signal: request.signal,
         onText: request.onText,
@@ -63,6 +66,7 @@ export const streamOpenCode = (
         onText: request.onText,
         timeoutMs: request.timeoutMs,
         idleMs: request.idleMs,
+        reasoningEffort: request.reasoningEffort,
         label: `OpenCode Zen (${route.upstream})`,
       });
     case "anthropic":
@@ -76,6 +80,7 @@ export const streamOpenCode = (
         onText: request.onText,
         timeoutMs: request.timeoutMs,
         idleMs: request.idleMs,
+        reasoningEffort: request.reasoningEffort,
         label: `OpenCode Zen (${route.upstream})`,
       });
   }

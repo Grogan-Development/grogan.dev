@@ -18,8 +18,7 @@
  * Slug/limit/pricing metadata comes from the vendored models.dev snapshot
  * (`modelsdev.json`) — refresh that file, never live-fetch at runtime.
  */
-import * as Fs from "node:fs";
-import * as Path from "node:path";
+import { ProviderOptionDescriptor } from "@t3tools/contracts";
 
 import type { ChatMessage } from "./openaiCompat.ts";
 
@@ -40,6 +39,12 @@ export type CatalogModel = {
   /** Selector label — carries the routing so no provider picker is needed. */
   readonly name: string;
   readonly chain: ReadonlyArray<CatalogRoute>;
+  /**
+   * Speed route for the lightning-bolt toggle: the same generation served by
+   * a faster provider. Tried before the normal chain; a fallback to the chain
+   * still applies.
+   */
+  readonly fast?: CatalogRoute;
   readonly default?: boolean;
 };
 
@@ -52,6 +57,9 @@ export const CATALOG: ReadonlyArray<CatalogModel> = [
       { provider: "zai-payg", transport: "openai", upstream: "glm-5.3-flash" },
       { provider: "baseten", transport: "openai", upstream: "zai-org/GLM-5.3-Flash" },
     ],
+    // Speed toggle: Flash has no native fast tier — Baseten's serving IS the
+    // speed. Same model, better provider, per-token cost.
+    fast: { provider: "baseten", transport: "openai", upstream: "zai-org/GLM-5.3-Flash" },
     default: true,
   },
   {
@@ -61,18 +69,6 @@ export const CATALOG: ReadonlyArray<CatalogModel> = [
     chain: [
       { provider: "zai", transport: "openai", upstream: "glm-5.3-highspeed" },
       { provider: "zai-payg", transport: "openai", upstream: "glm-5.3-highspeed" },
-    ],
-  },
-  {
-    // Flash has NO native fast variant — we fake it by routing Flash through
-    // Baseten, the faster provider. Only this entry gets a provider as its
-    // speed; fall back to the Z.ai plan serving of the same model.
-    slug: "glm-5.3-flash-fast",
-    name: "GLM 5.3 Flash Fast · Baseten → Z.ai",
-    chain: [
-      { provider: "baseten", transport: "openai", upstream: "zai-org/GLM-5.3-Flash" },
-      { provider: "zai", transport: "openai", upstream: "glm-5.3-flash" },
-      { provider: "zai-payg", transport: "openai", upstream: "glm-5.3-flash" },
     ],
   },
   {
@@ -118,6 +114,64 @@ export const CATALOG: ReadonlyArray<CatalogModel> = [
 
 export const DEFAULT_MODEL = "glm-5.3-flash";
 
+// ——— Composer option descriptors (T3 traits protocol) ———
+
+/**
+ * Server-advertised composer controls for a model, following the contracts
+ * ProviderOptionDescriptor protocol the skin's traits picker renders:
+ *   - `fastMode` boolean → the lightning-bolt speed toggle (only for models
+ *     with a fast route).
+ *   - `reasoningEffort` select → reasoning level, gated on the models.dev
+ *     snapshot's `reasoning` capability flag.
+ */
+export const capabilityDescriptors = (
+  model: CatalogModel,
+): { optionDescriptors: ReadonlyArray<ProviderOptionDescriptor> } | null => {
+  const descriptors: Array<ProviderOptionDescriptor> = [];
+  if (model.fast !== undefined) {
+    descriptors.push({
+      id: "fastMode",
+      label: "Fast mode",
+      type: "boolean",
+    });
+  }
+  const reasoningCapable = model.chain.some((route) =>
+    route.transport === "anthropic"
+      ? true
+      : (snapshotMeta(snapshotProviderKey(route.provider), route.upstream)?.reasoning ?? false),
+  );
+  if (reasoningCapable) {
+    descriptors.push({
+      id: "reasoningEffort",
+      label: "Reasoning",
+      type: "select",
+      options: [
+        { id: "low", label: "Low" },
+        { id: "medium", label: "Medium" },
+        { id: "high", label: "High" },
+      ],
+    });
+  }
+  void 0;
+  return descriptors.length > 0 ? { optionDescriptors: descriptors } : null;
+};
+
+const snapshotProviderKey = (provider: RouterProviderId): string => {
+  switch (provider) {
+    case "zai":
+    case "zai-payg":
+      return "zai-coding-plan";
+    case "baseten":
+      return "baseten";
+    case "grok":
+      return "xai";
+    case "codex":
+      return "openai";
+    case "opencode":
+      return "opencode";
+  }
+};
+
 export const resolveCatalogModel = (slug: string | undefined): CatalogModel =>
   CATALOG.find((model) => model.slug === slug) ??
   CATALOG.find((model) => model.default === true) ??
@@ -144,32 +198,23 @@ type SnapshotModel = {
   readonly limit?: { readonly context?: number; readonly output?: number };
 };
 
-let snapshotCache: Readonly<Record<string, SnapshotModel>> | undefined;
+import modelsdevSnapshot from "./modelsdev.json" with { type: "json" };
+
+const snapshotCache: Readonly<Record<string, SnapshotModel>> = (() => {
+  const cache = new Map<string, SnapshotModel>();
+  for (const [pid, provider_] of Object.entries(modelsdevSnapshot.providers ?? {})) {
+    for (const [mid, model] of Object.entries(provider_.models ?? {})) {
+      cache.set(`${pid}/${mid}`, model as SnapshotModel);
+    }
+  }
+  return Object.fromEntries(cache);
+})();
 
 /** Vendored models.dev metadata keyed `provider/model-id` (best effort). */
-export const snapshotMeta = (provider: string, upstream: string): SnapshotModel | undefined => {
-  if (snapshotCache === undefined) {
-    const cache = new Map<string, SnapshotModel>();
-    try {
-      const raw = JSON.parse(
-        Fs.readFileSync(Path.join(import.meta.dirname ?? ".", "modelsdev.json"), "utf8"),
-      ) as { providers?: Record<string, { models?: Record<string, SnapshotModel> }> };
-      for (const [pid, provider_] of Object.entries(raw.providers ?? {})) {
-        for (const [mid, model] of Object.entries(provider_.models ?? {})) {
-          cache.set(`${pid}/${mid}`, model);
-        }
-      }
-    } catch {
-      // Missing/corrupt snapshot: metadata is optional, routing is not.
-    }
-    snapshotCache = Object.fromEntries(cache);
-  }
-  return (
-    snapshotCache[`${provider}/${upstream}`] ??
-    // Z.ai routes also match the coding-plan snapshot entries.
-    snapshotCache[`zai-coding-plan/${upstream}`]
-  );
-};
+export const snapshotMeta = (provider: string, upstream: string): SnapshotModel | undefined =>
+  snapshotCache[`${provider}/${upstream}`] ??
+  // Z.ai routes also match the coding-plan snapshot entries.
+  snapshotCache[`zai-coding-plan/${upstream}`];
 
 /** Max output tokens for providers that require it (Anthropic-style). */
 export const maxOutputTokens = (route: CatalogRoute): number =>
@@ -283,4 +328,8 @@ export type StreamRequest = {
   readonly onText: (delta: string) => void;
   readonly timeoutMs: number;
   readonly idleMs: number;
+  /** Lightning-bolt speed toggle — use the model's fast route first. */
+  readonly fast?: boolean | undefined;
+  /** Reasoning level from the composer control ("low" | "medium" | "high"). */
+  readonly reasoningEffort?: string | undefined;
 };

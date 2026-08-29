@@ -347,12 +347,20 @@ export class PiHarness {
         this.daemon.touchKeepAwake();
 
         const thread = this.daemon.getThread(input.threadId);
+        const options = thread?.modelSelection.options ?? [];
+        const optionValue = (id: string): string | boolean | undefined =>
+          options.find((option) => option.id === id)?.value;
         const result = await this.daemon.router.stream({
           model: thread?.modelSelection.model ?? "",
           messages: conversation,
           signal: live.controller.signal,
           timeoutMs: this.daemon.options.routerTimeoutMs,
           idleMs: this.daemon.options.routerIdleMs,
+          fast: optionValue("fastMode") === true,
+          reasoningEffort:
+            typeof optionValue("reasoningEffort") === "string"
+              ? (optionValue("reasoningEffort") as string)
+              : undefined,
           onText: (delta) => {
             if (live.controller.signal.aborted) return;
             if (live.assistantId === undefined) {

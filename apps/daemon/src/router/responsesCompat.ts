@@ -77,6 +77,8 @@ export type ResponsesStreamInput = {
   readonly timeoutMs: number;
   readonly idleMs: number;
   readonly label: string;
+  /** Reasoning level ("low" | "medium" | "high"); omitted = provider default. */
+  readonly reasoningEffort?: string | undefined;
 };
 
 const systemText = (messages: ReadonlyArray<ChatMessage>): string => {
@@ -102,6 +104,9 @@ export const streamResponses = async (input: ResponsesStreamInput): Promise<Stre
       store: false,
       tool_choice: "auto",
       parallel_tool_calls: false,
+      ...(input.reasoningEffort === undefined
+        ? {}
+        : { reasoning: { effort: input.reasoningEffort } }),
     }),
     signal: input.signal,
   });
