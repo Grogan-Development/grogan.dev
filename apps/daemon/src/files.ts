@@ -47,6 +47,31 @@ const isSkippedDir = (name: string): boolean => SKIP_DIR_NAMES.has(name);
 
 const isProbablyBinary = (buffer: Buffer): boolean => buffer.includes(0);
 
+/**
+ * Read at most `cap` bytes without ever buffering the whole file: a multi-GB
+ * file in the workspace (agent bash can create one) must not OOM the daemon.
+ * Returns the bytes read plus the true file size for truncation reporting.
+ */
+const readBounded = (
+  path: string,
+  cap: number,
+): { readonly buffer: Buffer; readonly size: number } => {
+  const fd = Fs.openSync(path, "r");
+  try {
+    const size = Fs.fstatSync(fd).size;
+    const buffer = Buffer.allocUnsafe(Math.min(size, cap));
+    let filled = 0;
+    while (filled < buffer.byteLength) {
+      const read = Fs.readSync(fd, buffer, filled, buffer.byteLength - filled, filled);
+      if (read <= 0) break;
+      filled += read;
+    }
+    return { buffer: filled === buffer.byteLength ? buffer : buffer.subarray(0, filled), size };
+  } finally {
+    Fs.closeSync(fd);
+  }
+};
+
 export const listProjectEntries = (input: ProjectListEntriesInput): ProjectListEntriesResult => {
   const cwd = Path.resolve(input.cwd);
   let stat: Fs.Stats;
@@ -110,9 +135,9 @@ export const readProjectFile = (input: ProjectReadFileInput): ProjectReadFileRes
       resolvedPath: contained.path,
     });
   }
-  let buffer: Buffer;
+  let read: ReturnType<typeof readBounded>;
   try {
-    buffer = Fs.readFileSync(contained.path);
+    read = readBounded(contained.path, READ_CAP_BYTES);
   } catch (cause) {
     throw new ProjectReadFileError({
       cwd: input.cwd,
@@ -123,6 +148,7 @@ export const readProjectFile = (input: ProjectReadFileInput): ProjectReadFileRes
       cause,
     });
   }
+  const buffer = read.buffer;
   if (isProbablyBinary(buffer)) {
     throw new ProjectReadFileError({
       cwd: input.cwd,
@@ -131,12 +157,11 @@ export const readProjectFile = (input: ProjectReadFileInput): ProjectReadFileRes
       resolvedPath: contained.path,
     });
   }
-  const truncated = buffer.byteLength > READ_CAP_BYTES;
-  const slice = truncated ? buffer.subarray(0, READ_CAP_BYTES) : buffer;
+  const truncated = read.size > buffer.byteLength;
   return {
     relativePath: input.relativePath,
-    contents: slice.toString("utf8"),
-    byteLength: buffer.byteLength,
+    contents: buffer.toString("utf8"),
+    byteLength: read.size,
     truncated,
   };
 };
@@ -321,6 +346,11 @@ export const searchProjectContents = (
       return false;
     }
     const full = Path.join(root, relative);
+    try {
+      if (Fs.statSync(full).size > READ_CAP_BYTES) return true;
+    } catch {
+      return true;
+    }
     let buffer: Buffer;
     try {
       buffer = Fs.readFileSync(full);

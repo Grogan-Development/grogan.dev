@@ -9,6 +9,8 @@ import { MAX_SHOT_BYTES, nextToken } from "./runtime.ts";
 const DEFAULT_BASH_TIMEOUT_MS = 120_000;
 const MAX_BASH_TIMEOUT_MS = 600_000;
 const TOOL_OUTPUT_CAP = 32_000;
+// Whole-file read ceiling for the edit tool; larger files go through bash.
+const EDIT_MAX_BYTES = 8 * 1024 * 1024;
 const PNG_MAGIC = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 
 const BASH_ENV_ALLOW = new Set([
@@ -212,6 +214,15 @@ const executeEdit = (ctx: ToolContext, args: Record<string, unknown>): ToolResul
   if (oldString.length === 0) return fail("edit: `old_string` must not be empty.");
   const contained = resolveContained(ctx.workspaceRoot, path);
   if (!contained.ok) return fail("edit: path is outside the workspace root.");
+  try {
+    if (Fs.statSync(contained.path).size > EDIT_MAX_BYTES) {
+      return fail(
+        `edit: file is larger than ${EDIT_MAX_BYTES} bytes; use bash (sed/awk/python) to edit it.`,
+      );
+    }
+  } catch {
+    // Missing file: let the read below produce the error.
+  }
   let existing: string;
   try {
     existing = Fs.readFileSync(contained.path, "utf8");
@@ -234,7 +245,15 @@ const executeEdit = (ctx: ToolContext, args: Record<string, unknown>): ToolResul
   return ok(`Edited ${path} (${occurrences} replacement${occurrences === 1 ? "" : "s"}).`);
 };
 
-const isNeroRunCommand = (command: string): boolean => /\bnero-run\b/.test(command);
+export const isNeroRunCommand = (command: string): boolean => {
+  // Only an actual `nero-run` invocation (possibly after `VAR=val` prefixes)
+  // should be left detached on abort/timeout. A command that merely *mentions*
+  // nero-run, like `sleep 9999; nero-run true`, must still be killed.
+  const tokens = command.trim().split(/\s+/);
+  let i = 0;
+  while (i < tokens.length && /^[A-Za-z_][A-Za-z0-9_]*=/.test(tokens[i] ?? "")) i += 1;
+  return tokens[i] === "nero-run";
+};
 
 const killBashTree = (child: ChildProcess.ChildProcess, command: string): void => {
   if (isNeroRunCommand(command)) return;
@@ -331,11 +350,15 @@ const executeBash = async (
     const shots: ShotImage[] = [];
     if (prepared.outPath !== undefined) {
       try {
-        const fileShot = shotFromPng(
-          Fs.readFileSync(prepared.outPath),
-          Path.basename(prepared.outPath),
-        );
-        if (fileShot !== undefined) shots.push(fileShot);
+        // Check the size before reading: shot files are capped at
+        // MAX_SHOT_BYTES and a stray large file must not be buffered whole.
+        if (Fs.statSync(prepared.outPath).size <= MAX_SHOT_BYTES) {
+          const fileShot = shotFromPng(
+            Fs.readFileSync(prepared.outPath),
+            Path.basename(prepared.outPath),
+          );
+          if (fileShot !== undefined) shots.push(fileShot);
+        }
       } catch {
         // shot --out path missing; bash output still returned
       }

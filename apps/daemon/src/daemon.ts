@@ -86,6 +86,15 @@ export const SEAT_PREVIEW_TAB_ID = "seat";
 export const SEAT_VNC_URL = "/vnc/";
 export const SEAT_VNC_TITLE = "Agent seat";
 
+// Minted attachment ids are `nextToken("att")` with underscores stripped —
+// the pattern doubles as traversal protection on the attachments dir, since
+// attachment ids are joined into paths under dataDir on every entry point.
+const ATTACHMENT_ID_PATTERN = /^[A-Za-z0-9]{4,64}$/;
+// 10 MiB upload cap; a base64 dataURL of that is ~13.7M chars.
+const MAX_ATTACHMENT_DATAURL_CHARS = 14_000_000;
+
+export const validAttachmentId = (id: string): boolean => ATTACHMENT_ID_PATTERN.test(id);
+
 const headerToken = (value: string | undefined): string | undefined => {
   if (value === undefined) return undefined;
   const trimmed = value.trim();
@@ -1619,6 +1628,9 @@ export class Daemon {
   }
 
   writeAttachmentDataUrl(id: string, dataUrl: string): void {
+    // The id can come straight from a client RPC (thread.turn.start
+    // attachments), not just the minted HTTP route: treat it as untrusted.
+    if (!validAttachmentId(id) || dataUrl.length > MAX_ATTACHMENT_DATAURL_CHARS) return;
     const dest = Path.join(this.options.dataDir, "attachments", id);
     ensureDir(Path.dirname(dest));
     Fs.writeFileSync(dest, dataUrl, "utf8");
@@ -1626,6 +1638,7 @@ export class Daemon {
 
   /** Store raw upload bytes for a minted attachment id (POST /api/attachments/:id). */
   writeAttachmentBytes(id: string, bytes: Buffer): void {
+    if (!validAttachmentId(id)) return;
     const dest = Path.join(this.options.dataDir, "attachments", id);
     ensureDir(Path.dirname(dest));
     Fs.writeFileSync(dest, bytes);
@@ -1633,6 +1646,7 @@ export class Daemon {
 
   /** Remove a stored attachment; missing files are already the desired state. */
   deleteAttachment(id: string): void {
+    if (!validAttachmentId(id)) return;
     try {
       Fs.unlinkSync(Path.join(this.options.dataDir, "attachments", id));
     } catch {
@@ -1641,6 +1655,7 @@ export class Daemon {
   }
 
   readAttachmentDataUrl(id: string): string | undefined {
+    if (!validAttachmentId(id)) return undefined;
     const dest = Path.join(this.options.dataDir, "attachments", id);
     try {
       const raw = Fs.readFileSync(dest);

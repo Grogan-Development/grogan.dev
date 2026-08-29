@@ -8,6 +8,7 @@ import { describe, expect, it } from "@effect/vitest";
 import {
   executeTool,
   isNeroDesktopShotCommand,
+  isNeroRunCommand,
   parseShotOutPath,
   parseToolArguments,
   rewriteShotCommand,
@@ -173,6 +174,72 @@ fi
       else Process.env.BASETEN_API_KEY = previousBaseten;
       if (previousToken === undefined) delete Process.env.NERO_ACCESS_TOKEN;
       else Process.env.NERO_ACCESS_TOKEN = previousToken;
+    }
+  });
+
+  it("treats only actual nero-run invocations as detached", () => {
+    expect(isNeroRunCommand("nero-run blender -b scene.blend")).toBe(true);
+    expect(isNeroRunCommand("  NERO_X=1 nero-run true")).toBe(true);
+    expect(isNeroRunCommand("sleep 9999; nero-run true")).toBe(false);
+    expect(isNeroRunCommand("echo 'run it with nero-run later'")).toBe(false);
+    expect(isNeroRunCommand("cat nero-run-notes.md")).toBe(false);
+  });
+
+  it("refuses to edit files beyond the edit size cap", async () => {
+    const tmp = workspace();
+    const ctx = {
+      workspaceRoot: tmp.root,
+      homeDir: tmp.home,
+      signal: new AbortController().signal,
+    };
+    Fs.writeFileSync(Path.join(tmp.root, "big.bin"), Buffer.alloc(9 * 1024 * 1024, 7));
+    const result = await executeTool(
+      "edit",
+      JSON.stringify({ path: "big.bin", old_string: "a", new_string: "b" }),
+      ctx,
+    );
+    expect(result.failed).toBe(true);
+    expect(result.text).toContain("larger than");
+    expect(Fs.statSync(Path.join(tmp.root, "big.bin")).size).toBe(9 * 1024 * 1024);
+  });
+
+  it("skips shot files over the shot size cap instead of buffering them", async () => {
+    const tmp = workspace();
+    const bin = Path.join(tmp.root, "bin");
+    Fs.mkdirSync(bin, { recursive: true });
+    const huge = Path.join(tmp.root, "huge.png");
+    Fs.writeFileSync(
+      huge,
+      Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])]),
+    );
+    Fs.appendFileSync(huge, Buffer.alloc(11 * 1024 * 1024, 0));
+    Fs.writeFileSync(
+      Path.join(bin, "nero-desktop"),
+      `#!/bin/sh
+[ "$1" = "shot" ] || exit 1
+shift
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --out) cp ${JSON.stringify(huge)} "$2"; exit 0 ;;
+    *) shift ;;
+  esac
+done
+exit 1
+`,
+      { mode: 0o755 },
+    );
+    const previousPath = Process.env.PATH ?? "";
+    Process.env.PATH = `${bin}${Path.delimiter}${previousPath}`;
+    try {
+      const result = await executeTool("bash", JSON.stringify({ command: "nero-desktop shot" }), {
+        workspaceRoot: tmp.root,
+        homeDir: tmp.home,
+        signal: new AbortController().signal,
+      });
+      expect(result.failed).toBe(false);
+      expect(result.shots).toHaveLength(0);
+    } finally {
+      Process.env.PATH = previousPath;
     }
   });
 });

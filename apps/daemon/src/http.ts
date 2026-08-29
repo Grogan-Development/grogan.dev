@@ -26,6 +26,7 @@ import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 
 import type { Daemon } from "./daemon.ts";
+import { validAttachmentId } from "./daemon.ts";
 import {
   getLoomFeature,
   isLoomConfigured,
@@ -40,9 +41,6 @@ const json = (status: number, body: unknown) => HttpServerResponse.jsonUnsafe(bo
 
 const MAX_ASSET_BYTES = 25 * 1024 * 1024;
 const MAX_ATTACHMENT_UPLOAD_BYTES = 10 * 1024 * 1024;
-// Minted attachment ids are `nextToken("att")` with underscores stripped —
-// the pattern doubles as traversal protection on the attachments dir.
-const ATTACHMENT_ID_PATTERN = /^[A-Za-z0-9]{4,64}$/;
 
 const ASSET_MIME_BY_EXT: Record<string, string> = {
   ".png": "image/png",
@@ -125,7 +123,7 @@ const requireAuth = (daemon: Daemon) =>
     const headers = headerMap(request.headers as Record<string, string | undefined>);
     const cookies = request.cookies as Record<string, string | undefined>;
     if (!daemon.authorizeHttp(headers, cookies)) {
-      return yield* Effect.fail(authError("missing_credential"));
+      return yield* authError("missing_credential");
     }
   });
 
@@ -239,7 +237,7 @@ export const httpRoutesLayer = (daemon: Daemon) =>
                 ? body.credential
                 : "";
             if (!daemon.acceptPairingCredential(credential)) {
-              return yield* Effect.fail(authError("invalid_credential"));
+              return yield* authError("invalid_credential");
             }
             const issued = daemon.issueSession();
             const result: AuthBrowserSessionResult = {
@@ -281,7 +279,7 @@ export const httpRoutesLayer = (daemon: Daemon) =>
               }
             }
             if (!daemon.acceptPairingCredential(subjectToken)) {
-              return yield* Effect.fail(authError("invalid_credential"));
+              return yield* authError("invalid_credential");
             }
             const issued = daemon.issueSession();
             const result: AuthAccessTokenResult = {
@@ -328,11 +326,11 @@ export const httpRoutesLayer = (daemon: Daemon) =>
             const params = yield* HttpRouter.params;
             const threadId = params.threadId;
             if (threadId === undefined) {
-              return yield* Effect.fail(notFound());
+              return yield* notFound();
             }
             const snapshot = daemon.threadSnapshot(threadId);
             if (snapshot === undefined) {
-              return yield* Effect.fail(notFound());
+              return yield* notFound();
             }
             return json(200, encode(OrchestrationThreadDetailSnapshot, snapshot));
           }),
@@ -396,7 +394,7 @@ export const httpRoutesLayer = (daemon: Daemon) =>
             const snapshot = daemon.threadSnapshot(threadId);
             const thread = snapshot?.thread;
             if (thread === undefined || relativePath.length === 0) {
-              return yield* Effect.fail(notFound());
+              return yield* notFound();
             }
             // Workspace-file paths are relative to the thread's working
             // directory (worktree when set, else the project root).
@@ -406,18 +404,19 @@ export const httpRoutesLayer = (daemon: Daemon) =>
             );
             const contained = resolveContained(root, relativePath);
             if (!contained.ok) {
-              return yield* Effect.fail(notFound());
+              return yield* notFound();
             }
-            let bytes: Buffer;
-            try {
-              const stat = Fs.statSync(contained.path);
-              if (!stat.isFile() || stat.size > MAX_ASSET_BYTES) {
-                return yield* Effect.fail(notFound());
-              }
-              bytes = Fs.readFileSync(contained.path);
-            } catch {
-              return yield* Effect.fail(notFound());
+            const stat = yield* Effect.try({
+              try: () => Fs.statSync(contained.path),
+              catch: () => notFound(),
+            });
+            if (!stat.isFile() || stat.size > MAX_ASSET_BYTES) {
+              return yield* notFound();
             }
+            const bytes = yield* Effect.try({
+              try: () => Fs.readFileSync(contained.path),
+              catch: () => notFound(),
+            });
             const contentType =
               ASSET_MIME_BY_EXT[Path.extname(contained.path).toLowerCase()] ??
               "application/octet-stream";
@@ -440,7 +439,7 @@ export const httpRoutesLayer = (daemon: Daemon) =>
             const cwd = query.get("cwd") ?? "";
             const contained = resolveContained(Path.resolve(daemon.options.workspaceRoot), cwd);
             if (!contained.ok) {
-              return yield* Effect.fail(notFound());
+              return yield* notFound();
             }
             return HttpServerResponse.uint8Array(
               new Uint8Array(Buffer.from(projectFaviconSvg(contained.path), "utf8")),
@@ -606,16 +605,14 @@ export const httpRoutesLayer = (daemon: Daemon) =>
             yield* requireAuth(daemon);
             const params = yield* HttpRouter.params;
             const attachmentId = params.attachmentId ?? "";
-            if (!ATTACHMENT_ID_PATTERN.test(attachmentId)) {
-              return yield* Effect.fail(notFound());
+            if (!validAttachmentId(attachmentId)) {
+              return yield* notFound();
             }
             const file = Path.join(daemon.options.dataDir, "attachments", attachmentId);
-            let bytes: Buffer;
-            try {
-              bytes = Fs.readFileSync(file);
-            } catch {
-              return yield* Effect.fail(notFound());
-            }
+            const bytes = yield* Effect.try({
+              try: () => Fs.readFileSync(file),
+              catch: () => notFound(),
+            });
             const asText = bytes.toString("utf8");
             if (asText.startsWith("data:")) {
               const comma = asText.indexOf(",");
@@ -641,8 +638,8 @@ export const httpRoutesLayer = (daemon: Daemon) =>
             yield* requireAuth(daemon);
             const params = yield* HttpRouter.params;
             const attachmentId = params.attachmentId ?? "";
-            if (!ATTACHMENT_ID_PATTERN.test(attachmentId)) {
-              return yield* Effect.fail(notFound());
+            if (!validAttachmentId(attachmentId)) {
+              return yield* notFound();
             }
             const request = yield* HttpServerRequest.HttpServerRequest;
             const bytes = Buffer.from(yield* request.arrayBuffer);
