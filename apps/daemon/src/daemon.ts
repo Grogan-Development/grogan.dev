@@ -1636,65 +1636,71 @@ export class Daemon {
     if (current === undefined || current.deletedAt !== null) return;
     const stillThisTurn =
       current.latestTurn?.turnId === input.turnId || current.session?.activeTurnId === input.turnId;
-    if (!stillThisTurn) {
-      this.threads.set(current.id, { ...current, messages: settledMessages, updatedAt: at });
-      this.schedulePersist();
-      return;
-    }
-    const turnCount = thread.messages.filter((message) => message.role === "user").length;
-    const snapshot = this.checkpoints.capture(thread.id, turnCount);
-    const checkpointReady = snapshot.tree !== undefined;
-    const turnState = input.status === "ready" ? ("completed" as const) : input.status;
-    const session: OrchestrationSession = {
-      threadId: thread.id,
-      status: input.status,
-      providerName: "Nero",
-      providerInstanceId: ProviderInstanceId.make(NERO_INSTANCE_ID),
-      runtimeMode: thread.runtimeMode,
-      activeTurnId: null,
-      lastError: input.lastError,
-      updatedAt: at,
-    };
-    const latestTurn = {
+    const turnCount = this.userTurnCountFor(current.messages, input.turnId);
+    const snapshot = this.checkpoints.capture(current.id, turnCount);
+    const checkpointStatus = snapshot.timedOut
+      ? ("error" as const)
+      : snapshot.tree !== undefined
+        ? ("ready" as const)
+        : ("missing" as const);
+    const checkpoint = {
       turnId: input.turnId,
-      state: turnState,
-      requestedAt: thread.latestTurn?.requestedAt ?? at,
-      startedAt: thread.latestTurn?.startedAt ?? at,
-      completedAt: at,
+      checkpointTurnCount: turnCount,
+      checkpointRef: CheckpointRef.make(snapshot.tree ?? nextToken("ckpt")),
+      status: checkpointStatus,
+      files: snapshot.files.map((file) => ({
+        path: file.path,
+        kind: file.kind,
+        additions: file.additions,
+        deletions: file.deletions,
+      })),
       assistantMessageId: input.assistantMessageId,
+      completedAt: at,
     };
+    const turnState = input.status === "ready" ? ("completed" as const) : input.status;
+    const session: OrchestrationSession | null = stillThisTurn
+      ? {
+          threadId: current.id,
+          status: input.status,
+          providerName: "Nero",
+          providerInstanceId: ProviderInstanceId.make(NERO_INSTANCE_ID),
+          runtimeMode: current.runtimeMode,
+          activeTurnId: null,
+          lastError: input.lastError,
+          updatedAt: at,
+        }
+      : current.session;
+    const latestTurn = stillThisTurn
+      ? {
+          turnId: input.turnId,
+          state: turnState,
+          requestedAt: current.latestTurn?.requestedAt ?? at,
+          startedAt: current.latestTurn?.startedAt ?? at,
+          completedAt: at,
+          assistantMessageId: input.assistantMessageId,
+        }
+      : current.latestTurn;
     const next: OrchestrationThread = {
       ...current,
       messages: settledMessages,
       session,
       latestTurn,
       checkpoints: [
-        ...thread.checkpoints.filter((checkpoint) => checkpoint.turnId !== input.turnId),
-        {
-          turnId: input.turnId,
-          checkpointTurnCount: turnCount,
-          checkpointRef: CheckpointRef.make(snapshot.tree ?? nextToken("ckpt")),
-          status: checkpointReady ? "ready" : "missing",
-          files: snapshot.files.map((file) => ({
-            path: file.path,
-            kind: file.kind,
-            additions: file.additions,
-            deletions: file.deletions,
-          })),
-          assistantMessageId: input.assistantMessageId,
-          completedAt: at,
-        },
+        ...current.checkpoints.filter((entry) => entry.turnId !== input.turnId),
+        checkpoint,
       ],
       updatedAt: at,
     };
     this.threads.set(next.id, next);
-    this.setLiveTurn(next.id, null);
-    const sessionEvent: OrchestrationEvent = {
-      ...this.eventBase(input.commandId, "thread", next.id),
-      type: "thread.session-set",
-      payload: { threadId: next.id, session },
-    };
-    this.emitThreadEvent(next, sessionEvent);
+    if (stillThisTurn) this.setLiveTurn(next.id, null);
+    if (stillThisTurn && session !== null) {
+      const sessionEvent: OrchestrationEvent = {
+        ...this.eventBase(input.commandId, "thread", next.id),
+        type: "thread.session-set",
+        payload: { threadId: next.id, session },
+      };
+      this.emitThreadEvent(next, sessionEvent);
+    }
     const diffEvent: OrchestrationEvent = {
       ...this.eventBase(input.commandId, "thread", next.id),
       type: "thread.turn-diff-completed",
@@ -1702,17 +1708,25 @@ export class Daemon {
         threadId: next.id,
         turnId: input.turnId,
         checkpointTurnCount: turnCount,
-        checkpointRef:
-          next.checkpoints[next.checkpoints.length - 1]?.checkpointRef ??
-          CheckpointRef.make(nextToken("ckpt")),
-        status: checkpointReady ? "ready" : "missing",
-        files: next.checkpoints[next.checkpoints.length - 1]?.files ?? [],
+        checkpointRef: checkpoint.checkpointRef,
+        status: checkpointStatus,
+        files: checkpoint.files,
         assistantMessageId: input.assistantMessageId,
         completedAt: at,
       },
     };
     this.emitThreadEvent(next, diffEvent);
     this.schedulePersist();
+  }
+
+  private userTurnCountFor(messages: ReadonlyArray<OrchestrationMessage>, turnId: TurnId): number {
+    let count = 0;
+    for (const message of messages) {
+      if (message.role !== "user") continue;
+      count += 1;
+      if (message.turnId === turnId) return count;
+    }
+    return Math.max(count, 1);
   }
 
   getTurnDiff(input: OrchestrationGetTurnDiffInput) {

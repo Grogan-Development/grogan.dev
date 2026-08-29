@@ -5,7 +5,59 @@ import * as Process from "node:process";
 
 import { ensureDir, readJson, writeJsonAtomic } from "./runtime.ts";
 
-const SKIP_NAMES = [".git", "node_modules", ".nero", ".nero-shots", "dist", ".vite-plus"] as const;
+const SKIP_DIRS = [
+  ".git",
+  "node_modules",
+  ".nero",
+  ".nero-shots",
+  "dist",
+  ".vite-plus",
+  ".ssh",
+  ".gnupg",
+  ".aws",
+  ".cache",
+  ".local",
+  ".mozilla",
+  ".config",
+  ".docker",
+  ".kube",
+  ".password-store",
+] as const;
+
+const CHECKPOINT_EXCLUDE = [
+  ...SKIP_DIRS.map((name) => `${name}/`),
+  ".*",
+  "!.gitignore",
+  "!.gitattributes",
+  "!.editorconfig",
+  "!.nvmrc",
+  "!.node-version",
+  "!.github/",
+  "!.github/**",
+  "!.vscode/",
+  "!.vscode/**",
+  "!.cursor/",
+  "!.cursor/**",
+  "!.husky/",
+  "!.husky/**",
+  "!.devcontainer/",
+  "!.devcontainer/**",
+  ".env",
+  ".env.*",
+  "!.env.example",
+  "*.pem",
+  "*.key",
+  "id_rsa",
+  "id_ed25519",
+  "id_ecdsa",
+  "*.p12",
+  "*.pfx",
+  ".netrc",
+  ".npmrc",
+  ".pypirc",
+  "credentials",
+  "**/credentials",
+].join("\n");
 
 export type CheckpointFile = {
   readonly path: string;
@@ -17,6 +69,7 @@ export type CheckpointFile = {
 export type CheckpointDiff = {
   readonly diff: string;
   readonly files: ReadonlyArray<CheckpointFile>;
+  readonly timedOut: boolean;
 };
 
 type TreeMap = Record<string, Record<string, string>>;
@@ -29,7 +82,12 @@ const git = (
     readonly input?: string;
     readonly allowExit?: ReadonlyArray<number>;
   } = {},
-): { readonly ok: boolean; readonly stdout: string; readonly status: number | null } => {
+): {
+  readonly ok: boolean;
+  readonly stdout: string;
+  readonly status: number | null;
+  readonly timedOut: boolean;
+} => {
   const allow = options.allowExit ?? [0];
   const result = ChildProcess.spawnSync("git", args, {
     cwd: options.workTree ?? gitDir,
@@ -46,10 +104,14 @@ const git = (
   });
   const status = result.status;
   const stdout = result.stdout ?? "";
+  const timedOut =
+    result.error !== undefined &&
+    "code" in result.error &&
+    (result.error as { code?: string }).code === "ETIMEDOUT";
   if (result.error || status === null || !allow.includes(status)) {
-    return { ok: false, stdout, status };
+    return { ok: false, stdout, status, timedOut };
   }
-  return { ok: true, stdout, status };
+  return { ok: true, stdout, status, timedOut: false };
 };
 
 export class CheckpointStore {
@@ -87,8 +149,7 @@ export class CheckpointStore {
     }
     const info = Path.join(this.gitDir, "info");
     ensureDir(info);
-    const exclude = SKIP_NAMES.map((name) => `${name}/`).join("\n") + "\n";
-    Fs.writeFileSync(Path.join(info, "exclude"), exclude, "utf8");
+    Fs.writeFileSync(Path.join(info, "exclude"), `${CHECKPOINT_EXCLUDE}\n`, "utf8");
   }
 
   private emptyTreeSha(): string {
@@ -104,6 +165,14 @@ export class CheckpointStore {
     return sha !== undefined && sha.length > 0 ? sha : undefined;
   }
 
+  treeAtOrBefore(threadId: string, turnCount: number): string | undefined {
+    for (let n = Math.max(0, turnCount); n >= 0; n -= 1) {
+      const sha = this.treeFor(threadId, n);
+      if (sha !== undefined) return sha;
+    }
+    return undefined;
+  }
+
   capture(
     threadId: string,
     turnCount: number,
@@ -111,15 +180,15 @@ export class CheckpointStore {
     this.ensureRepo();
     const added = git(this.gitDir, ["add", "-A"], { workTree: this.workspaceRoot });
     if (!added.ok) {
-      return { tree: undefined, diff: "", files: [] };
+      return { tree: undefined, diff: "", files: [], timedOut: added.timedOut };
     }
     const written = git(this.gitDir, ["write-tree"], { workTree: this.workspaceRoot });
     const tree = written.stdout.trim();
     if (!written.ok || tree.length === 0) {
-      return { tree: undefined, diff: "", files: [] };
+      return { tree: undefined, diff: "", files: [], timedOut: written.timedOut };
     }
+    const previous = this.treeAtOrBefore(threadId, turnCount - 1) ?? this.emptyTreeSha();
     const threadTrees = this.trees[threadId] ?? {};
-    const previous = threadTrees[String(Math.max(0, turnCount - 1))] ?? this.emptyTreeSha();
     threadTrees[String(turnCount)] = tree;
     this.trees[threadId] = threadTrees;
     this.persist();
@@ -137,13 +206,10 @@ export class CheckpointStore {
     toTurnCount: number,
     ignoreWhitespace: boolean,
   ): CheckpointDiff {
-    const from =
-      fromTurnCount <= 0
-        ? (this.treeFor(threadId, 0) ?? this.emptyTreeSha())
-        : (this.treeFor(threadId, fromTurnCount) ?? this.emptyTreeSha());
+    const from = this.treeAtOrBefore(threadId, fromTurnCount) ?? this.emptyTreeSha();
     const to = this.treeFor(threadId, toTurnCount);
-    if (to === undefined) return { diff: "", files: [] };
-    if (from === to) return { diff: "", files: [] };
+    if (to === undefined) return { diff: "", files: [], timedOut: false };
+    if (from === to) return { diff: "", files: [], timedOut: false };
     return this.diffTrees(from, to, ignoreWhitespace);
   }
 
@@ -174,6 +240,6 @@ export class CheckpointStore {
         files.push({ path, kind, additions, deletions });
       }
     }
-    return { diff: unified.ok ? unified.stdout : "", files };
+    return { diff: unified.ok ? unified.stdout : "", files, timedOut: false };
   }
 }

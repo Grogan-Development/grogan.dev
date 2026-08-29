@@ -2,6 +2,7 @@ import * as ChildProcess from "node:child_process";
 import * as Fs from "node:fs";
 import * as Os from "node:os";
 import * as Path from "node:path";
+import * as Process from "node:process";
 
 import { describe, expect, it } from "@effect/vitest";
 
@@ -78,4 +79,54 @@ describe("checkpoint diffs", () => {
     expect(diff.diff).toContain("not in HEAD");
     expect(diff.diff).not.toContain("from git");
   });
+
+  it("walks back over a missing turn instead of diffing against the empty tree", () => {
+    const tmp = tmpDirs();
+    const store = new CheckpointStore(tmp.dataDir, tmp.workspace);
+    Fs.writeFileSync(Path.join(tmp.workspace, "seed.txt"), "seed\n");
+    store.ensureBaseline("thread-skip");
+    Fs.writeFileSync(Path.join(tmp.workspace, "after.txt"), "later\n");
+    store.capture("thread-skip", 2);
+    const fromZero = store.rangeDiff("thread-skip", 0, 2, false);
+    expect(fromZero.diff).toContain("after.txt");
+    expect(fromZero.diff).toContain("later");
+    expect(fromZero.diff).not.toMatch(/^\+seed$/m);
+    expect(fromZero.files.some((file) => file.path === "seed.txt" && file.kind === "added")).toBe(
+      false,
+    );
+    const fromMissing = store.rangeDiff("thread-skip", 1, 2, false);
+    expect(fromMissing.diff).toBe(fromZero.diff);
+  });
+
+  it("does not snapshot env keys, ssh, or browser profiles", () => {
+    const tmp = tmpDirs();
+    Fs.mkdirSync(Path.join(tmp.workspace, ".ssh"), { recursive: true });
+    Fs.mkdirSync(Path.join(tmp.workspace, ".config", "chromium"), { recursive: true });
+    Fs.writeFileSync(Path.join(tmp.workspace, ".env"), "OPENROUTER_API_KEY=secret-value\n");
+    Fs.writeFileSync(Path.join(tmp.workspace, ".ssh", "id_rsa"), "fake-private-key\n");
+    Fs.writeFileSync(Path.join(tmp.workspace, ".config", "chromium", "Cookies"), "cookie-jar\n");
+    Fs.writeFileSync(Path.join(tmp.workspace, "ok.txt"), "visible\n");
+    const store = new CheckpointStore(tmp.dataDir, tmp.workspace);
+    store.ensureBaseline("thread-secret");
+    const listed = gitLsFiles(tmp);
+    expect(listed).toContain("ok.txt");
+    expect(listed).not.toContain(".env");
+    expect(listed).not.toContain("id_rsa");
+    expect(listed).not.toContain("Cookies");
+    expect(listed).not.toContain("secret-value");
+  });
 });
+
+const gitLsFiles = (tmp: { readonly dataDir: string; readonly workspace: string }): string => {
+  const gitDir = Path.join(tmp.dataDir, "checkpoints.git");
+  const result = ChildProcess.spawnSync("git", ["ls-files"], {
+    encoding: "utf8",
+    env: {
+      ...Process.env,
+      GIT_DIR: gitDir,
+      GIT_WORK_TREE: tmp.workspace,
+      GIT_INDEX_FILE: Path.join(gitDir, "index"),
+    },
+  });
+  return result.stdout ?? "";
+};
