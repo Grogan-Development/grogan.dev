@@ -5,6 +5,8 @@ import * as Process from "node:process";
 import {
   AuthAdministrativeScopes,
   type AuthAccessStreamEvent,
+  type AuthPairingCredentialResult,
+  type AuthPairingLink,
   type AuthSessionState,
   type AuthWebSocketTicketResult,
   type ChatAttachment,
@@ -91,6 +93,14 @@ type Session = {
   readonly expiresAtMs: number;
 };
 
+type PairingRecord = {
+  readonly id: string;
+  readonly credential: string;
+  readonly label: string | undefined;
+  readonly createdAt: DateTime.Utc;
+  readonly expiresAt: DateTime.Utc;
+};
+
 type PreviewSession = PreviewSessionSnapshot;
 
 type Persisted = {
@@ -159,6 +169,7 @@ export class Daemon {
   private settings: typeof ServerSettings.Type;
   private readonly tickets = new Map<string, Ticket>();
   private readonly sessions = new Map<string, Session>();
+  private readonly pairing = new Map<string, PairingRecord>();
   private readonly previews = new Map<string, PreviewSession>();
   private previewRevision = 0;
   readonly serverEpoch = nextToken("epoch");
@@ -399,6 +410,49 @@ export class Daemon {
       expiresAtMs: DateTime.toEpochMillis(expiresAt),
     });
     return { token, expiresAt };
+  }
+
+  acceptPairingCredential(credential: string): boolean {
+    if (credential.length === 0) return false;
+    if (this.options.accessToken !== undefined && credential === this.options.accessToken) {
+      return true;
+    }
+    const now = DateTime.toEpochMillis(nowUtc());
+    for (const record of this.pairing.values()) {
+      if (record.credential === credential && DateTime.toEpochMillis(record.expiresAt) > now) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  issuePairing(label: string | undefined): AuthPairingCredentialResult {
+    const id = nextToken("pair");
+    const credential = nextToken("cred");
+    const createdAt = nowUtc();
+    const expiresAt = laterMs(24 * 60 * 60 * 1000);
+    this.pairing.set(id, { id, credential, label, createdAt, expiresAt });
+    return label === undefined
+      ? { id, credential, expiresAt }
+      : { id, credential, label, expiresAt };
+  }
+
+  pairingLinks(): AuthPairingLink[] {
+    const now = DateTime.toEpochMillis(nowUtc());
+    const links: AuthPairingLink[] = [];
+    for (const record of this.pairing.values()) {
+      if (DateTime.toEpochMillis(record.expiresAt) <= now) continue;
+      links.push({
+        id: record.id,
+        credential: record.credential,
+        scopes: [...AuthAdministrativeScopes],
+        subject: "nero",
+        createdAt: record.createdAt,
+        expiresAt: record.expiresAt,
+        ...(record.label === undefined ? {} : { label: record.label }),
+      });
+    }
+    return links;
   }
 
   private nextSequence(): number {

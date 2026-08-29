@@ -84,6 +84,10 @@ const spawnPty = (
   cols: number,
   rows: number,
   extraEnv: Record<string, string> | undefined,
+  handlers: {
+    readonly onData: (data: string) => void;
+    readonly onExit: (exitCode: number | null, signal: number | null) => void;
+  },
 ): PtyProcess => {
   const env: Record<string, string> = {};
   for (const [key, value] of Object.entries(Process.env)) {
@@ -93,24 +97,32 @@ const spawnPty = (
   if (extraEnv !== undefined) Object.assign(env, extraEnv);
   const pty = loadNodePty();
   if (pty !== null) {
-    const proc = pty.spawn(defaultShell(), [], {
-      name: "xterm-256color",
-      cols,
-      rows,
-      cwd,
-      env,
-    });
-    return {
-      pid: proc.pid,
-      write: (data) => proc.write(data),
-      resize: (c, r) => proc.resize(c, r),
-      kill: () => proc.kill(),
-      onData: (cb) => proc.onData(cb),
-      onExit: (cb) =>
-        proc.onExit((event) =>
-          cb(event.exitCode, event.signal === undefined ? null : event.signal),
-        ),
-    };
+    try {
+      const proc = pty.spawn(defaultShell(), [], {
+        name: "xterm-256color",
+        cols,
+        rows,
+        cwd,
+        env,
+      });
+      proc.onData(handlers.onData);
+      proc.onExit((event) =>
+        handlers.onExit(event.exitCode, event.signal === undefined ? null : event.signal),
+      );
+      return {
+        pid: proc.pid,
+        write: (data) => proc.write(data),
+        resize: (c, r) => proc.resize(c, r),
+        kill: () => proc.kill(),
+        onData: (cb) => proc.onData(cb),
+        onExit: (cb) =>
+          proc.onExit((event) =>
+            cb(event.exitCode, event.signal === undefined ? null : event.signal),
+          ),
+      };
+    } catch {
+      // Fall through to a pipe-backed shell when the native PTY cannot open.
+    }
   }
   const child = ChildProcess.spawn(defaultShell(), [], {
     cwd,
@@ -118,6 +130,15 @@ const spawnPty = (
     stdio: ["pipe", "pipe", "pipe"],
   });
   const pid = child.pid ?? 1;
+  child.stdout?.on("data", (chunk: Buffer | string) => handlers.onData(String(chunk)));
+  child.stderr?.on("data", (chunk: Buffer | string) => handlers.onData(String(chunk)));
+  child.on("exit", (code, signal) => {
+    const signalNumber =
+      signal === null || signal === undefined
+        ? null
+        : (Os.constants.signals[signal as keyof typeof Os.constants.signals] ?? null);
+    handlers.onExit(code, signalNumber);
+  });
   return {
     pid,
     write: (data) => child.stdin?.write(data),
@@ -326,7 +347,33 @@ export class TerminalHub {
     assertCwd(cwd);
     const existing = this.get(threadId, terminalId);
     existing?.pty?.kill();
-    const pty = spawnPty(cwd, cols, rows, env);
+    const pending: string[] = [];
+    let session: TerminalSession | undefined;
+    const onData = (data: string) => {
+      if (session === undefined) {
+        pending.push(data);
+        return;
+      }
+      session.history = `${session.history}${data}`.slice(-200_000);
+      session.snapshot = { ...session.snapshot, history: session.history };
+      const sequence = this.bump(session);
+      this.emit(session, { type: "output", threadId, terminalId, sequence, data });
+    };
+    const onExit = (exitCode: number | null, exitSignal: number | null) => {
+      if (session === undefined) return;
+      session.pty = undefined;
+      session.snapshot = {
+        ...session.snapshot,
+        status: "exited",
+        pid: null,
+        exitCode,
+        exitSignal,
+        updatedAt: nowIso(),
+      };
+      const sequence = this.bump(session);
+      this.emit(session, { type: "exited", threadId, terminalId, sequence, exitCode, exitSignal });
+    };
+    const pty = spawnPty(cwd, cols, rows, env, { onData, onExit });
     const snapshot: TerminalSessionSnapshot = {
       threadId,
       terminalId,
@@ -341,7 +388,7 @@ export class TerminalHub {
       updatedAt: nowIso(),
       sequence: (existing?.sequence ?? 0) + 1,
     };
-    const session: TerminalSession = {
+    session = {
       snapshot,
       history: snapshot.history,
       listeners: existing?.listeners ?? new Set(),
@@ -349,25 +396,7 @@ export class TerminalHub {
       sequence: snapshot.sequence ?? 0,
     };
     this.sessions.set(sessionKey(threadId, terminalId), session);
-    pty.onData((data) => {
-      session.history = `${session.history}${data}`.slice(-200_000);
-      session.snapshot = { ...session.snapshot, history: session.history };
-      const sequence = this.bump(session);
-      this.emit(session, { type: "output", threadId, terminalId, sequence, data });
-    });
-    pty.onExit((exitCode, exitSignal) => {
-      session.pty = undefined;
-      session.snapshot = {
-        ...session.snapshot,
-        status: "exited",
-        pid: null,
-        exitCode,
-        exitSignal,
-        updatedAt: nowIso(),
-      };
-      const sequence = this.bump(session);
-      this.emit(session, { type: "exited", threadId, terminalId, sequence, exitCode, exitSignal });
-    });
+    for (const data of pending) onData(data);
     this.emit(session, {
       type: "started",
       threadId,

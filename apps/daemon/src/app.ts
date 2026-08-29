@@ -51,10 +51,10 @@ export const daemonLayer = (options: DaemonOptions) => {
     }),
   ).pipe(Layer.provide(RpcSerialization.layerJson));
 
-  const RpcLive = RpcServer.layer(WsRpcGroup, { spanPrefix: "nero" }).pipe(
-    Layer.provide(makeRpcLayer(daemon)),
-    Layer.provide(ProtocolLive),
-  );
+  const RpcLive = RpcServer.layer(WsRpcGroup, {
+    spanPrefix: "nero",
+    disableFatalDefects: true,
+  }).pipe(Layer.provide(makeRpcLayer(daemon)), Layer.provide(ProtocolLive));
 
   const App = Layer.mergeAll(httpRoutesLayer(daemon), RpcLive, HttpRouter.cors());
 

@@ -13,8 +13,11 @@ import {
   RelayClientInstallFailedError,
   ServerProviderUpdateError,
   ServerSelfUpdateError,
+  type TerminalError,
   type TerminalEvent,
+  type TerminalSessionSnapshot,
   type PreviewEvent,
+  type VcsStatusStreamEvent,
   WsRpcGroup,
 } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
@@ -184,17 +187,19 @@ export const makeRpcLayer = (daemon: Daemon) =>
         expiresAt,
       });
     },
-    "attachments.createUploadUrl": (input) =>
-      Effect.succeed({
-        attachmentId: nextToken("att").replaceAll("_", ""),
-        relativeUrl: `/api/attachments/${nextToken("up").replaceAll("_", "")}`,
+    "attachments.createUploadUrl": (_input) => {
+      const attachmentId = nextToken("att").replaceAll("_", "");
+      return Effect.succeed({
+        attachmentId,
+        relativeUrl: `/api/attachments/${attachmentId}`,
         expiresAt: DateTime.toEpochMillis(laterMs(10 * 60_000)),
-      }),
+      });
+    },
     "attachments.delete": () => Effect.void,
     "provider.uploadFeedback": () => Effect.succeed({ feedbackId: "noop" }),
     subscribeVcsStatus: (input) => {
       const snapshot = vcsStatus(input);
-      return Stream.succeed({
+      const event = {
         _tag: "snapshot" as const,
         local: snapshot,
         remote: {
@@ -203,6 +208,18 @@ export const makeRpcLayer = (daemon: Daemon) =>
           behindCount: snapshot.behindCount,
           pr: snapshot.pr,
         },
+      };
+      return liveQueue<VcsStatusStreamEvent>([event], (listener) => {
+        const timer = setInterval(() => {
+          const next = vcsStatus(input);
+          listener({
+            _tag: "localUpdated",
+            local: next,
+          });
+        }, 2_000);
+        return () => {
+          clearInterval(timer);
+        };
       });
     },
     "vcs.pull": (input) => trySync(() => vcsPull(input)),
@@ -227,7 +244,9 @@ export const makeRpcLayer = (daemon: Daemon) =>
     "terminal.open": (input) => trySync(() => daemon.terminals.open(input)),
     "terminal.attach": (input) =>
       Effect.gen(function* () {
-        const snapshot = daemon.terminals.attach(input);
+        const snapshot = yield* trySync<TerminalSessionSnapshot, TerminalError>(() =>
+          daemon.terminals.attach(input),
+        );
         const session = daemon.terminals.get(input.threadId, input.terminalId);
         const queue = yield* liveQueue([{ type: "snapshot" as const, snapshot }], (listener) => {
           if (session === undefined) return () => undefined;

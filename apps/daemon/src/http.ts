@@ -1,5 +1,10 @@
 import {
+  AuthAccessTokenResult,
   AuthAccessTokenType,
+  AuthAdministrativeScopes,
+  AuthBrowserSessionResult,
+  AuthPairingCredentialResult,
+  AuthPairingLink,
   AuthSessionState,
   AuthWebSocketTicketResult,
   ClientOrchestrationCommand,
@@ -127,31 +132,106 @@ export const httpRoutesLayer = (daemon: Daemon) =>
 
       yield* router.add(
         "POST",
+        "/api/auth/pairing-token",
+        recover(
+          Effect.gen(function* () {
+            yield* requireAuth(daemon);
+            const request = yield* HttpServerRequest.HttpServerRequest;
+            const body = yield* request.json.pipe(Effect.orElseSucceed(() => ({})));
+            const label =
+              body !== null &&
+              typeof body === "object" &&
+              "label" in body &&
+              typeof body.label === "string"
+                ? body.label
+                : undefined;
+            return json(200, encode(AuthPairingCredentialResult, daemon.issuePairing(label)));
+          }),
+        ),
+      );
+
+      yield* router.add(
+        "GET",
+        "/api/auth/pairing-links",
+        recover(
+          Effect.gen(function* () {
+            yield* requireAuth(daemon);
+            return json(200, encode(Schema.Array(AuthPairingLink), daemon.pairingLinks()));
+          }),
+        ),
+      );
+
+      yield* router.add(
+        "POST",
         "/api/auth/browser-session",
-        Effect.gen(function* () {
-          const issued = daemon.issueSession();
-          return HttpServerResponse.setCookieUnsafe(
-            json(200, encode(AuthSessionState, daemon.sessionState(true))),
-            SESSION_COOKIE,
-            issued.token,
-            { httpOnly: true, path: "/", sameSite: "lax" },
-          );
-        }),
+        recover(
+          Effect.gen(function* () {
+            const request = yield* HttpServerRequest.HttpServerRequest;
+            const body = yield* request.json.pipe(Effect.orElseSucceed(() => ({})));
+            const credential =
+              body !== null &&
+              typeof body === "object" &&
+              "credential" in body &&
+              typeof body.credential === "string"
+                ? body.credential
+                : "";
+            if (!daemon.acceptPairingCredential(credential)) {
+              return yield* Effect.fail(authError("invalid_credential"));
+            }
+            const issued = daemon.issueSession();
+            const result: AuthBrowserSessionResult = {
+              authenticated: true,
+              scopes: [...AuthAdministrativeScopes],
+              sessionMethod: "browser-session-cookie",
+              expiresAt: issued.expiresAt,
+            };
+            return HttpServerResponse.setCookieUnsafe(
+              json(200, encode(AuthBrowserSessionResult, result)),
+              SESSION_COOKIE,
+              issued.token,
+              { httpOnly: true, path: "/", sameSite: "lax" },
+            );
+          }),
+        ),
       );
 
       yield* router.add(
         "POST",
         "/oauth/token",
-        Effect.gen(function* () {
-          const issued = daemon.issueSession();
-          return json(200, {
-            access_token: issued.token,
-            issued_token_type: AuthAccessTokenType,
-            token_type: "Bearer",
-            expires_in: 86_400,
-            scope: "orchestration:read orchestration:operate terminal:operate review:write",
-          });
-        }),
+        recover(
+          Effect.gen(function* () {
+            const request = yield* HttpServerRequest.HttpServerRequest;
+            const contentType = (request.headers["content-type"] ?? "").toLowerCase();
+            let subjectToken = "";
+            if (contentType.includes("application/x-www-form-urlencoded")) {
+              const text = yield* request.text;
+              subjectToken = new URLSearchParams(text).get("subject_token") ?? "";
+            } else {
+              const body = yield* request.json.pipe(Effect.orElseSucceed(() => ({})));
+              if (
+                body !== null &&
+                typeof body === "object" &&
+                "subject_token" in body &&
+                typeof body.subject_token === "string"
+              ) {
+                subjectToken = body.subject_token;
+              }
+            }
+            if (!daemon.acceptPairingCredential(subjectToken)) {
+              return yield* Effect.fail(authError("invalid_credential"));
+            }
+            const issued = daemon.issueSession();
+            const result: AuthAccessTokenResult = {
+              access_token: issued.token,
+              issued_token_type: AuthAccessTokenType,
+              token_type: "Bearer",
+              expires_in: 86_400,
+              scope:
+                "orchestration:read orchestration:operate terminal:operate review:write access:read",
+            };
+            return json(200, encode(AuthAccessTokenResult, result));
+          }),
+        ),
       );
 
       yield* router.add(

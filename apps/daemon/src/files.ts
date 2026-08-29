@@ -64,35 +64,18 @@ export const listProjectEntries = (input: ProjectListEntriesInput): ProjectListE
       failure: "workspace_root_not_directory",
     });
   }
-  let names: string[];
-  try {
-    names = Fs.readdirSync(cwd);
-  } catch (cause) {
-    throw new ProjectListEntriesError({
-      cwd: input.cwd,
-      failure: "workspace_root_stat_failed",
-      cause,
-    });
-  }
   const entries: { path: string; kind: "file" | "directory" }[] = [];
   let truncated = false;
-  for (const name of names.sort((a, b) => a.localeCompare(b))) {
+  walkEntries(cwd, cwd, (relative, kind) => {
+    if (relative.length === 0) return true;
+    entries.push({ path: relative, kind });
     if (entries.length >= LIST_CAP) {
       truncated = true;
-      break;
+      return false;
     }
-    const full = Path.join(cwd, name);
-    let entryStat: Fs.Stats;
-    try {
-      entryStat = Fs.lstatSync(full);
-    } catch {
-      continue;
-    }
-    entries.push({
-      path: name,
-      kind: entryStat.isDirectory() ? "directory" : "file",
-    });
-  }
+    return true;
+  });
+  entries.sort((a, b) => a.path.localeCompare(b.path));
   return { entries, truncated };
 };
 
