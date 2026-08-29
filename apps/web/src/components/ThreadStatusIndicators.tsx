@@ -505,7 +505,7 @@ export function ThreadRowLeadingStatus({ thread }: { thread: SidebarThreadSummar
     ),
   );
   const threadProjectCwd = threadProject?.workspaceRoot ?? null;
-  const gitCwd = thread.worktreePath ?? threadProjectCwd;
+  const gitCwd = threadProjectCwd;
   const linkedPullRequest = useLinkedThreadPullRequest(
     thread.environmentId,
     thread.linkedPullRequest,

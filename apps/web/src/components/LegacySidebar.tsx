@@ -429,7 +429,7 @@ export const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThr
     ),
   );
   const threadProjectCwd = threadProject?.workspaceRoot ?? null;
-  const gitCwd = thread.worktreePath ?? threadProjectCwd ?? props.projectCwd;
+  const gitCwd = threadProjectCwd ?? props.projectCwd;
   const gitStatus = useEnvironmentQuery(
     thread.linkedPullRequest == null && thread.branch != null && gitCwd !== null
       ? vcsEnvironment.status({
@@ -2160,8 +2160,7 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
       const threadProject = memberProjectByScopedKey.get(
         scopedProjectKey(scopeProjectRef(thread.environmentId, thread.projectId)),
       );
-      const threadWorkspacePath =
-        thread.worktreePath ?? threadProject?.workspaceRoot ?? project.workspaceRoot ?? null;
+      const threadWorkspacePath = threadProject?.workspaceRoot ?? project.workspaceRoot ?? null;
       const clicked = await api.contextMenu.show(
         [
           ...(thread.branch

@@ -19,7 +19,6 @@ import {
   ConnectionBlockedError,
   ConnectionTransientError,
   PrimaryConnectionTarget,
-  RelayConnectionTarget,
   type ConnectionAttemptError,
   type ConnectionTarget,
   type NetworkStatus,
@@ -37,18 +36,8 @@ const TARGET = new PrimaryConnectionTarget({
   wsBaseUrl: "wss://environment.example.test",
 });
 
-const RELAY_TARGET = new RelayConnectionTarget({
-  environmentId: TARGET.environmentId,
-  label: TARGET.label,
-});
-
 const TARGET_ENTRY: ConnectionCatalogEntry = {
   target: TARGET,
-  profile: Option.none(),
-};
-
-const RELAY_ENTRY: ConnectionCatalogEntry = {
-  target: RELAY_TARGET,
   profile: Option.none(),
 };
 
@@ -234,7 +223,7 @@ describe("EnvironmentSupervisor", () => {
         prepare: (attempt) =>
           attempt === 1 ? Effect.fail(transient()) : Effect.succeed(PREPARED_CONNECTION),
       });
-      const supervisor = yield* EnvironmentSupervisor.make(RELAY_ENTRY, {
+      const supervisor = yield* EnvironmentSupervisor.make(TARGET_ENTRY, {
         initiallyDesired: true,
       }).pipe(
         Effect.provide(harness.dependencies),
@@ -1079,7 +1068,7 @@ describe("EnvironmentSupervisor", () => {
   it.effect("releases and reconnects a relay session when credentials change", () =>
     Effect.gen(function* () {
       const harness = yield* makeHarness();
-      const supervisor = yield* EnvironmentSupervisor.make(RELAY_ENTRY, {
+      const supervisor = yield* EnvironmentSupervisor.make(TARGET_ENTRY, {
         initiallyDesired: true,
       }).pipe(Effect.provide(harness.dependencies));
 
@@ -1104,7 +1093,7 @@ describe("EnvironmentSupervisor", () => {
             ? Deferred.succeed(firstAttemptStarted, undefined).pipe(Effect.andThen(Effect.never))
             : Effect.succeed(PREPARED_CONNECTION),
       });
-      const supervisor = yield* EnvironmentSupervisor.make(RELAY_ENTRY, {
+      const supervisor = yield* EnvironmentSupervisor.make(TARGET_ENTRY, {
         initiallyDesired: true,
       }).pipe(Effect.provide(harness.dependencies));
 

@@ -14,7 +14,8 @@ export function projectScriptCwd(input: {
   };
   worktreePath?: string | null;
 }): string {
-  return input.worktreePath ?? input.project.cwd;
+  void input.worktreePath;
+  return input.project.cwd;
 }
 
 export function projectScriptRuntimeEnv(
@@ -23,9 +24,6 @@ export function projectScriptRuntimeEnv(
   const env: Record<string, string> = {
     T3CODE_PROJECT_ROOT: input.project.cwd,
   };
-  if (input.worktreePath) {
-    env.T3CODE_WORKTREE_PATH = input.worktreePath;
-  }
   if (input.extraEnv) {
     return { ...env, ...input.extraEnv };
   }

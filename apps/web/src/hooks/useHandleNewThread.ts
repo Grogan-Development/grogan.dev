@@ -22,13 +22,8 @@ import {
   getProjectOrderKey,
   selectProjectGroupingSettings,
 } from "../logicalProject";
-import { resolveDefaultThreadEnvMode } from "@t3tools/shared/threadEnvMode";
 import { readThreadShell, useProjects, useThread } from "../state/entities";
-import {
-  resolveNewDraftStartFromOrigin,
-  resolveNewThreadModelSelectionOverride,
-} from "../lib/chatThreadActions";
-import { readT3ProjectFileDefaultThreadEnvMode } from "../lib/t3ProjectFileDefaults";
+import { resolveNewThreadModelSelectionOverride } from "../lib/chatThreadActions";
 import { primaryServerSettingsAtom } from "../state/server";
 import { resolveThreadRouteTarget } from "../threadRoutes";
 import { legacyProjectCwdPreferenceKey, useUiStateStore } from "../uiStateStore";
@@ -47,9 +42,9 @@ interface NewThreadWorkspaceOptions {
 function pickExplicitWorkspaceOptions(options: NewThreadWorkspaceOptions | undefined) {
   return {
     ...(options?.branch !== undefined ? { branch: options.branch } : {}),
-    ...(options?.worktreePath !== undefined ? { worktreePath: options.worktreePath } : {}),
-    ...(options?.envMode !== undefined ? { envMode: options.envMode } : {}),
-    ...(options?.startFromOrigin !== undefined ? { startFromOrigin: options.startFromOrigin } : {}),
+    worktreePath: null,
+    envMode: "local" as const,
+    startFromOrigin: false,
   };
 }
 
@@ -171,22 +166,7 @@ export function useNewThreadHandler() {
             currentRouteTarget?.kind === "draft" ? currentRouteTarget.draftId : null,
           destinationDraftId,
         });
-      // The shared resolver owns the priority order. The t3.json read is
-      // skipped entirely when a higher-priority source decides, and its
-      // query atom caches per project after the first call.
-      const resolveDefaultEnvMode = async (): Promise<DraftThreadEnvMode> => {
-        const consultProjectFile = project !== undefined && project.defaultThreadEnvMode == null;
-        return resolveDefaultThreadEnvMode({
-          projectSetting: project?.defaultThreadEnvMode,
-          projectFile: consultProjectFile
-            ? await readT3ProjectFileDefaultThreadEnvMode(
-                project.environmentId,
-                project.workspaceRoot,
-              )
-            : null,
-          globalDefault: primaryServerSettings.defaultThreadEnvMode,
-        });
-      };
+      const resolveDefaultEnvMode = async (): Promise<DraftThreadEnvMode> => "local";
       const logicalProjectKey = project
         ? deriveLogicalProjectKeyFromSettings(project, projectGroupingSettings)
         : scopedProjectKey(projectRef);
@@ -275,11 +255,8 @@ export function useNewThreadHandler() {
             workspaceContext = {
               branch: null,
               worktreePath: null,
-              envMode: defaultEnvMode,
-              startFromOrigin: resolveNewDraftStartFromOrigin({
-                envMode: defaultEnvMode,
-                newWorktreesStartFromOrigin: primaryServerSettings.newWorktreesStartFromOrigin,
-              }),
+              envMode: "local",
+              startFromOrigin: false,
             };
           }
           if (workspaceContext) {
@@ -391,7 +368,7 @@ export function useNewThreadHandler() {
       const threadId = newThreadId();
       const createdAt = new Date().toISOString();
       return (async () => {
-        const initialEnvMode = options?.envMode ?? (await resolveDefaultEnvMode());
+        const initialEnvMode = await resolveDefaultEnvMode();
         // The await yields, so a concurrent invocation may have registered a
         // draft for this logical project in the meantime. Registering ours
         // too would evict that draft while its navigation is in flight —
@@ -433,14 +410,9 @@ export function useNewThreadHandler() {
           threadId,
           createdAt,
           branch: options?.branch ?? null,
-          worktreePath: options?.worktreePath ?? null,
+          worktreePath: null,
           envMode: initialEnvMode,
-          startFromOrigin:
-            options?.startFromOrigin ??
-            resolveNewDraftStartFromOrigin({
-              envMode: initialEnvMode,
-              newWorktreesStartFromOrigin: primaryServerSettings.newWorktreesStartFromOrigin,
-            }),
+          startFromOrigin: false,
           runtimeMode: carryRuntimeMode ?? DEFAULT_RUNTIME_MODE,
           ...(carryInteractionMode ? { interactionMode: carryInteractionMode } : {}),
         });

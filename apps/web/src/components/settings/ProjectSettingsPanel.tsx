@@ -20,7 +20,7 @@ import type {
   T3ProjectFileScript,
   ThreadEnvMode,
 } from "@t3tools/contracts";
-import { resolveEnvModeLabel } from "../BranchToolbar.logic";
+
 import { createModelSelection } from "@t3tools/shared/model";
 import { DEFAULT_RESOLVED_KEYBINDINGS } from "@t3tools/shared/keybindings";
 import { useCanGoBack, useNavigate } from "@tanstack/react-router";
@@ -437,17 +437,6 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
     [updateAllMembers],
   );
 
-  // ----- new-thread workspace mode -----
-  const storedEnvMode = representative.defaultThreadEnvMode ?? null;
-  const setDefaultThreadEnvMode = useCallback(
-    (mode: ThreadEnvMode | null) =>
-      void updateAllMembers(
-        { defaultThreadEnvMode: mode },
-        "Failed to update new-thread workspace",
-      ),
-    [updateAllMembers],
-  );
-
   // ----- favicon -----
   const [faviconPickerOpen, setFaviconPickerOpen] = useState(false);
   const [isSavingFavicon, setIsSavingFavicon] = useState(false);
@@ -486,10 +475,6 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
     selectedCheckout.environmentId,
     selectedCheckout.workspaceRoot,
   );
-  // What the "Default" option resolves to while no override is set: the
-  // repo's t3.json value when present, otherwise the global setting.
-  const inheritedEnvMode = t3File.file?.defaultThreadEnvMode ?? settings.defaultThreadEnvMode;
-  const inheritedEnvModeSource = t3File.file?.defaultThreadEnvMode != null ? "t3.json" : "global";
   const importableScripts = useMemo(
     () =>
       t3File.scripts.filter(
@@ -877,49 +862,6 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
               ) : (
                 <span className="text-sm text-muted-foreground">No providers available</span>
               )
-            }
-          />
-          <SettingsRow
-            title="Workspace"
-            description="Where new threads in this project start. Overrides t3.json and the global default; applies to every checkout in this group."
-            resetAction={
-              storedEnvMode !== null ? (
-                <SettingResetButton
-                  label="project workspace default"
-                  onClick={() => setDefaultThreadEnvMode(null)}
-                />
-              ) : null
-            }
-            control={
-              <Select
-                value={storedEnvMode ?? "inherit"}
-                onValueChange={(value) => {
-                  if (value === "worktree" || value === "local") {
-                    setDefaultThreadEnvMode(value);
-                  } else if (value === "inherit") {
-                    setDefaultThreadEnvMode(null);
-                  }
-                }}
-              >
-                <SelectTrigger aria-label="New-thread workspace">
-                  <SelectValue>
-                    {storedEnvMode === null
-                      ? group.memberProjects.length > 1
-                        ? "Default (per checkout)"
-                        : `Default (${resolveEnvModeLabel(inheritedEnvMode).toLowerCase()})`
-                      : resolveEnvModeLabel(storedEnvMode)}
-                  </SelectValue>
-                </SelectTrigger>
-                <SelectPopup align="end" alignItemWithTrigger={false}>
-                  <SelectItem value="inherit">
-                    {group.memberProjects.length > 1
-                      ? "Default (each checkout's t3.json or global setting)"
-                      : `Default (${inheritedEnvModeSource}: ${resolveEnvModeLabel(inheritedEnvMode).toLowerCase()})`}
-                  </SelectItem>
-                  <SelectItem value="worktree">{resolveEnvModeLabel("worktree")}</SelectItem>
-                  <SelectItem value="local">{resolveEnvModeLabel("local")}</SelectItem>
-                </SelectPopup>
-              </Select>
             }
           />
         </SettingsSection>

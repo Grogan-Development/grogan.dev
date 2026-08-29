@@ -133,22 +133,6 @@ export const SETTINGS_SEARCH_ITEMS = [
     to: "/settings/general",
   },
   {
-    id: "provider-update-checks",
-    title: "Provider update checks",
-    to: "/settings/general",
-  },
-  {
-    id: "new-threads",
-    title: "New threads",
-    to: "/settings/general",
-  },
-  {
-    id: "start-from-origin",
-    title: "Start from origin",
-    to: "/settings/general",
-    targetId: "new-threads",
-  },
-  {
     id: "add-project-starts-in",
     title: "Add project starts in",
     to: "/settings/general",

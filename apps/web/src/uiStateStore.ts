@@ -2,15 +2,15 @@ import { Debouncer } from "@tanstack/react-pacer";
 import { create } from "zustand";
 import { normalizeProjectPathForComparison } from "./lib/projectPaths";
 
-export const PERSISTED_STATE_KEY = "t3code:ui-state:v1";
+export const PERSISTED_STATE_KEY = "nero:ui-state:v1";
 const THREAD_CHANGED_FILES_EXPANSION_VERSION = 1;
 const LEGACY_PERSISTED_STATE_KEYS = [
-  "t3code:renderer-state:v8",
-  "t3code:renderer-state:v7",
-  "t3code:renderer-state:v6",
-  "t3code:renderer-state:v5",
-  "t3code:renderer-state:v4",
-  "t3code:renderer-state:v3",
+  "nero:renderer-state:v8",
+  "nero:renderer-state:v7",
+  "nero:renderer-state:v6",
+  "nero:renderer-state:v5",
+  "nero:renderer-state:v4",
+  "nero:renderer-state:v3",
   "codething:renderer-state:v4",
   "codething:renderer-state:v3",
   "codething:renderer-state:v2",

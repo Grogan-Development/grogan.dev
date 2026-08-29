@@ -135,7 +135,6 @@ import { useTheme } from "../hooks/useTheme";
 import { writeTextToClipboard } from "../hooks/useCopyToClipboard";
 import { useTurnDiffSummaries } from "../hooks/useTurnDiffSummaries";
 import { isCommandPaletteOpen } from "../commandPaletteBus";
-import { buildTemporaryWorktreeBranchName } from "@t3tools/shared/git";
 import { useMediaQuery } from "../hooks/useMediaQuery";
 import { RIGHT_PANEL_INLINE_LAYOUT_MEDIA_QUERY } from "../rightPanelLayout";
 import {
@@ -185,7 +184,7 @@ import {
   PaperclipIcon,
   WifiOffIcon,
 } from "lucide-react";
-import { cn, randomHex } from "~/lib/utils";
+import { cn } from "~/lib/utils";
 import { stackedThreadToast, toastManager } from "./ui/toast";
 import { decodeProjectScriptKeybindingRule } from "~/lib/projectScriptKeybindings";
 import { type NewProjectScriptInput } from "./ProjectScriptsControl";
@@ -835,13 +834,8 @@ const PersistentThreadTerminalDrawer = memo(function PersistentThreadTerminalDra
     reconcileTerminalIds(threadRef, serverOrderedTerminalIds);
   }, [reconcileTerminalIds, serverOrderedTerminalIds, terminalUiState.terminalIds, threadRef]);
   const [localFocusRequestId, setLocalFocusRequestId] = useState(0);
-  const worktreePath = serverThread?.worktreePath ?? draftThread?.worktreePath ?? null;
-  const effectiveWorktreePath = useMemo(() => {
-    if (launchContext !== null) {
-      return launchContext.worktreePath;
-    }
-    return worktreePath;
-  }, [launchContext, worktreePath]);
+  const worktreePath = null;
+  const effectiveWorktreePath = null;
   const cwd = useMemo(
     () =>
       launchContext?.cwd ??
@@ -1103,12 +1097,11 @@ const PersistentThreadTerminalPanel = memo(function PersistentThreadTerminalPane
     environmentId: threadRef.environmentId,
     threadId: threadRef.threadId,
   });
-  const threadWorktreePath = serverThread?.worktreePath ?? draftThread?.worktreePath ?? null;
+  const threadWorktreePath = null;
   const activeSummary =
     knownTerminalSessions.find((session) => session.target.terminalId === surface.activeTerminalId)
       ?.state.summary ?? null;
-  const worktreePath =
-    launchContext?.worktreePath ?? activeSummary?.worktreePath ?? threadWorktreePath;
+  const worktreePath = null;
   const cwd = useMemo(
     () =>
       launchContext?.cwd ??
@@ -1154,8 +1147,7 @@ const PersistentThreadTerminalPanel = memo(function PersistentThreadTerminalPane
       const summary =
         knownTerminalSessions.find((session) => session.target.terminalId === terminalId)?.state
           .summary ?? null;
-      const terminalWorktreePath =
-        launchContext?.worktreePath ?? summary?.worktreePath ?? threadWorktreePath;
+      const terminalWorktreePath = null;
       const terminalCwd =
         launchContext?.cwd ??
         summary?.cwd ??
@@ -2658,10 +2650,9 @@ function ChatViewContent(props: ChatViewProps) {
   const gitCwd = activeProject
     ? projectScriptCwd({
         project: { cwd: activeProject.workspaceRoot },
-        worktreePath: activeThread?.worktreePath ?? null,
       })
     : null;
-  const gitStatusCwd = activeThread?.worktreePath ?? gitCwd;
+  const gitStatusCwd = gitCwd;
   const gitStatusQuery = useEnvironmentQuery(
     gitStatusCwd === null
       ? null
@@ -2719,7 +2710,7 @@ function ChatViewContent(props: ChatViewProps) {
   }, [activeProviderInstanceId, providerStatuses, selectedProvider]);
   const [resumeCompactionPermanentlyDismissed, setResumeCompactionPermanentlyDismissed] =
     useLocalStorage(
-      `t3code:resume-compaction-dismissed:${environmentId}:${activeProviderInstanceId ?? "claudeAgent"}`,
+      `nero:resume-compaction-dismissed:${environmentId}:${activeProviderInstanceId ?? "claudeAgent"}`,
       false,
       Schema.Boolean,
     );
@@ -2753,8 +2744,8 @@ function ChatViewContent(props: ChatViewProps) {
     : null;
   const hasTimelineTopBanner = Boolean(visibleThreadError) || visibleProviderStatus !== null;
   const activeProjectCwd = activeProject?.workspaceRoot ?? null;
-  const activeThreadWorktreePath = activeThread?.worktreePath ?? null;
-  const activeWorkspaceRoot = activeThreadWorktreePath ?? activeProjectCwd ?? undefined;
+  const activeThreadWorktreePath = null;
+  const activeWorkspaceRoot = activeProjectCwd ?? undefined;
   const activeTerminalLaunchContext =
     terminalUiLaunchContext?.threadId === activeThreadId ? terminalUiLaunchContext : null;
   // Default true while loading to avoid toolbar flicker.
@@ -5517,14 +5508,6 @@ function ChatViewContent(props: ChatViewProps) {
     }
     const threadIdForSend = activeThread.id;
     const isFirstMessage = !isServerThread || activeThread.messages.length === 0;
-    const baseBranchForWorktree = null;
-
-    // Nero threads share the workspace cwd. Worktree-first-send is deleted.
-    const shouldCreateWorktree = false;
-    if (shouldCreateWorktree && !activeThreadBranch) {
-      setThreadError(threadIdForSend, "Select a base branch before sending in New worktree mode.");
-      return;
-    }
 
     const composerImagesSnapshot = [...composerImages];
     const composerTerminalContextsSnapshot = [...sendableComposerTerminalContexts];
@@ -5592,7 +5575,7 @@ function ChatViewContent(props: ChatViewProps) {
       await dockStarted;
     }
     beginLocalDispatch({
-      preparingWorktree: Boolean(baseBranchForWorktree),
+      preparingWorktree: false,
       submissionIntent: resolvedSubmissionIntent,
     });
 
@@ -5738,36 +5721,20 @@ function ChatViewContent(props: ChatViewProps) {
 
     let turnStartSucceeded = false;
     if (failure === null && turnAttachmentsResult._tag === "Success") {
-      const bootstrap =
-        isLocalDraftThread || baseBranchForWorktree
-          ? {
-              ...(isLocalDraftThread
-                ? {
-                    createThread: {
-                      projectId: activeProject.id,
-                      title,
-                      modelSelection: threadCreateModelSelection,
-                      runtimeMode,
-                      interactionMode,
-                      branch: activeThreadBranch,
-                      worktreePath: activeThread.worktreePath,
-                      createdAt: activeThread.createdAt,
-                    },
-                  }
-                : {}),
-              ...(baseBranchForWorktree
-                ? {
-                    prepareWorktree: {
-                      projectCwd: activeProject.workspaceRoot,
-                      baseBranch: baseBranchForWorktree,
-                      branch: buildTemporaryWorktreeBranchName(randomHex),
-                      ...(startFromOrigin ? { startFromOrigin: true } : {}),
-                    },
-                    runSetupScript: true,
-                  }
-                : {}),
-            }
-          : undefined;
+      const bootstrap = isLocalDraftThread
+        ? {
+            createThread: {
+              projectId: activeProject.id,
+              title,
+              modelSelection: threadCreateModelSelection,
+              runtimeMode,
+              interactionMode,
+              branch: activeThreadBranch,
+              worktreePath: null,
+              createdAt: activeThread.createdAt,
+            },
+          }
+        : undefined;
       beginLocalDispatch({ preparingWorktree: false });
       const backgroundThreadRef =
         resolvedSubmissionIntent === "background"
