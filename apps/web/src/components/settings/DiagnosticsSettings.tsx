@@ -854,48 +854,12 @@ export function DiagnosticsSettingsPanel() {
           },
         }),
   );
-  const [isOpeningLogsDirectory, setIsOpeningLogsDirectory] = useState(false);
-  const [openLogsDirectoryError, setOpenLogsDirectoryError] = useState<string | null>(null);
   const [signalingPid, setSignalingPid] = useState<number | null>(null);
   const signalingPidRef = useRef<number | null>(null);
   const environmentIdRef = useRef(environmentId);
   const processDataRef = useRef(processData);
   environmentIdRef.current = environmentId;
   processDataRef.current = processData;
-
-  const openLogsDirectory = useCallback(() => {
-    const logsDirectoryPath = observability?.logsDirectoryPath ?? null;
-    if (!logsDirectoryPath) return;
-
-    const editor = resolveAndPersistPreferredEditor(availableEditors ?? []);
-    if (!editor) {
-      setOpenLogsDirectoryError("No available editors found.");
-      return;
-    }
-    if (environmentId === null) {
-      setOpenLogsDirectoryError("No environment is selected.");
-      return;
-    }
-
-    setIsOpeningLogsDirectory(true);
-    setOpenLogsDirectoryError(null);
-    void (async () => {
-      const result = await openInEditor({
-        environmentId,
-        input: {
-          cwd: logsDirectoryPath,
-          editor,
-        },
-      });
-      setIsOpeningLogsDirectory(false);
-      if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
-        const error = squashAtomCommandFailure(result);
-        setOpenLogsDirectoryError(
-          error instanceof Error ? error.message : "Unable to open logs folder.",
-        );
-      }
-    })();
-  }, [availableEditors, environmentId, observability?.logsDirectoryPath, openInEditor]);
 
   const isInitialLoading = isPending && data === null;
   const isProcessInitialLoading = isProcessPending && processData === null;
@@ -1125,22 +1089,6 @@ export function DiagnosticsSettingsPanel() {
         headerAction={
           <div className="flex items-center gap-1.5">
             <DiagnosticsLastChecked checkedAt={data?.readAt ?? null} />
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <Button
-                    size="icon-micro"
-                    variant="ghost-muted"
-                    disabled={!observability?.logsDirectoryPath || isOpeningLogsDirectory}
-                    onClick={openLogsDirectory}
-                    aria-label="Open logs folder"
-                  >
-                    <FolderOpenIcon className="size-3" />
-                  </Button>
-                }
-              />
-              <TooltipPopup side="top">Open logs folder</TooltipPopup>
-            </Tooltip>
             <DiagnosticsRefreshButton
               isPending={isPending}
               label="Refresh trace diagnostics"
@@ -1172,14 +1120,8 @@ export function DiagnosticsSettingsPanel() {
             tone={data && data.parseErrorCount > 0 ? "warning" : "default"}
           />
         </StatsGrid>
-        {openLogsDirectoryError || traceDiagnosticsError || error ? (
+        {traceDiagnosticsError || error ? (
           <div className="space-y-2 border-t border-border/60 px-4 py-3 text-xs text-muted-foreground sm:px-5">
-            {openLogsDirectoryError ? (
-              <div className="flex items-start gap-2 text-destructive">
-                <AlertTriangleIcon className="mt-0.5 size-3.5 shrink-0" />
-                <span>{openLogsDirectoryError}</span>
-              </div>
-            ) : null}
             {traceDiagnosticsError ? (
               <div
                 className={cn(

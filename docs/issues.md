@@ -616,6 +616,19 @@ from it, not annotated); control plane stays landlord-only (no agent loop in
 
 ## 9. Nero Router bring-up — LIVE (2026-08-29)
 
+Browser sweep 2026-08-29 (all surfaces, live): diff panel ✓ (after
+Initialize Git — the "not a git repository" empty state was accurate; the
+agent's git experiments hadn't survived its cleanup), terminal drawer ✓,
+files browser + editor preview ✓, workspace asset routes ✓ (1.3MB PNGs),
+favicons ✓, settings render ✓, workspace switcher ✓ (state badges,
+actions menu), model picker/bolt/reasoning menu ✓. Fixed: dead
+Open-logs-folder buttons in Diagnostics (silent no-op in web — removed).
+Cataloged, not yet fixed: fresh drafts inherit the Diff right-panel
+surface ("Select ref" on a threadless draft); agent-captured seat shots
+render only via diff/files, not in the chat transcript; Diagnostics
+still shows Electron-only telemetry rows (unavailable) — web conversion
+candidate.
+
 - [x] Z.ai route end-to-end on Grid-01 (2026-08-29): `ZAI_API_KEY`/`BASETEN_API_KEY`/
       `OPENCODE_API_KEY` in `/etc/nero/host.env`, daemon + image redeployed,
       GLM turns streaming live (coding endpoint).
