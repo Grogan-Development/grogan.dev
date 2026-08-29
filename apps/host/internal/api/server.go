@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"strings"
 
+	"nero-host/authmd"
 	"nero-host/internal/auth"
 	"nero-host/internal/config"
 	"nero-host/internal/landlord"
@@ -37,6 +38,7 @@ func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", s.healthz)
 	mux.HandleFunc("GET /{$}", s.landing)
+	mux.HandleFunc("GET /auth.md", s.authMD)
 	mux.HandleFunc("GET /auth/login", s.login)
 	mux.HandleFunc("GET /auth/callback", s.callback)
 	mux.HandleFunc("GET /auth/logout", s.logout)
@@ -71,6 +73,11 @@ func (s *Server) healthz(w http.ResponseWriter, _ *http.Request) {
 func (s *Server) landing(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	_, _ = io.WriteString(w, landing.HTML)
+}
+
+func (s *Server) authMD(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
+	_, _ = io.WriteString(w, authmd.Markdown)
 }
 
 func (s *Server) login(w http.ResponseWriter, r *http.Request) {

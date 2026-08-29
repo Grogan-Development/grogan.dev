@@ -109,6 +109,47 @@ func TestHealthz(t *testing.T) {
 	}
 }
 
+func TestAuthMD(t *testing.T) {
+	ts, _, _, _ := testServer(t, false)
+	res, err := http.Get(ts.URL + "/auth.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res.Body.Close()
+	if res.StatusCode != 200 {
+		t.Fatal(res.Status)
+	}
+	ct := res.Header.Get("Content-Type")
+	if !strings.HasPrefix(ct, "text/markdown") {
+		t.Fatalf("content-type=%s", ct)
+	}
+	b, err := io.ReadAll(res.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(b)
+	for _, heading := range []string{
+		"# auth.md",
+		"## Step 1 — Discover",
+		"## Step 3 — Register",
+		"## Step 4 — Claim ceremony",
+		"## Step 5 — Exchange the assertion",
+	} {
+		if !strings.Contains(body, heading) {
+			t.Errorf("missing heading %q", heading)
+		}
+	}
+	if !strings.Contains(body, "https://nero.grogan.dev/") {
+		t.Fatal("missing Nero resource host")
+	}
+	if !strings.Contains(body, "https://nero.grogan.dev/api/workspaces") {
+		t.Fatal("missing Nero API resource")
+	}
+	if !strings.Contains(body, "AuthKit") {
+		t.Fatal("must tell agents humans stay on AuthKit")
+	}
+}
+
 func TestAuthRequiredWithoutBypass(t *testing.T) {
 	ts, _, _, _ := testServer(t, false)
 	res, err := http.Get(ts.URL + "/api/workspaces")

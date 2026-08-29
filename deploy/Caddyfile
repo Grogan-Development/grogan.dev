@@ -3,7 +3,8 @@
 #
 # grogan.dev      landing + AuthKit start (GET /auth/login, /auth/callback, /auth/logout)
 # www.grogan.dev  → grogan.dev
-# nero.grogan.dev control plane + AuthKit callback (nero-host :8080)
+# nero.grogan.dev control plane + AuthKit callback + GET /auth.md (nero-host :8080)
+# /auth.md        WorkOS agentic registration skill (public; humans stay AuthKit-only)
 # /w/*            placeholder until PR 10; strip Cookie wos-session on that proxy
 
 www.grogan.dev {
@@ -17,6 +18,10 @@ grogan.dev {
 
 nero.grogan.dev {
 	encode gzip
+
+	handle /auth.md {
+		reverse_proxy 127.0.0.1:8080
+	}
 
 	handle /w/* {
 		# PR 10: reverse_proxy to the workspace Nero daemon
