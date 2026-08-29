@@ -4,34 +4,39 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"html"
 	"io"
 	"log/slog"
 	"net/http"
 	"strings"
 
+	"nero-host/internal/auth"
 	"nero-host/internal/config"
 	"nero-host/internal/landlord"
 	"nero-host/landing"
 )
 
+const afterLoginURL = "https://nero.grogan.dev/"
+
 type Server struct {
-	cfg config.Config
-	ll  *landlord.Landlord
-	log *slog.Logger
+	cfg    config.Config
+	ll     *landlord.Landlord
+	workos auth.Client
+	log    *slog.Logger
 }
 
-func New(cfg config.Config, ll *landlord.Landlord, log *slog.Logger) *Server {
+func New(cfg config.Config, ll *landlord.Landlord, workos auth.Client, log *slog.Logger) *Server {
 	if log == nil {
 		log = slog.Default()
 	}
-	return &Server{cfg: cfg, ll: ll, log: log}
+	return &Server{cfg: cfg, ll: ll, workos: workos, log: log}
 }
 
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", s.healthz)
 	mux.HandleFunc("GET /{$}", s.landing)
+	mux.HandleFunc("GET /auth/login", s.login)
+	mux.HandleFunc("GET /auth/callback", s.callback)
 	mux.Handle("GET /api/workspaces", s.authed(s.list))
 	mux.Handle("POST /api/workspaces", s.authed(s.create))
 	mux.Handle("POST /api/workspaces/{id}/wake", s.authed(s.wake))
@@ -42,7 +47,11 @@ func (s *Server) Handler() http.Handler {
 
 func (s *Server) authed(next http.HandlerFunc) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !s.cfg.DevBypass {
+		if s.cfg.DevBypass {
+			next(w, r)
+			return
+		}
+		if _, err := auth.FromRequest(r, s.cfg.CookiePassword); err != nil {
 			writeErr(w, http.StatusUnauthorized, "unauthorized")
 			return
 		}
@@ -55,13 +64,57 @@ func (s *Server) healthz(w http.ResponseWriter, _ *http.Request) {
 }
 
 func (s *Server) landing(w http.ResponseWriter, _ *http.Request) {
-	url := s.cfg.AuthKitURL
-	if url == "" {
-		url = "#"
-	}
-	body := strings.ReplaceAll(landing.HTML, "{{WORKOS_AUTHKIT_URL}}", html.EscapeString(url))
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	_, _ = io.WriteString(w, body)
+	_, _ = io.WriteString(w, landing.HTML)
+}
+
+func (s *Server) login(w http.ResponseWriter, r *http.Request) {
+	if s.cfg.WorkOSClientID == "" {
+		writeErr(w, http.StatusInternalServerError, "workos not configured")
+		return
+	}
+	state, err := auth.RandomState()
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "state")
+		return
+	}
+	redirectURI := requestOrigin(r) + "/auth/callback"
+	loc, err := auth.AuthorizationURL(s.cfg.AuthKitURL, s.cfg.WorkOSClientID, redirectURI, state)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "authkit url")
+		return
+	}
+	http.SetCookie(w, auth.StateCookie(state, r))
+	http.Redirect(w, r, loc, http.StatusFound)
+}
+
+func (s *Server) callback(w http.ResponseWriter, r *http.Request) {
+	code := r.URL.Query().Get("code")
+	if code == "" {
+		writeErr(w, http.StatusBadRequest, "missing code")
+		return
+	}
+	if err := auth.CheckState(r); err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid state")
+		return
+	}
+	if s.workos == nil {
+		writeErr(w, http.StatusInternalServerError, "workos not configured")
+		return
+	}
+	user, err := s.workos.AuthenticateWithCode(r.Context(), code)
+	if err != nil {
+		writeErr(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+	sealed, err := auth.Seal(auth.Session{UserID: user.ID, Email: user.Email}, s.cfg.CookiePassword)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "session")
+		return
+	}
+	auth.ClearStateCookie(w)
+	http.SetCookie(w, auth.SessionCookie(sealed, r))
+	http.Redirect(w, r, afterLoginURL, http.StatusFound)
 }
 
 func (s *Server) list(w http.ResponseWriter, _ *http.Request) {
@@ -130,6 +183,14 @@ func (s *Server) heartbeat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, ws)
+}
+
+func requestOrigin(r *http.Request) string {
+	proto := "http"
+	if r.TLS != nil || strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https") {
+		proto = "https"
+	}
+	return proto + "://" + r.Host
 }
 
 func writeLandlordErr(w http.ResponseWriter, err error) {

@@ -1,9 +1,9 @@
 # Nero v1 — Grid-01
 # TLS via Caddy defaults (Let's Encrypt). Set NERO_ACME_EMAIL if you want a contact on the account.
 #
-# grogan.dev      landing (nero-host GET /)
+# grogan.dev      landing + AuthKit start (GET /auth/login, GET /auth/callback)
 # www.grogan.dev  → grogan.dev
-# nero.grogan.dev control plane (nero-host :8080)
+# nero.grogan.dev control plane + AuthKit callback (nero-host :8080)
 # /w/*            placeholder until PR 10 wires workspace daemons
 
 www.grogan.dev {

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"nero-host/internal/api"
+	"nero-host/internal/auth"
 	"nero-host/internal/config"
 	"nero-host/internal/landlord"
 	"nero-host/internal/runtime"
@@ -44,7 +45,7 @@ func main() {
 
 	srv := &http.Server{
 		Addr:              cfg.Listen,
-		Handler:           api.New(cfg, ll, log).Handler(),
+		Handler:           api.New(cfg, ll, auth.NewAPI(cfg.WorkOSAPIKey, cfg.WorkOSClientID), log).Handler(),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 	go func() {

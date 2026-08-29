@@ -1,6 +1,6 @@
 # Nero host (Grid-01)
 
-Landlord only: AuthKit session later (PR 6), workspace create/stop/wake/queue, cgroups, Caddy. No agent loop.
+Landlord only: AuthKit session, workspace create/stop/wake/queue, cgroups, Caddy. No agent loop.
 
 ## Build
 
@@ -29,22 +29,27 @@ Put values in `/etc/nero/host.env` (mode `0600`, **not in git**). systemd `Envir
 | --- | --- | --- |
 | `NERO_LISTEN` | `:8080` | Landlord HTTP bind |
 | `NERO_DEV_BYPASS` | unset | `1` skips auth. **Local tests only.** Do not set on the public host. |
-| `WORKOS_AUTHKIT_URL` | empty | Portal button `href` on grogan.dev landing. AuthKit itself is PR 6. |
+| `WORKOS_API_KEY` | empty | User Management API key (`client_secret` on `authorization_code` exchange). |
+| `WORKOS_CLIENT_ID` | empty | AuthKit / User Management client id. |
+| `WORKOS_AUTHKIT_URL` | `https://api.workos.com/user_management/authorize` | Hosted UI start URL. `/auth/login` redirects here with `provider=authkit`. |
+| `WORKOS_COOKIE_PASSWORD` | empty | Seals the `wos-session` cookie. **≥32 characters.** `openssl rand -base64 32`. |
 | `NERO_GUEST_IMAGE` | `nero-guest:v1` | Image from PR 2. `docker create` requires the image; failure rolls back the dataset. |
 | `NERO_ZFS_POOL` | `grid` | Datasets at `{pool}/nero/{id}` |
 | `NERO_WS_MOUNT` | `/var/lib/nero/ws` | Bind-mounted at `/home/nero` in the container |
 | `NERO_IDLE_TICK` | `10s` | How often the host reconciles idle stop |
 
-WorkOS client id/secret, OpenRouter keys, and AuthKit cookie material belong in that env file or a later secret store — never in this repo.
+WorkOS keys and AuthKit cookie material belong in that env file — never in this repo.
 
-Until PR 6, `/api/*` returns 401 unless `NERO_DEV_BYPASS=1`. Healthz and landing are public.
+`GET/POST /api/workspaces*` requires a valid `wos-session` cookie unless `NERO_DEV_BYPASS=1`. Healthz, landing, `/auth/login`, and `/auth/callback` are public.
 
 ## API
 
 JSON. Path IDs are workspace ids.
 
 - `GET /healthz`
-- `GET /` — grogan.dev landing; portal `href` from `WORKOS_AUTHKIT_URL`
+- `GET /` — grogan.dev landing; portal starts AuthKit via `/auth/login`
+- `GET /auth/login` — redirect to AuthKit hosted UI (`provider=authkit`)
+- `GET /auth/callback` — User Management `authorization_code` exchange; sets session; redirect to `https://nero.grogan.dev/`
 - `GET /api/workspaces`
 - `POST /api/workspaces` body `{ "name": "optional" }` — ZFS dataset + docker create; start or FIFO-queue per admission
 - `POST /api/workspaces/:id/wake`
@@ -85,13 +90,18 @@ Host ticker. Keep-awake is UI `connected`, `agentWorking`, or `jobRunning` (gues
 
 Each idle tick reconciles `docker ps` (exited guests free a slot; unknown running nero containers are adopted then packed) and re-applies `memory.high`.
 
-## Caddy / AuthKit redirect URIs (PR 6)
+## Caddy / AuthKit redirect URIs
 
 Sites: `https://grogan.dev`, `https://www.grogan.dev` (redir), `https://nero.grogan.dev`.
 
-When AuthKit is wired, register at least:
+Register in the WorkOS dashboard (Redirects):
 
-- `https://grogan.dev/callback` (or whatever AuthKit path WorkOS issues)
-- `https://nero.grogan.dev/callback`
+- Redirect URIs:
+  - `https://grogan.dev/auth/callback`
+  - `https://nero.grogan.dev/auth/callback`
+- Initiate login URL: `https://grogan.dev/auth/login` (also valid: `https://nero.grogan.dev/auth/login`)
+- Sign-out redirect: `https://grogan.dev/`
+
+Flow: grogan.dev portal → `/auth/login` → AuthKit hosted UI → `/auth/callback` (`grant_type=authorization_code`) → `wos-session` cookie (`Domain=grogan.dev`, so `nero.grogan.dev` receives it) → `https://nero.grogan.dev/`.
 
 `/w/*` on `nero.grogan.dev` is a 501 placeholder until PR 10.
