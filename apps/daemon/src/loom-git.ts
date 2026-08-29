@@ -8,6 +8,7 @@
 import * as ChildProcess from "node:child_process";
 import * as Fs from "node:fs";
 import * as Path from "node:path";
+import * as Process from "node:process";
 
 import { loomConfig } from "./loom.ts";
 
@@ -43,6 +44,9 @@ const runGit = (
     encoding: "utf8",
     timeout: GIT_TIMEOUT_MS,
     maxBuffer: 16 * 1024 * 1024,
+    // Never let git stop to ask for credentials (a 401 would hang the
+    // daemon's event loop on a read from the terminal).
+    env: { ...Process.env, GIT_TERMINAL_PROMPT: "0", GIT_ASKPASS: "/bin/true" },
   });
   return {
     ok: result.status === 0 && result.error === undefined,
