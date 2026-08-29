@@ -111,6 +111,10 @@ cleanup() {
     hb_pid=""
   fi
   rm -f "${errtmp}"
+  # A heartbeat curl still in flight when the subshell died could land its
+  # {"running":true} after the unpin below (host is last-write-wins); give
+  # it a moment to drain so the unpin really is the last write.
+  sleep 0.3 2>/dev/null || true
   # Unpin only after the job is gone: posting false while the scope is still
   # alive lets idle-stop reap a live bake after the grace period.
   job_heartbeat false

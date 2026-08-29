@@ -1,6 +1,7 @@
 import * as Fs from "node:fs";
 import * as Path from "node:path";
 import * as Process from "node:process";
+import * as Crypto from "node:crypto";
 
 import {
   ModelCapabilities,
@@ -101,6 +102,14 @@ const headerToken = (value: string | undefined): string | undefined => {
   if (trimmed.length === 0) return undefined;
   if (trimmed.toLowerCase().startsWith("bearer ")) return trimmed.slice(7).trim();
   return trimmed;
+};
+
+/** Constant-time string comparison for bearer tokens and session tokens. */
+const safeEqual = (a: string, b: string): boolean => {
+  const left = Buffer.from(a, "utf8");
+  const right = Buffer.from(b, "utf8");
+  if (left.length !== right.length) return false;
+  return Crypto.timingSafeEqual(left, right);
 };
 
 export class Hub<T> {
@@ -252,7 +261,9 @@ const attachmentFromUnknown = (raw: unknown): ChatAttachment | undefined => {
   const name = typeof value.name === "string" ? value.name : "attachment";
   const mimeType = typeof value.mimeType === "string" ? value.mimeType : "application/octet-stream";
   const sizeBytes = typeof value.sizeBytes === "number" ? value.sizeBytes : 1;
-  const id = typeof value.id === "string" ? value.id : nextToken("att").replaceAll(".", "");
+  // `nextToken("att")` emits underscores, which the attachment-id guard
+  // rejects — strip them or minted ids never persist.
+  const id = typeof value.id === "string" ? value.id : nextToken("att").replaceAll("_", "");
   if (type === "image") {
     return { type: "image", id, name, mimeType, sizeBytes };
   }
@@ -333,16 +344,39 @@ export class Daemon {
     if (raw === undefined || raw === null || typeof raw !== "object") return;
     const state = raw as Persisted;
     if (state.version !== 1) return;
-    this.sequence = state.sequence;
-    this.settings = decodeSettings(state.settings);
-    for (const project of state.projects) this.projects.set(project.id, project);
-    for (const thread of state.threads) {
-      this.threads.set(thread.id, {
-        ...thread,
-        messages: thread.messages.map((message) =>
-          message.streaming ? { ...message, streaming: false } : message,
-        ),
-      });
+    try {
+      // Decode into locals first: a poisoned file must leave defaults in
+      // place, not a half-restored daemon.
+      const sequence = state.sequence;
+      const settings = decodeSettings(state.settings);
+      const projects = new Map<string, OrchestrationProject>();
+      const threads = new Map<string, OrchestrationThread>();
+      for (const project of state.projects ?? []) projects.set(project.id, project);
+      for (const thread of state.threads ?? []) {
+        threads.set(thread.id, {
+          ...thread,
+          messages: thread.messages.map((message) =>
+            message.streaming ? { ...message, streaming: false } : message,
+          ),
+        });
+      }
+      this.sequence = sequence;
+      this.settings = settings;
+      this.projects = projects;
+      this.threads = threads;
+    } catch (error) {
+      // A file the daemon cannot decode would otherwise crash-loop the guest
+      // service on every boot. Quarantine it and start from defaults.
+      const quarantine = `${this.persistPath()}.corrupt-${Date.now()}`;
+      try {
+        Fs.renameSync(this.persistPath(), quarantine);
+      } catch {
+        // Best-effort; overwriting on next persist is also acceptable.
+      }
+      console.error(
+        `[nero] orchestration state was unreadable; quarantined to ${quarantine}:`,
+        error instanceof Error ? error.message : error,
+      );
     }
   }
 
@@ -521,19 +555,23 @@ export class Daemon {
       headerToken(headers["x-nero-access"] ?? headers["X-Nero-Access"]),
       headerToken(headers.authorization ?? headers.Authorization),
     ];
+    const nowMs = DateTime.toEpochMillis(nowUtc());
+    const matchesSession = (token: string): boolean => {
+      for (const session of this.sessions.values()) {
+        if (safeEqual(session.token, token) && session.expiresAtMs > nowMs) return true;
+      }
+      return false;
+    };
     for (const token of candidates) {
       if (token === undefined) continue;
-      if (this.options.accessToken !== undefined && token === this.options.accessToken) return true;
-      for (const session of this.sessions.values()) {
-        if (session.token === token && session.expiresAtMs > DateTime.toEpochMillis(nowUtc()))
-          return true;
-      }
+      if (this.options.accessToken !== undefined && safeEqual(this.options.accessToken, token))
+        return true;
+      if (matchesSession(token)) return true;
     }
     const cookie = cookies[SESSION_COOKIE];
     if (cookie !== undefined) {
       const session = this.sessions.get(cookie);
-      if (session !== undefined && session.expiresAtMs > DateTime.toEpochMillis(nowUtc()))
-        return true;
+      if (session !== undefined && session.expiresAtMs > nowMs) return true;
     }
     return false;
   }
@@ -1140,18 +1178,45 @@ export class Daemon {
         this.checkpoints.restoreTree(command.threadId, command.turnCount);
         this.checkpoints.pruneAfter(command.threadId, command.turnCount);
         this.patchThread(command.threadId, command.commandId, (thread) => {
-          const userTurns = thread.messages.filter((message) => message.role === "user");
-          const cutoff = userTurns[command.turnCount]?.createdAt;
-          const messages =
-            cutoff === undefined
-              ? thread.messages
-              : thread.messages.filter((message) => message.createdAt < cutoff);
+          // Cut at the index of the first user message to drop (clock-free,
+          // so browser/daemon skew cannot keep or drop the wrong tail).
+          let seenUsers = 0;
+          let cutAt = thread.messages.length;
+          for (let index = 0; index < thread.messages.length; index += 1) {
+            if (thread.messages[index]?.role !== "user") continue;
+            if (seenUsers === command.turnCount) {
+              cutAt = index;
+              break;
+            }
+            seenUsers += 1;
+          }
+          const messages = thread.messages.slice(0, cutAt);
+          const droppedTurnIds = new Set(
+            thread.messages
+              .slice(cutAt)
+              .map((message) => message.turnId)
+              .filter((turnId): turnId is TurnId => turnId !== null),
+          );
           const checkpoints = thread.checkpoints.filter(
             (entry) => entry.checkpointTurnCount <= command.turnCount,
           );
+          const activities = thread.activities.filter(
+            (entry) => entry.turnId === null || !droppedTurnIds.has(entry.turnId),
+          );
+          const proposedPlans = thread.proposedPlans.filter(
+            (entry) => entry.turnId === null || !droppedTurnIds.has(entry.turnId),
+          );
           const updatedAt = nowIso();
           return {
-            thread: { ...thread, messages, checkpoints, latestTurn: null, updatedAt },
+            thread: {
+              ...thread,
+              messages,
+              checkpoints,
+              activities,
+              proposedPlans,
+              latestTurn: null,
+              updatedAt,
+            },
             type: "thread.reverted",
             payload: { threadId: thread.id, turnCount: command.turnCount },
           };

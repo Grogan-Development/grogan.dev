@@ -183,16 +183,20 @@ docker create \
   --cpu-shares=1024 \     # cpu.weight; do not pass --cpus
   --stop-timeout 20 \
   --stop-signal SIGRTMIN+3 \
+  --hostname ws-<id> \
   --publish 127.0.0.1::8787 \
-  --tmpfs /tmp --tmpfs /run --tmpfs /run/lock \
+  --add-host host.docker.internal:host-gateway \   # NERO_HOST_URL depends on this
+  --tmpfs /tmp:rw,nosuid,nodev,exec,mode=1777 \    # exec: pip/venv/compilers stage binaries in /tmp
+  --tmpfs /run --tmpfs /run/lock \
   --shm-size 1g \
+  --privileged \          # guest systemd + cgroup scopes; a guest escape is host root
   --mount type=bind,source=/var/lib/nero/ws/<id>,target=/home/nero \
   --env NERO_WORKSPACE_ID=<id> \
   --env NERO_ENVIRONMENT_ID=<id> \
   --env ZAI_API_KEY=... \
   --env BASETEN_API_KEY=... \
-  --env NERO_ACCESS_TOKEN=... \
-  --env NERO_HOST_TOKEN=... \
+  --env NERO_ACCESS_TOKEN=<derived> \   # HMAC(secret, "nero-workspace-token:"+id), never the raw secret
+  --env NERO_HOST_TOKEN=<derived> \
   ...
 ```
 

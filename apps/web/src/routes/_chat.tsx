@@ -36,15 +36,20 @@ const WORKSPACE_HEARTBEAT_INTERVAL_MS = 30_000;
  * "connected" heartbeat, so every mounted /w/:id route pins its workspace:
  * POST /api/workspaces/:id/heartbeat {"connected":true} every 30s while the
  * route is mounted and the tab is visible. Hidden/closed tabs (and SPA
- * navigation away) unpin via sendBeacon so scale-to-zero stays honest. The
- * picker route ("/") never pins — listing must not keep anything awake.
+ * navigation away) unpin via fetch keepalive so scale-to-zero stays honest.
+ * The picker route ("/") never pins — listing must not keep anything awake.
  */
 function NeroWorkspaceHeartbeat({ workspaceId }: { readonly workspaceId: string }) {
   const hasSurfacedAuthErrorRef = useRef(false);
 
   useEffect(() => {
     let timer: ReturnType<typeof setInterval> | null = null;
-    let isStopped = false;
+    // `authStopped` (session expired) halts everything. `disposed` (the
+    // effect unmounted) must NOT suppress the corrective unpin: an in-flight
+    // pin that settles after unmount is exactly the case the corrective
+    // exists to undo.
+    let authStopped = false;
+    let disposed = false;
     // Monotonic watermark for the unpin-vs-inflight-pin race: an unpin
     // beacon can reach the host BEFORE a pin that is still in flight, and
     // the host applies last-write-wins — which would re-pin a hidden or
@@ -63,12 +68,12 @@ function NeroWorkspaceHeartbeat({ workspaceId }: { readonly workspaceId: string 
       try {
         await pinNeroWorkspace(workspaceId);
       } catch (error) {
-        if (isStopped || !isNeroHostAuthError(error)) {
+        if (disposed || authStopped || !isNeroHostAuthError(error)) {
           // Transient failures keep the loop; the next tick retries.
           return;
         }
         // AuthKit session gone: stop pinning and surface sign-in once.
-        isStopped = true;
+        authStopped = true;
         stopPolling();
         if (hasSurfacedAuthErrorRef.current) {
           return;
@@ -90,7 +95,7 @@ function NeroWorkspaceHeartbeat({ workspaceId }: { readonly workspaceId: string 
         );
         return;
       }
-      if (unpinRequestedAt >= startedAt && !isStopped) {
+      if (unpinRequestedAt >= startedAt && !authStopped) {
         correctiveUnpinNeroWorkspace(workspaceId);
       }
     };
@@ -103,17 +108,17 @@ function NeroWorkspaceHeartbeat({ workspaceId }: { readonly workspaceId: string 
     const onVisibilityChange = () => {
       if (document.visibilityState === "hidden") {
         unpin();
-      } else if (!isStopped) {
+      } else if (!authStopped && !disposed) {
         void pin();
       }
     };
     // A tab that mounts hidden (background restore) must not pin: the
     // interval skips hidden tabs, so one stray pin would last 20 minutes.
-    if (document.visibilityState === "visible" && !isStopped) {
+    if (document.visibilityState === "visible" && !authStopped) {
       void pin();
     }
     timer = setInterval(() => {
-      if (isStopped || document.visibilityState !== "visible") {
+      if (authStopped || disposed || document.visibilityState !== "visible") {
         return;
       }
       void pin();
@@ -121,7 +126,7 @@ function NeroWorkspaceHeartbeat({ workspaceId }: { readonly workspaceId: string 
     document.addEventListener("visibilitychange", onVisibilityChange);
     window.addEventListener("pagehide", unpin);
     return () => {
-      isStopped = true;
+      disposed = true;
       stopPolling();
       document.removeEventListener("visibilitychange", onVisibilityChange);
       window.removeEventListener("pagehide", unpin);

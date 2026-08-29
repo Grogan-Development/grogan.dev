@@ -89,103 +89,140 @@ const systemText = (messages: ReadonlyArray<ChatMessage>): string => {
 };
 
 export const streamResponses = async (input: ResponsesStreamInput): Promise<StreamChatResult> => {
-  const response = await fetch(input.url, {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      accept: "text/event-stream",
-      ...input.headers,
-    },
-    body: JSON.stringify({
-      model: input.model,
-      instructions: input.instructions.length > 0 ? input.instructions : systemText(input.messages),
-      input: toResponsesInput(input.messages.filter((message) => message.role !== "system")),
-      stream: true,
-      store: false,
-      tool_choice: "auto",
-      parallel_tool_calls: false,
-      ...(input.reasoningEffort === undefined
-        ? {}
-        : { reasoning: { effort: input.reasoningEffort } }),
-    }),
-    signal: input.signal,
-  });
-  if (!response.ok || response.body === null) {
-    const text = response.body === null ? "" : await response.text();
-    throw new Error(`${input.label} HTTP ${response.status}: ${text.slice(0, 800)}`);
-  }
-
-  const tools = new Map<number, { callId: string; name: string; arguments: string }>();
-  let content = "";
-  let finishReason: string | null = null;
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
-  const onEvent = (name: string, payload: Record<string, unknown>): void => {
-    if (name === "response.output_text.delta" && typeof payload.delta === "string") {
-      content += payload.delta;
-      input.onText(payload.delta);
-      return;
-    }
-    if (name === "response.output_item.added") {
-      const item = payload.item as Record<string, unknown> | undefined;
-      if (item !== undefined && item.type === "function_call") {
-        const index = typeof payload.output_index === "number" ? payload.output_index : tools.size;
-        tools.set(index, {
-          callId: typeof item.call_id === "string" ? item.call_id : `call_${index + 1}`,
-          name: typeof item.name === "string" ? item.name : "",
-          arguments: typeof item.arguments === "string" ? item.arguments : "",
-        });
-      }
-      return;
-    }
-    if (name === "response.function_call_arguments.delta") {
-      const index = typeof payload.output_index === "number" ? payload.output_index : 0;
-      const current = tools.get(index) ?? { callId: `call_${index + 1}`, name: "", arguments: "" };
-      if (typeof payload.delta === "string") current.arguments += payload.delta;
-      tools.set(index, current);
-      return;
-    }
-    if (name === "response.completed" || name === "response.incomplete") {
-      const resp = payload.response as Record<string, unknown> | undefined;
-      if (resp !== undefined && typeof resp.status === "string") {
-        finishReason = resp.status === "completed" ? "stop" : resp.status;
-      }
-    }
+  // The outer abort comes from the harness (user interrupt); the controller
+  // additionally enforces a connect timeout and a per-chunk idle timeout —
+  // without them a stalled provider stream hangs the turn forever while the
+  // keep-awake pulse keeps the workspace pinned.
+  const controller = new AbortController();
+  const onOuterAbort = () => controller.abort();
+  if (input.signal.aborted) controller.abort();
+  input.signal.addEventListener("abort", onOuterAbort, { once: true });
+  let connectTimer: ReturnType<typeof setTimeout> | undefined;
+  let idleTimer: ReturnType<typeof setTimeout> | undefined;
+  const armIdle = () => {
+    if (idleTimer !== undefined) clearTimeout(idleTimer);
+    idleTimer = setTimeout(
+      () => controller.abort(new Error(`${input.label} idle timeout after ${input.idleMs}ms`)),
+      input.idleMs,
+    );
   };
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    for (;;) {
-      const nl = buffer.indexOf("\n");
-      if (nl < 0) break;
-      let line = buffer.slice(0, nl);
-      buffer = buffer.slice(nl + 1);
-      if (line.endsWith("\r")) line = line.slice(0, -1);
-      if (!line.startsWith("data:")) continue;
-      const data = line.slice(5).trim();
-      if (data.length === 0) continue;
-      let parsed: unknown;
-      try {
-        parsed = JSON.parse(data) as unknown;
-      } catch {
-        continue;
+  connectTimer = setTimeout(
+    () => controller.abort(new Error(`${input.label} timeout after ${input.timeoutMs}ms`)),
+    input.timeoutMs,
+  );
+  try {
+    const response = await fetch(input.url, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        accept: "text/event-stream",
+        ...input.headers,
+      },
+      body: JSON.stringify({
+        model: input.model,
+        instructions:
+          input.instructions.length > 0 ? input.instructions : systemText(input.messages),
+        input: toResponsesInput(input.messages.filter((message) => message.role !== "system")),
+        stream: true,
+        store: false,
+        tool_choice: "auto",
+        parallel_tool_calls: false,
+        ...(input.reasoningEffort === undefined
+          ? {}
+          : { reasoning: { effort: input.reasoningEffort } }),
+      }),
+      signal: controller.signal,
+    });
+    clearTimeout(connectTimer);
+    connectTimer = undefined;
+    if (!response.ok || response.body === null) {
+      const text = response.body === null ? "" : await response.text();
+      throw new Error(`${input.label} HTTP ${response.status}: ${text.slice(0, 800)}`);
+    }
+    armIdle();
+
+    const tools = new Map<number, { callId: string; name: string; arguments: string }>();
+    let content = "";
+    let finishReason: string | null = null;
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    const onEvent = (name: string, payload: Record<string, unknown>): void => {
+      if (name === "response.output_text.delta" && typeof payload.delta === "string") {
+        content += payload.delta;
+        input.onText(payload.delta);
+        return;
       }
-      if (parsed === null || typeof parsed !== "object") continue;
-      const record = parsed as Record<string, unknown>;
-      if (typeof record.type === "string") {
-        onEvent(record.type, record);
+      if (name === "response.output_item.added") {
+        const item = payload.item as Record<string, unknown> | undefined;
+        if (item !== undefined && item.type === "function_call") {
+          const index =
+            typeof payload.output_index === "number" ? payload.output_index : tools.size;
+          tools.set(index, {
+            callId: typeof item.call_id === "string" ? item.call_id : `call_${index + 1}`,
+            name: typeof item.name === "string" ? item.name : "",
+            arguments: typeof item.arguments === "string" ? item.arguments : "",
+          });
+        }
+        return;
+      }
+      if (name === "response.function_call_arguments.delta") {
+        const index = typeof payload.output_index === "number" ? payload.output_index : 0;
+        const current = tools.get(index) ?? {
+          callId: `call_${index + 1}`,
+          name: "",
+          arguments: "",
+        };
+        if (typeof payload.delta === "string") current.arguments += payload.delta;
+        tools.set(index, current);
+        return;
+      }
+      if (name === "response.completed" || name === "response.incomplete") {
+        const resp = payload.response as Record<string, unknown> | undefined;
+        if (resp !== undefined && typeof resp.status === "string") {
+          finishReason = resp.status === "completed" ? "stop" : resp.status;
+        }
+      }
+    };
+    for (;;) {
+      const { done, value } = await reader.read();
+      armIdle();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      for (;;) {
+        const nl = buffer.indexOf("\n");
+        if (nl < 0) break;
+        let line = buffer.slice(0, nl);
+        buffer = buffer.slice(nl + 1);
+        if (line.endsWith("\r")) line = line.slice(0, -1);
+        if (!line.startsWith("data:")) continue;
+        const data = line.slice(5).trim();
+        if (data.length === 0) continue;
+        let parsed: unknown;
+        try {
+          parsed = JSON.parse(data) as unknown;
+        } catch {
+          continue;
+        }
+        if (parsed === null || typeof parsed !== "object") continue;
+        const record = parsed as Record<string, unknown>;
+        if (typeof record.type === "string") {
+          onEvent(record.type, record);
+        }
       }
     }
-  }
 
-  const toolCalls: ToolCall[] = [...tools.values()]
-    .filter((tool) => tool.name.length > 0)
-    .map((tool) => ({
-      id: tool.callId,
-      type: "function",
-      function: { name: tool.name, arguments: tool.arguments },
-    }));
-  return { content, toolCalls, finishReason };
+    const toolCalls: ToolCall[] = [...tools.values()]
+      .filter((tool) => tool.name.length > 0)
+      .map((tool) => ({
+        id: tool.callId,
+        type: "function",
+        function: { name: tool.name, arguments: tool.arguments },
+      }));
+    return { content, toolCalls, finishReason };
+  } finally {
+    if (connectTimer !== undefined) clearTimeout(connectTimer);
+    if (idleTimer !== undefined) clearTimeout(idleTimer);
+    input.signal.removeEventListener("abort", onOuterAbort);
+  }
 };

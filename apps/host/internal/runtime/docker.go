@@ -169,8 +169,14 @@ func (d *Docker) StartContainer(ctx context.Context, id string) error {
 	// exactly the host-OOM scenario PLAN forbids. Dev hosts (macOS) have no
 	// cgroupfs and keep the old best-effort behavior.
 	if err := d.ApplyCgroup(ctx, id); err != nil && cgroupfsPresent() {
+		// The original ctx is often the reason the write failed; stop with a
+		// fresh budget so the unthrottled container really goes away.
+		stopCtx, cancel := context.WithTimeout(context.Background(), time.Duration(StopTimeoutSec+5)*time.Second)
+		defer cancel()
 		d.CloseProxy(id)
-		_, _ = d.run(ctx, "docker", "stop", "-t", strconv.Itoa(StopTimeoutSec), ContainerName(id))
+		if _, stopErr := d.run(stopCtx, "docker", "stop", "-t", strconv.Itoa(StopTimeoutSec), ContainerName(id)); stopErr != nil {
+			return fmt.Errorf("cgroup apply failed (%v) AND stop failed: %w", err, stopErr)
+		}
 		return fmt.Errorf("cgroup apply: %w", err)
 	}
 	if err := d.EnsureProxy(ctx, id); err != nil {

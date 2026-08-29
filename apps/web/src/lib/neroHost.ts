@@ -255,6 +255,10 @@ export async function waitForNeroWorkspaceRunning(
     const match = workspaces.find((workspace) => workspace.id === workspaceId);
     if (match !== undefined) {
       if (match.state === "running") return;
+      if (match.state === "stopped") {
+        // Admission gave up (start failed); don't spin the whole budget.
+        throw new NeroHostApiError("The workspace failed to start.", 0);
+      }
     } else {
       throw new NeroHostApiError("The workspace left the host list while queued.", 0);
     }

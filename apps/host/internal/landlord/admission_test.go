@@ -392,3 +392,43 @@ func TestStopInspectFailureKeepsRunning(t *testing.T) {
 		t.Fatalf("must not flip to stopped on inspect failure, got %s", got.State)
 	}
 }
+
+// When adoption pushes the landlord over budget, the demoted workspace is an
+// unpinned one (longest-unpinned first) - never a workspace in active use.
+func TestEnforceBudgetDemotesUnpinnedFirst(t *testing.T) {
+	ctx := context.Background()
+	l, rt, clk := newTest(t)
+
+	a, err := l.Create(ctx, "pinned")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := l.Heartbeat(a.ID, Heartbeat{Connected: boolPtr(true)}); err != nil {
+		t.Fatal(err)
+	}
+	b, err := l.Create(ctx, "unpinned")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !rt.Running(a.ID) || !rt.Running(b.ID) {
+		t.Fatalf("both should run: a=%v b=%v", rt.Running(a.ID), rt.Running(b.ID))
+	}
+
+	// An externally started container is adopted on the next tick, pushing
+	// the count to three against a budget of two.
+	rt.Seed("0123456789abcdef", "external", true)
+	clk.Advance(time.Second)
+	l.ReconcileIdle(ctx)
+
+	if !rt.Running(a.ID) {
+		t.Fatal("the pinned workspace must survive demotion")
+	}
+	if rt.Running(b.ID) {
+		t.Fatal("the unpinned workspace must be demoted first")
+	}
+	ext, err := l.Get("0123456789abcdef")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = ext
+}

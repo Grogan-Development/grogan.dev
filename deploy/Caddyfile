@@ -18,6 +18,12 @@
 
 (nero_daemon_proxy) {
 	vars dial unix//run/nero/w/{vars.workspace_id}.sock
+	# Order inside this snippet matters and is only preserved because both
+	# call sites wrap it in `route { ... }`: the client-supplied X-Nero-Access
+	# strip MUST run before forward_auth mints the real one. Moving this
+	# import to the top level of a vhost lets Caddy's canonical directive
+	# order reorder them (forward_auth first), deleting the copied header
+	# and 401ing every guest request.
 	request_header -X-Nero-Dial
 	request_header -X-Nero-Access
 	forward_auth 127.0.0.1:8080 {

@@ -27,6 +27,8 @@ type LiveTurn = {
     readonly toolCallId: string;
     readonly meta: ReturnType<typeof toolActivityMeta>;
   }>;
+  /** Set by evict(): the thread was reverted — settle quietly, no writes. */
+  evicted?: boolean;
 };
 
 type ApprovalWaiter = {
@@ -151,6 +153,11 @@ export class PiHarness {
    * silently feeding the model pre-revert history.
    */
   evict(threadId: string): void {
+    // Mark before aborting: the aborted turn's run() unwinds asynchronously
+    // and must not settle into the truncated thread (phantom assistant
+    // message, resurrected latestTurn, post-restore checkpoint capture).
+    const live = this.live.get(threadId);
+    if (live !== undefined) live.evicted = true;
     this.abort(threadId);
     this.conversations.delete(threadId);
     this.pendingShots.delete(threadId);
@@ -187,9 +194,12 @@ export class PiHarness {
     const existing = this.conversations.get(threadId);
     const user: ChatMessage = { role: "user", content: userContent(userText, images) };
     if (existing !== undefined) {
-      // Heal protocol damage from interrupted turns before extending.
+      // Heal protocol damage from interrupted turns before extending. The
+      // sanitized array must ALWAYS become the stored one: this turn's
+      // messages are appended to the returned array, and storing it only
+      // when the length changed would strand them in a discarded copy.
       const clean = sanitizeConversation(existing);
-      if (clean.length !== existing.length) this.conversations.set(threadId, clean);
+      this.conversations.set(threadId, clean);
       clean.push(user);
       return clean;
     }
@@ -549,6 +559,11 @@ export class PiHarness {
         "Tool loop exceeded the maximum number of rounds.",
       );
     } catch (error) {
+      if (live.evicted) {
+        // The thread was reverted while this turn ran: its messages are
+        // gone, so settling would append phantom state to the truncation.
+        return;
+      }
       if (live.controller.signal.aborted || isAbort(error)) {
         this.settleAbandoned(input, live, "interrupted", null);
         return;

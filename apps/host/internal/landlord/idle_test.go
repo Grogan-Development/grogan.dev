@@ -204,3 +204,24 @@ func TestReconcileNoticesExitedGuest(t *testing.T) {
 		t.Fatalf("slot should drain to c, state=%s running=%v", c2.State, rt.Running(c.ID))
 	}
 }
+
+// The pre-stop freshness check must re-evaluate shouldIdleStop (not just the
+// pin bits): a pinned workspace with a stale heartbeat is still a zombie.
+func TestReconcileRecheckStopsStalePinnedWorkspace(t *testing.T) {
+	ctx := context.Background()
+	l, rt, clk := newTest(t)
+	ws, _ := l.Create(ctx, "a")
+	if _, err := l.Heartbeat(ws.ID, Heartbeat{Connected: boolPtr(true)}); err != nil {
+		t.Fatal(err)
+	}
+
+	clk.Advance(21 * time.Minute)
+	stopped := l.ReconcileIdle(ctx)
+	if len(stopped) != 1 || stopped[0] != ws.ID {
+		t.Fatalf("stale pinned workspace must stop, got %v", stopped)
+	}
+	got, _ := l.Get(ws.ID)
+	if got.State != StateStopped || rt.Running(ws.ID) {
+		t.Fatal("zombie should be stopped")
+	}
+}

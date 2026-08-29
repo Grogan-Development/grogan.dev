@@ -23,9 +23,9 @@ func shortSockDir(t *testing.T) string {
 
 func stubCaddyChown(t *testing.T) {
 	t.Helper()
-	prev := chownToCaddy
-	chownToCaddy = func(string) error { return nil }
-	t.Cleanup(func() { chownToCaddy = prev })
+	prev := caddyGid
+	caddyGid = func() (int, bool, error) { return 0, false, nil }
+	t.Cleanup(func() { caddyGid = prev })
 }
 
 func TestUnixProxyForwardsHTTP(t *testing.T) {

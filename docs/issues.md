@@ -30,6 +30,24 @@ below and the Loom guest wiring + stale docker-flags test (`90e85da`).
 Remaining open items are P2/P3 leftovers (pairing-password reuse, git argv
 injection, privileged-guest threat model, seat-latch polish).
 
+Review-agent wave the same day (4 parallel reviews of daemon / host /
+guest+deploy / web+contracts) confirmed the wave fixes and caught two
+regressions the wave itself introduced, both fixed in the same commit:
+the harness stored the pre-sanitized conversation array, stranding every
+turn after the first (model memory loss — P1), and the web corrective
+unpin was gated on the disposed flag, suppressing it exactly on SPA
+unmount. Also fixed from that sweep: the `restore()` crash-loop (§8 P2,
+now quarantines a poisoned orchestration.json instead of boot-looping),
+aborted-turn settlement racing a revert (evicted turns settle quietly),
+revert truncation is index-based (clock-skew immune) and prunes
+activities/proposedPlans of dropped turns, the minted attachment id now
+passes the id guard, daemon token compares are constant-time,
+`streamResponses` honors timeout/idle budgets (a stalled Codex stream
+can no longer hang a turn and its keep-awake pulse), socket-dir group
+ownership is self-healed alongside the mode, a missing caddy group is
+skipped while chown failures stay fatal, and the queued-create poll bails
+when admission gives up instead of spinning its full budget.
+
 ---
 
 ## 0. In-plan remainder
@@ -296,7 +314,10 @@ command.turnCount` (`daemon.ts:1076-1091`). Client reducer keeps
       `^[A-Za-z0-9]{4,64}$` (4ecfb70). **RPC persist/read missed:**
       `persistIncomingAttachment` / `writeAttachmentDataUrl` still join the
       client id (`daemon.ts:1232-1239,1576-1579`) — §9 P2.
-- [ ] **`restore()` crash-loops the daemon on a poisoned `orchestration.json`.**
+- [x] **`restore()` crash-loops the daemon on a poisoned `orchestration.json`.**
+      Quarantine fix: decode happens into locals; any throw renames the file
+      to `orchestration.json.corrupt-<ts>`, logs loudly, and boots from
+      defaults instead of restart-looping.
       Settings go through unguarded `Schema.decodeUnknownSync`
       (`daemon.ts:145-146`), projects/threads are blind casts (`:296-312`);
       throws in the constructor before `runMain`, and `Restart=on-failure`
