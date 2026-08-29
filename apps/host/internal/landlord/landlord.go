@@ -243,6 +243,48 @@ func (l *Landlord) Get(id string) (Workspace, error) {
 	return l.viewLocked(ws), nil
 }
 
+// Delete permanently destroys a workspace: container (if present) and dataset
+// go away, and the workspace leaves landlord state. Deleting a queued entry
+// just removes it from the queue.
+func (l *Landlord) Delete(_ context.Context, id string) error {
+	l.opMu.Lock()
+	defer l.opMu.Unlock()
+
+	l.mu.Lock()
+	ws, ok := l.workspaces[id]
+	if !ok {
+		l.mu.Unlock()
+		return ErrNotFound
+	}
+	l.removeFromQueueLocked(id)
+	wasRunning := ws.State == StateRunning
+	l.mu.Unlock()
+
+	if wasRunning {
+		if _, err := l.stopOp(id, false); err != nil {
+			return err
+		}
+	}
+	// A stopped workspace can still have an exited container around; remove it
+	// best-effort so nothing dangles.
+	if _, err := l.rtInspect(id); err == nil {
+		if err := l.rtRemove(id); err != nil {
+			return err
+		}
+	}
+	l.rt.CloseProxy(id)
+
+	if err := l.rtDestroyDataset(id); err != nil {
+		return err
+	}
+
+	l.mu.Lock()
+	delete(l.workspaces, id)
+	l.mu.Unlock()
+	l.log.Info("workspace deleted", "id", id)
+	return nil
+}
+
 func (l *Landlord) List() []Workspace {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -648,6 +690,12 @@ func (l *Landlord) rtStop(id string) error {
 	ctx, cancel := opContext()
 	defer cancel()
 	return l.rt.StopContainer(ctx, id)
+}
+
+func (l *Landlord) rtRemove(id string) error {
+	ctx, cancel := opContext()
+	defer cancel()
+	return l.rt.RemoveContainer(ctx, id)
 }
 
 func (l *Landlord) rtInspect(id string) (runtime.ContainerInfo, error) {

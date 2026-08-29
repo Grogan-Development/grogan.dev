@@ -143,6 +143,14 @@ func (d *Docker) StopContainer(ctx context.Context, id string) error {
 	return err
 }
 
+func (d *Docker) RemoveContainer(ctx context.Context, id string) error {
+	_, err := d.run(ctx, "docker", "rm", ContainerName(id))
+	if err == nil {
+		d.CloseProxy(id)
+	}
+	return err
+}
+
 func (d *Docker) InspectContainer(ctx context.Context, id string) (ContainerInfo, error) {
 	out, err := d.run(ctx, "docker", "inspect", "--format",
 		`{"id":{{json (index .Config.Labels "nero.workspace.id")}},"name":{{json (index .Config.Labels "nero.workspace.name")}},"running":{{json .State.Running}}}`,

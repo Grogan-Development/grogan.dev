@@ -20,6 +20,7 @@ type Runtime interface {
 	CreateContainer(ctx context.Context, spec WorkspaceSpec) error
 	StartContainer(ctx context.Context, id string) error
 	StopContainer(ctx context.Context, id string) error
+	RemoveContainer(ctx context.Context, id string) error
 	InspectContainer(ctx context.Context, id string) (ContainerInfo, error)
 	ListContainers(ctx context.Context) ([]ContainerInfo, error)
 	ApplyCgroup(ctx context.Context, id string) error

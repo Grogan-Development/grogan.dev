@@ -96,6 +96,20 @@ func (f *Fake) StopContainer(_ context.Context, id string) error {
 	return nil
 }
 
+func (f *Fake) RemoveContainer(_ context.Context, id string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	c, ok := f.Containers[id]
+	if !ok {
+		return fmt.Errorf("no container: %s", id)
+	}
+	if c.Running {
+		return fmt.Errorf("container %s is running", id)
+	}
+	delete(f.Containers, id)
+	return nil
+}
+
 func (f *Fake) InspectContainer(_ context.Context, id string) (ContainerInfo, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()

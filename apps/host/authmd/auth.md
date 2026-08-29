@@ -8,7 +8,7 @@ v1 is one allowlisted human. Nero does not provision users. AuthKit account crea
 
 Resource (Nero APIs): `https://nero.grogan.dev/`
 
-- Control plane: `https://nero.grogan.dev/api/workspaces` (list, create, wake, stop, heartbeat)
+- Control plane: `https://nero.grogan.dev/api/workspaces` (list, create, wake, stop, delete, heartbeat)
 - Workspace daemon: `https://nero.grogan.dev/w/{workspaceId}/` (Caddy reverse_proxy to that container; AuthKit session required; the guest never sees `wos-session`)
 
 ## Step 1 — Discover
@@ -104,12 +104,12 @@ If you get a 401, return to [Step 1](#step-1--discover) and send the human throu
 
 ## Errors
 
-| Code / status | Where | What to do |
-| --- | --- | --- |
-| `401 unauthorized` | `/api/workspaces*` | No valid `wos-session`, or the email is not allowlisted. Read `WWW-Authenticate` and send the human to AuthKit (`GET /auth/login`). |
-| `403 forbidden` | `/auth/callback` | Signed-in email is not on the allowlist. Stop. |
-| `400` | `/auth/login`, `/auth/callback` | Bad host, missing code, or invalid state/PKCE. Restart at `GET /auth/login`. |
-| `501` | `/w/*` | Workspace proxy not wired. |
+| Code / status      | Where                           | What to do                                                                                                                          |
+| ------------------ | ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `401 unauthorized` | `/api/workspaces*`              | No valid `wos-session`, or the email is not allowlisted. Read `WWW-Authenticate` and send the human to AuthKit (`GET /auth/login`). |
+| `403 forbidden`    | `/auth/callback`                | Signed-in email is not on the allowlist. Stop.                                                                                      |
+| `400`              | `/auth/login`, `/auth/callback` | Bad host, missing code, or invalid state/PKCE. Restart at `GET /auth/login`.                                                        |
+| `501`              | `/w/*`                          | Workspace proxy not wired.                                                                                                          |
 
 ## Revocation
 

@@ -49,6 +49,7 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /api/workspaces", s.authed(s.create))
 	mux.Handle("POST /api/workspaces/{id}/wake", s.authed(s.wake))
 	mux.Handle("POST /api/workspaces/{id}/stop", s.authed(s.stop))
+	mux.Handle("DELETE /api/workspaces/{id}", s.authed(s.workspaceDelete))
 	mux.Handle("POST /api/workspaces/{id}/heartbeat", s.authed(s.heartbeat))
 	mux.HandleFunc("POST /api/workspaces/{id}/job-heartbeat", s.jobHeartbeat)
 	mux.HandleFunc("GET "+caddyAuthPath, s.caddyAuth)
@@ -209,6 +210,16 @@ func (s *Server) stop(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, ws)
+}
+
+// workspaceDelete permanently destroys the workspace: container and dataset
+// are gone, along with every thread and file it ever held.
+func (s *Server) workspaceDelete(w http.ResponseWriter, r *http.Request) {
+	if err := s.ll.Delete(context.Background(), r.PathValue("id")); err != nil {
+		writeLandlordErr(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 type heartbeatBody struct {

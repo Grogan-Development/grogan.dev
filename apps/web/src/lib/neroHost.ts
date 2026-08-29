@@ -164,6 +164,16 @@ export function stopNeroWorkspace(workspaceId: string): Promise<NeroWorkspace> {
   return neroWorkspaceAction(workspaceId, "stop");
 }
 
+/**
+ * Permanently destroys the workspace: container and dataset (every thread and
+ * file) are gone. `DELETE /api/workspaces/:id` — no body, 204 on success.
+ */
+export async function deleteNeroWorkspace(workspaceId: string): Promise<void> {
+  await neroHostFetch(`${NERO_WORKSPACES_PATH}/${encodeURIComponent(workspaceId)}`, {
+    method: "DELETE",
+  });
+}
+
 /** `POST /api/workspaces/:id/heartbeat` with `{"connected":true}` — pins the workspace awake. */
 export async function pinNeroWorkspace(workspaceId: string): Promise<void> {
   await neroHostFetch(`${NERO_WORKSPACES_PATH}/${encodeURIComponent(workspaceId)}/heartbeat`, {
