@@ -232,6 +232,10 @@ const tmpDaemon = (port: number, extra: Partial<DaemonOptions> = {}) => {
       seatLockPath: Path.join(root, "seat.lock"),
       seatHoldBin: NERO_DESKTOP,
       vncOrigin: "http://127.0.0.1:8444",
+      openRouterApiKey: undefined,
+      openRouterBaseUrl: "https://openrouter.ai/api/v1",
+      openRouterTimeoutMs: 120_000,
+      openRouterIdleMs: 45_000,
       ...extra,
     } satisfies DaemonOptions,
   };
@@ -337,7 +341,7 @@ describe("nero daemon", () => {
       );
       expect(thread.status).toBe(200);
       expect(JSON.stringify(thread.json)).toContain("hello");
-      expect(JSON.stringify(thread.json)).toContain("Nero v1 stub");
+      expect(JSON.stringify(thread.json)).toContain("OPENROUTER_API_KEY");
 
       yield* Fiber.interrupt(fiber);
     }),

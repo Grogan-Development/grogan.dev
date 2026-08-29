@@ -12,10 +12,10 @@ Every `WsRpcGroup` method has a handler in this PR so a live `/ws` session does 
 | `pullRequests.*`                                                     | List returns empty; detail/mutations return `cli-missing`. Wire `gh` in a follow-up.                                                               |
 | `sourceControl.lookupRepository` / `publishRepository`               | Typed errors; clone uses `git clone`.                                                                                                              |
 | `review.getDiffPreview` / `review.getDiffFileContents`               | Working-tree `git diff` only.                                                                                                                      |
-| `orchestration.getTurnDiff` / `getFullThreadDiff`                    | Empty diff string; checkpoints land with the GLM loop (PR 8).                                                                                      |
+| `orchestration.getTurnDiff` / `getFullThreadDiff`                    | Shadow-git snapshots at turn start/end; range diffs include untracked files and survive restart.                                                   |
 | `orchestration.getWorkflowScript`                                    | `not-found` until workflow scripts exist.                                                                                                          |
-| `thread.approval.respond` / `thread.user-input.respond`              | Dispatch no-ops. The UI will send them; GLM/tool approvals are PR 8.                                                                               |
-| `previewAutomation.*`                                                | Connected stub. Preview tab is KasmVNC; human driving holds `$NERO_SEAT_LOCK` so `nero-desktop` click/type queue. Agent still drives via seat CLI. |
+| `thread.approval.respond` / `thread.user-input.respond`              | Approval waits in the GLM loop (`full-access` auto-runs). User-input respond is still a no-op.                                                     |
+| `previewAutomation.*`                                                | Preview tab is KasmVNC; human driving holds `$NERO_SEAT_LOCK` so `nero-desktop` click/type queue.                                                  |
 | `subscribeDiscoveredLocalServers`                                    | Empty list; stream completes after one frame.                                                                                                      |
 | `assets.createUrl` / `attachments.*`                                 | Local unsigned URLs; no blob HTTP store yet (id and URL now match).                                                                                |
 | `server.upsertKeybinding` / `server.removeKeybinding`                | **IMPLEMENT**. Handlers succeed with the empty in-memory `keybindings` array; they do not persist.                                                 |
@@ -24,7 +24,8 @@ Every `WsRpcGroup` method has a handler in this PR so a live `/ws` session does 
 | `server.getUsageSummary`                                             | Empty buckets (`UsageProviderKind` is still T3 CLI-shaped).                                                                                        |
 | `subscribeAuthAccess`                                                | WS snapshot is empty pairing/clients.                                                                                                              |
 | Pairing HTTP (`/api/auth/pairing-token`, `/api/auth/pairing-links`)  | Implemented: mint/list after Bearer/`NERO_ACCESS_TOKEN`. `browser-session` and `/oauth/token` reject empty bodies. Revoke routes are still 404.    |
-| `thread.turn.start` assistant                                        | Stub reply. PR 8 streams GLM via OpenRouter.                                                                                                       |
+| `thread.turn.start` assistant                                        | Pi harness streams GLM-5.3-Flash via OpenRouter (Baseten pin), with bash/file tools.                                                               |
+
 
 ## DELETE (UI deletion is PR 5)
 
