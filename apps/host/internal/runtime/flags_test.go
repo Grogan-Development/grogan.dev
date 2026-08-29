@@ -28,7 +28,7 @@ func TestDockerCreateArgsCgroupPolicy(t *testing.T) {
 		"--publish 127.0.0.1::8787",
 		"--add-host host.docker.internal:host-gateway",
 		"NERO_HOST_URL=http://host.docker.internal:8080",
-		"--tmpfs /tmp:mode=1777",
+		"--tmpfs /tmp:rw,nosuid,nodev,exec,mode=1777",
 		"--tmpfs /run",
 		"--shm-size 1g",
 		"--stop-signal SIGRTMIN+3",
@@ -52,9 +52,30 @@ func TestDockerCreateArgsCgroupPolicy(t *testing.T) {
 func TestDockerCreateArgsOmitsEmptySecrets(t *testing.T) {
 	args := DockerCreateArgs("nero-guest:v1", "abc", "ws", "/var/lib/nero/ws/abc", GuestEnv{})
 	joined := strings.Join(args, " ")
-	for _, leak := range []string{"ZAI_API_KEY=zai-key-test", "BASETEN_API_KEY=bt-key-test", "NERO_ACCESS_TOKEN=", "NERO_HOST_TOKEN="} {
+	for _, leak := range []string{
+		"ZAI_API_KEY=zai-key-test",
+		"BASETEN_API_KEY=bt-key-test",
+		"OPENCODE_API_KEY=",
+		"LOOM_URL=",
+		"LOOM_TOKEN=",
+		"NERO_ACCESS_TOKEN=",
+		"NERO_HOST_TOKEN=",
+	} {
 		if strings.Contains(joined, leak) {
 			t.Errorf("empty secret should be omitted: %s", leak)
+		}
+	}
+}
+
+func TestDockerCreateArgsForwardsLoom(t *testing.T) {
+	args := DockerCreateArgs("nero-guest:v1", "abc", "ws", "/var/lib/nero/ws/abc", GuestEnv{
+		LoomURL:   "https://loom.grogan.dev",
+		LoomToken: "loom-tok",
+	})
+	joined := strings.Join(args, " ")
+	for _, want := range []string{"LOOM_URL=https://loom.grogan.dev", "LOOM_TOKEN=loom-tok"} {
+		if !strings.Contains(joined, want) {
+			t.Errorf("missing %q in %s", want, joined)
 		}
 	}
 }

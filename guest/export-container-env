@@ -19,6 +19,10 @@ KEYS = {
     "NERO_ENVIRONMENT_ID",
     "NERO_LABEL",
     "NERO_HOST_URL",
+    # Loom git/repo server (loom.grogan.dev). The landlord passes a scoped
+    # token (git/features/events perms), never the owner token.
+    "LOOM_URL",
+    "LOOM_TOKEN",
 }
 # NERO_DEV_BYPASS is deliberately NOT forwarded: it disables every daemon
 # auth check. Guests always run the daemon with the X-Nero-Access/bearer
