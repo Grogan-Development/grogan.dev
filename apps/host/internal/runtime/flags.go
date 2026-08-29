@@ -19,6 +19,9 @@ const (
 	DaemonPort       = "8787"
 	DefaultSocketDir = "/run/nero/w"
 	WSCookieName     = "nero-ws"
+	// GuestUID is the nero user inside the guest image; fresh home datasets
+	// are chowned to it at create.
+	GuestUID = 1000
 )
 
 // GuestEnv is injected at docker create. Secrets come from host.env, not git.
@@ -26,6 +29,9 @@ type GuestEnv struct {
 	HostToken        string
 	AccessToken      string
 	OpenRouterAPIKey string
+	// Routing knobs for the harness (non-secret); empty means daemon defaults.
+	OpenRouterBaseUrl string
+	NeroModel         string
 }
 
 func ContainerName(id string) string { return "nero-ws-" + id }
@@ -52,6 +58,9 @@ func DockerCreateArgs(image, id, name, mount string, env GuestEnv) []string {
 		"--tmpfs", "/run",
 		"--tmpfs", "/run/lock",
 		"--shm-size", "1g",
+		// The guest systemd manages its own cgroup scopes (nero-run under
+		// nero-job.slice) and runs Xvnc/KasmVNC; without this systemd exits 255.
+		"--privileged",
 		"--mount", "type=bind,source=" + mount + ",target=/home/nero",
 		"--env", "NERO_WORKSPACE_ID=" + id,
 		"--env", "NERO_ENVIRONMENT_ID=" + id,
@@ -61,6 +70,8 @@ func DockerCreateArgs(image, id, name, mount string, env GuestEnv) []string {
 	args = appendEnv(args, "NERO_HOST_TOKEN", env.HostToken)
 	args = appendEnv(args, "NERO_ACCESS_TOKEN", env.AccessToken)
 	args = appendEnv(args, "OPENROUTER_API_KEY", env.OpenRouterAPIKey)
+	args = appendEnv(args, "OPENROUTER_BASE_URL", env.OpenRouterBaseUrl)
+	args = appendEnv(args, "NERO_MODEL", env.NeroModel)
 	return append(args, image)
 }
 

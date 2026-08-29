@@ -1,6 +1,7 @@
 import { defineConfig } from "vite-plus";
 
 export default defineConfig({
+  ssr: { noExternal: true },
   build: {
     ssr: true,
     target: "node24",

@@ -41,6 +41,7 @@ RUN pnpm install --filter @nero/daemon... --frozen-lockfile --ignore-scripts \
  && pnpm --filter @nero/daemon build \
  && mkdir -p /out/node_modules \
  && cp apps/daemon/dist/main.js /out/main.js \
+# ssr.noExternal bundles every dep except node-pty, which is native and copied:
  && node --input-type=module -e "\
 import { createRequire } from 'node:module';\
 import fs from 'node:fs';\
@@ -120,7 +121,7 @@ RUN curl -fL -o /tmp/kasmvnc.deb \
  && rm -f /tmp/kasmvnc.deb \
  && rm -rf /var/lib/apt/lists/* \
  && runuser -u nero -- env HOME=/home/nero \
-      sh -c 'printf "nero\nnero\n" | kasmvncpasswd -u nero -w -r' \
+      sh -c 'printf "nero-vm-seat\nnero-vm-seat\n" | kasmvncpasswd -u nero -w' \
  && cp /home/nero/.kasmpasswd /etc/nero/kasmpasswd \
  && chown nero:nero /etc/nero/kasmpasswd \
  && chmod 600 /etc/nero/kasmpasswd

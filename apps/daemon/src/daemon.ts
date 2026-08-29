@@ -145,6 +145,21 @@ const neroModel = {
 const decodeSettings = (value: unknown): ServerSettings =>
   patchedSettings(Schema.decodeUnknownSync(ServerSettings)(value ?? {}));
 
+/**
+ * Encode settings back through the schema before persisting: decoded
+ * in-memory values carry Duration objects whose raw JSON shape does not
+ * round-trip (DurationFromMillis wants plain millis numbers on the wire).
+ * On encode failure, drop the field entirely — restore() falls back to
+ * defaults rather than crash-looping the daemon on a poisoned file.
+ */
+const encodeSettings = (value: ServerSettings): unknown => {
+  try {
+    return Schema.encodeSync(ServerSettings)(value);
+  } catch {
+    return undefined;
+  }
+};
+
 const patchedSettings = (base: typeof ServerSettings.Type): typeof ServerSettings.Type => ({
   ...base,
   textGenerationModelSelection: neroModel,
@@ -255,7 +270,7 @@ export class Daemon {
       sequence: this.sequence,
       projects: [...this.projects.values()],
       threads: [...this.threads.values()],
-      settings: this.settings,
+      settings: encodeSettings(this.settings) as Persisted["settings"],
     };
     writeJsonAtomic(this.persistPath(), payload);
   }

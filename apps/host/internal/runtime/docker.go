@@ -85,8 +85,15 @@ func runCmd(ctx context.Context, name string, args ...string) (string, error) {
 func (d *Docker) CreateDataset(ctx context.Context, id string) error {
 	ds := DatasetName(d.Pool, id)
 	mp := MountPath(d.MountRoot, id)
-	_, err := d.run(ctx, "zfs", "create", "-p", "-o", "mountpoint="+mp, ds)
-	return err
+	if _, err := d.run(ctx, "zfs", "create", "-p", "-o", "mountpoint="+mp, ds); err != nil {
+		return err
+	}
+	// The dataset becomes /home/nero in the guest; a fresh mountpoint is
+	// root-owned, which leaves the nero user (uid 1000) unable to write home.
+	if err := os.Chown(mp, GuestUID, GuestUID); err != nil {
+		return fmt.Errorf("chown %s: %w", mp, err)
+	}
+	return nil
 }
 
 func (d *Docker) DestroyDataset(ctx context.Context, id string) error {
@@ -101,9 +108,11 @@ func (d *Docker) CreateContainer(ctx context.Context, spec WorkspaceSpec) error 
 	}
 	mp := MountPath(d.MountRoot, spec.ID)
 	args := DockerCreateArgs(d.Image, spec.ID, spec.Name, mp, GuestEnv{
-		HostToken:        d.HostToken,
-		AccessToken:      d.AccessToken,
-		OpenRouterAPIKey: d.OpenRouterAPIKey,
+		HostToken:         d.HostToken,
+		AccessToken:       d.AccessToken,
+		OpenRouterAPIKey:  d.OpenRouterAPIKey,
+		OpenRouterBaseUrl: os.Getenv("OPENROUTER_BASE_URL"),
+		NeroModel:         os.Getenv("NERO_MODEL"),
 	})
 	_, err := d.run(ctx, "docker", args...)
 	return err

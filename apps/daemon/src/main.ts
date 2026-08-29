@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import * as Process from "node:process";
+import Process from "node:process";
 
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";

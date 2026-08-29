@@ -9,6 +9,8 @@ from pathlib import Path
 
 KEYS = {
     "OPENROUTER_API_KEY",
+    "OPENROUTER_BASE_URL",
+    "NERO_MODEL",
     "NERO_ACCESS_TOKEN",
     "NERO_HOST_TOKEN",
     "NERO_WORKSPACE_ID",

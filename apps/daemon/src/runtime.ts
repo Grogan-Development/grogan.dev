@@ -7,7 +7,9 @@ import type { EnvironmentId } from "@t3tools/contracts";
 import { EnvironmentId as EnvironmentIdSchema } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
 
-export const NERO_MODEL = "z-ai/glm-5.3-flash";
+// Overridable so the deployment can point the harness at any OpenAI-compatible
+// endpoint (e.g. Baseten direct uses "zai-org/GLM-5.3-Flash"; see OPENROUTER_BASE_URL).
+export const NERO_MODEL = Process.env.NERO_MODEL ?? "z-ai/glm-5.3-flash";
 export const NERO_DRIVER = "nero";
 export const NERO_INSTANCE_ID = "nero";
 export const SESSION_COOKIE = "nero_session";
