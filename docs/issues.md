@@ -149,7 +149,10 @@ Law: "After adapt there is no T3 product left." Survivors at main:
       (candidate verifications, CI results, promotions). The old GitHub
       machinery (pullRequests.\* stubs, git.resolvePullRequest/prepare) has no
       page calling it anymore — delete the RPC stubs in the next contracts pass.
-      Graceful 503 state until LOOM_URL/LOOM_TOKEN land in host.env.
+      **Loom is live on Grid-01 (2026-08-29): loomd container on the docker
+      bridge, scoped token in host.env, `nero/grogan-dev` seeded, loom-cli
+      v0.1.0 preinstalled in the image, and the Source Control settings page
+      shows Loom instead of GitHub.**
 - [x] assets/attachments backing routes — implemented in `apps/daemon/src/http.ts`
       (4ecfb70): `GET /api/assets/workspace` (thread-cwd rooted, traversal-guarded,
       25 MiB cap), `GET /api/assets/favicon` (deterministic SVG monogram,

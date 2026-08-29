@@ -142,7 +142,7 @@ Stopped / queued / not-yet-healthy workspaces: Caddy auth returns 503. Wake via 
 
 `nero-run` POSTs `/api/workspaces/:id/job-heartbeat` while the scope is alive (host is `host.docker.internal:8080`), authenticated with the **per-workspace derived token** the landlord injected at create: guests never hold `NERO_HOST_TOKEN` itself, only `HMAC-SHA256(secret, "nero-workspace-token:" + id)` — a leaked guest token authorizes this workspace's keep-awake bits and nothing else. The same derivation applies to `NERO_ACCESS_TOKEN`.
 
-> **Upgrading from shared-token workspaces:** containers created before the derived-token change hold the raw secrets in their env. Their heartbeats and Caddy auth will 401 until each container is recreated (`docker rm nero-ws-<id>`, then create a replacement workspace — or delete + recreate the workspace outright; datasets are per-id). Afterwards, rotating `NERO_HOST_TOKEN`/`NERO_ACCESS_TOKEN` in `host.env` invalidates everything derived from the old values at once.
+> **Upgrading from shared-token workspaces:** containers created before the derived-token change hold the raw secrets in their env. Their heartbeats and Caddy auth will 401 until each container is recreated — `go run ./cmd/recreate-ws <id>:<name> ...` (from `apps/host`, on Grid-01) replaces containers in place; datasets survive. Afterwards, rotating `NERO_HOST_TOKEN`/`NERO_ACCESS_TOKEN` in `host.env` invalidates everything derived from the old values at once.
 
 ## Environment
 
