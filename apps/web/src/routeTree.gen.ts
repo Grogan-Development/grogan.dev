@@ -21,10 +21,10 @@ import { Route as SettingsGeneralRouteImport } from './routes/settings.general'
 import { Route as SettingsIntegrationsRouteImport } from './routes/settings.integrations'
 import { Route as SettingsKeybindingsRouteImport } from './routes/settings.keybindings'
 import { Route as SettingsSourceControlRouteImport } from './routes/settings.source-control'
-import { Route as ChatWorkspaceIndexRouteImport } from './routes/_chat.w.$workspaceId.index'
-import { Route as ChatWorkspaceThreadIdRouteImport } from './routes/_chat.w.$workspaceId.$threadId'
-import { Route as ChatWorkspaceDraftDraftIdRouteImport } from './routes/_chat.w.$workspaceId.draft.$draftId'
-import { Route as ChatWorkspacePullRequestsRouteImport } from './routes/_chat.w.$workspaceId.pull-requests'
+import { Route as ChatWWorkspaceIdIndexRouteImport } from './routes/_chat.w.$workspaceId.index'
+import { Route as ChatWWorkspaceIdThreadIdRouteImport } from './routes/_chat.w.$workspaceId.$threadId'
+import { Route as ChatWWorkspaceIdPullRequestsRouteImport } from './routes/_chat.w.$workspaceId.pull-requests'
+import { Route as ChatWWorkspaceIdDraftDraftIdRouteImport } from './routes/_chat.w.$workspaceId.draft.$draftId'
 
 const ChatRoute = ChatRouteImport.update({
   id: '/_chat',
@@ -85,26 +85,29 @@ const SettingsSourceControlRoute = SettingsSourceControlRouteImport.update({
   path: '/source-control',
   getParentRoute: () => SettingsRoute,
 } as any)
-const ChatWorkspaceIndexRoute = ChatWorkspaceIndexRouteImport.update({
+const ChatWWorkspaceIdIndexRoute = ChatWWorkspaceIdIndexRouteImport.update({
   id: '/w/$workspaceId/',
   path: '/w/$workspaceId/',
   getParentRoute: () => ChatRoute,
 } as any)
-const ChatWorkspaceThreadIdRoute = ChatWorkspaceThreadIdRouteImport.update({
-  id: '/w/$workspaceId/$threadId',
-  path: '/w/$workspaceId/$threadId',
-  getParentRoute: () => ChatRoute,
-} as any)
-const ChatWorkspaceDraftDraftIdRoute = ChatWorkspaceDraftDraftIdRouteImport.update({
-  id: '/w/$workspaceId/draft/$draftId',
-  path: '/w/$workspaceId/draft/$draftId',
-  getParentRoute: () => ChatRoute,
-} as any)
-const ChatWorkspacePullRequestsRoute = ChatWorkspacePullRequestsRouteImport.update({
-  id: '/w/$workspaceId/pull-requests',
-  path: '/w/$workspaceId/pull-requests',
-  getParentRoute: () => ChatRoute,
-} as any)
+const ChatWWorkspaceIdThreadIdRoute =
+  ChatWWorkspaceIdThreadIdRouteImport.update({
+    id: '/w/$workspaceId/$threadId',
+    path: '/w/$workspaceId/$threadId',
+    getParentRoute: () => ChatRoute,
+  } as any)
+const ChatWWorkspaceIdPullRequestsRoute =
+  ChatWWorkspaceIdPullRequestsRouteImport.update({
+    id: '/w/$workspaceId/pull-requests',
+    path: '/w/$workspaceId/pull-requests',
+    getParentRoute: () => ChatRoute,
+  } as any)
+const ChatWWorkspaceIdDraftDraftIdRoute =
+  ChatWWorkspaceIdDraftDraftIdRouteImport.update({
+    id: '/w/$workspaceId/draft/$draftId',
+    path: '/w/$workspaceId/draft/$draftId',
+    getParentRoute: () => ChatRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof ChatIndexRoute
@@ -118,10 +121,10 @@ export interface FileRoutesByFullPath {
   '/settings/integrations': typeof SettingsIntegrationsRoute
   '/settings/keybindings': typeof SettingsKeybindingsRoute
   '/settings/source-control': typeof SettingsSourceControlRoute
-  '/w/$workspaceId': typeof ChatWorkspaceIndexRoute
-  '/w/$workspaceId/$threadId': typeof ChatWorkspaceThreadIdRoute
-  '/w/$workspaceId/draft/$draftId': typeof ChatWorkspaceDraftDraftIdRoute
-  '/w/$workspaceId/pull-requests': typeof ChatWorkspacePullRequestsRoute
+  '/w/$workspaceId/$threadId': typeof ChatWWorkspaceIdThreadIdRoute
+  '/w/$workspaceId/pull-requests': typeof ChatWWorkspaceIdPullRequestsRoute
+  '/w/$workspaceId/': typeof ChatWWorkspaceIdIndexRoute
+  '/w/$workspaceId/draft/$draftId': typeof ChatWWorkspaceIdDraftDraftIdRoute
 }
 export interface FileRoutesByTo {
   '/settings': typeof SettingsRouteWithChildren
@@ -135,10 +138,10 @@ export interface FileRoutesByTo {
   '/settings/keybindings': typeof SettingsKeybindingsRoute
   '/settings/source-control': typeof SettingsSourceControlRoute
   '/': typeof ChatIndexRoute
-  '/w/$workspaceId': typeof ChatWorkspaceIndexRoute
-  '/w/$workspaceId/$threadId': typeof ChatWorkspaceThreadIdRoute
-  '/w/$workspaceId/draft/$draftId': typeof ChatWorkspaceDraftDraftIdRoute
-  '/w/$workspaceId/pull-requests': typeof ChatWorkspacePullRequestsRoute
+  '/w/$workspaceId/$threadId': typeof ChatWWorkspaceIdThreadIdRoute
+  '/w/$workspaceId/pull-requests': typeof ChatWWorkspaceIdPullRequestsRoute
+  '/w/$workspaceId': typeof ChatWWorkspaceIdIndexRoute
+  '/w/$workspaceId/draft/$draftId': typeof ChatWWorkspaceIdDraftDraftIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -154,10 +157,10 @@ export interface FileRoutesById {
   '/settings/keybindings': typeof SettingsKeybindingsRoute
   '/settings/source-control': typeof SettingsSourceControlRoute
   '/_chat/': typeof ChatIndexRoute
-  '/_chat/w/$workspaceId/': typeof ChatWorkspaceIndexRoute
-  '/_chat/w/$workspaceId/$threadId': typeof ChatWorkspaceThreadIdRoute
-  '/_chat/w/$workspaceId/draft/$draftId': typeof ChatWorkspaceDraftDraftIdRoute
-  '/_chat/w/$workspaceId/pull-requests': typeof ChatWorkspacePullRequestsRoute
+  '/_chat/w/$workspaceId/$threadId': typeof ChatWWorkspaceIdThreadIdRoute
+  '/_chat/w/$workspaceId/pull-requests': typeof ChatWWorkspaceIdPullRequestsRoute
+  '/_chat/w/$workspaceId/': typeof ChatWWorkspaceIdIndexRoute
+  '/_chat/w/$workspaceId/draft/$draftId': typeof ChatWWorkspaceIdDraftDraftIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -173,10 +176,10 @@ export interface FileRouteTypes {
     | '/settings/integrations'
     | '/settings/keybindings'
     | '/settings/source-control'
-    | '/w/$workspaceId'
     | '/w/$workspaceId/$threadId'
-    | '/w/$workspaceId/draft/$draftId'
     | '/w/$workspaceId/pull-requests'
+    | '/w/$workspaceId/'
+    | '/w/$workspaceId/draft/$draftId'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/settings'
@@ -190,10 +193,10 @@ export interface FileRouteTypes {
     | '/settings/keybindings'
     | '/settings/source-control'
     | '/'
-    | '/w/$workspaceId'
     | '/w/$workspaceId/$threadId'
-    | '/w/$workspaceId/draft/$draftId'
     | '/w/$workspaceId/pull-requests'
+    | '/w/$workspaceId'
+    | '/w/$workspaceId/draft/$draftId'
   id:
     | '__root__'
     | '/_chat'
@@ -208,10 +211,10 @@ export interface FileRouteTypes {
     | '/settings/keybindings'
     | '/settings/source-control'
     | '/_chat/'
-    | '/_chat/w/$workspaceId/'
     | '/_chat/w/$workspaceId/$threadId'
-    | '/_chat/w/$workspaceId/draft/$draftId'
     | '/_chat/w/$workspaceId/pull-requests'
+    | '/_chat/w/$workspaceId/'
+    | '/_chat/w/$workspaceId/draft/$draftId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -309,30 +312,30 @@ declare module '@tanstack/react-router' {
     }
     '/_chat/w/$workspaceId/': {
       id: '/_chat/w/$workspaceId/'
-      path: '/w/$workspaceId/'
+      path: '/w/$workspaceId'
       fullPath: '/w/$workspaceId/'
-      preLoaderRoute: typeof ChatWorkspaceIndexRouteImport
+      preLoaderRoute: typeof ChatWWorkspaceIdIndexRouteImport
       parentRoute: typeof ChatRoute
     }
     '/_chat/w/$workspaceId/$threadId': {
       id: '/_chat/w/$workspaceId/$threadId'
       path: '/w/$workspaceId/$threadId'
       fullPath: '/w/$workspaceId/$threadId'
-      preLoaderRoute: typeof ChatWorkspaceThreadIdRouteImport
-      parentRoute: typeof ChatRoute
-    }
-    '/_chat/w/$workspaceId/draft/$draftId': {
-      id: '/_chat/w/$workspaceId/draft/$draftId'
-      path: '/w/$workspaceId/draft/$draftId'
-      fullPath: '/w/$workspaceId/draft/$draftId'
-      preLoaderRoute: typeof ChatWorkspaceDraftDraftIdRouteImport
+      preLoaderRoute: typeof ChatWWorkspaceIdThreadIdRouteImport
       parentRoute: typeof ChatRoute
     }
     '/_chat/w/$workspaceId/pull-requests': {
       id: '/_chat/w/$workspaceId/pull-requests'
       path: '/w/$workspaceId/pull-requests'
       fullPath: '/w/$workspaceId/pull-requests'
-      preLoaderRoute: typeof ChatWorkspacePullRequestsRouteImport
+      preLoaderRoute: typeof ChatWWorkspaceIdPullRequestsRouteImport
+      parentRoute: typeof ChatRoute
+    }
+    '/_chat/w/$workspaceId/draft/$draftId': {
+      id: '/_chat/w/$workspaceId/draft/$draftId'
+      path: '/w/$workspaceId/draft/$draftId'
+      fullPath: '/w/$workspaceId/draft/$draftId'
+      preLoaderRoute: typeof ChatWWorkspaceIdDraftDraftIdRouteImport
       parentRoute: typeof ChatRoute
     }
   }
@@ -340,18 +343,18 @@ declare module '@tanstack/react-router' {
 
 interface ChatRouteChildren {
   ChatIndexRoute: typeof ChatIndexRoute
-  ChatWorkspaceIndexRoute: typeof ChatWorkspaceIndexRoute
-  ChatWorkspaceThreadIdRoute: typeof ChatWorkspaceThreadIdRoute
-  ChatWorkspaceDraftDraftIdRoute: typeof ChatWorkspaceDraftDraftIdRoute
-  ChatWorkspacePullRequestsRoute: typeof ChatWorkspacePullRequestsRoute
+  ChatWWorkspaceIdThreadIdRoute: typeof ChatWWorkspaceIdThreadIdRoute
+  ChatWWorkspaceIdPullRequestsRoute: typeof ChatWWorkspaceIdPullRequestsRoute
+  ChatWWorkspaceIdIndexRoute: typeof ChatWWorkspaceIdIndexRoute
+  ChatWWorkspaceIdDraftDraftIdRoute: typeof ChatWWorkspaceIdDraftDraftIdRoute
 }
 
 const ChatRouteChildren: ChatRouteChildren = {
   ChatIndexRoute: ChatIndexRoute,
-  ChatWorkspaceIndexRoute: ChatWorkspaceIndexRoute,
-  ChatWorkspaceThreadIdRoute: ChatWorkspaceThreadIdRoute,
-  ChatWorkspaceDraftDraftIdRoute: ChatWorkspaceDraftDraftIdRoute,
-  ChatWorkspacePullRequestsRoute: ChatWorkspacePullRequestsRoute,
+  ChatWWorkspaceIdThreadIdRoute: ChatWWorkspaceIdThreadIdRoute,
+  ChatWWorkspaceIdPullRequestsRoute: ChatWWorkspaceIdPullRequestsRoute,
+  ChatWWorkspaceIdIndexRoute: ChatWWorkspaceIdIndexRoute,
+  ChatWWorkspaceIdDraftDraftIdRoute: ChatWWorkspaceIdDraftDraftIdRoute,
 }
 
 const ChatRouteWithChildren = ChatRoute._addFileChildren(ChatRouteChildren)

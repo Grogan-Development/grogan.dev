@@ -73,7 +73,7 @@ function WorkspaceIndexRouteView() {
         <EmptyHeader className="max-w-md">
           <EmptyTitle className="text-foreground text-xl">This workspace is empty</EmptyTitle>
           <EmptyDescription className="mt-2 text-sm text-muted-foreground/78">
-            Add a project in this workspace to start a thread. Every thread shares the same cwd.
+            Start a thread — every thread in this workspace shares the same cwd.
           </EmptyDescription>
         </EmptyHeader>
       </Empty>

@@ -26,7 +26,7 @@ export const SETTINGS_SECTION_LABELS: Readonly<Record<SettingsPath, string>> = {
   "/settings/general": "General",
   "/settings/appearance": "Appearance",
   "/settings/keybindings": "Keybindings",
-  "/settings/integrations": "Integrations",
+  "/settings/integrations": "Browser",
   "/settings/source-control": "Source Control",
   "/settings/archived": "Archive",
 };
@@ -103,18 +103,8 @@ export const SETTINGS_SEARCH_ITEMS = [
     to: "/settings/appearance",
   },
   {
-    id: "project-grouping",
-    title: "Project grouping",
-    to: "/settings/general",
-  },
-  {
     id: "auto-settle-inactive-threads",
     title: "Auto-settle inactive threads",
-    to: "/settings/general",
-  },
-  {
-    id: "auto-settle-merged-threads",
-    title: "Auto-settle merged threads",
     to: "/settings/general",
   },
   {
@@ -125,16 +115,6 @@ export const SETTINGS_SEARCH_ITEMS = [
   {
     id: "hide-whitespace-changes",
     title: "Hide whitespace changes",
-    to: "/settings/general",
-  },
-  {
-    id: "skills-in-slash-menu",
-    title: "Show skills in slash menu",
-    to: "/settings/general",
-  },
-  {
-    id: "add-project-starts-in",
-    title: "Add project starts in",
     to: "/settings/general",
   },
   {
@@ -161,21 +141,6 @@ export const SETTINGS_SEARCH_ITEMS = [
   {
     id: "diagnostics",
     title: "Diagnostics",
-    to: "/settings/general",
-  },
-  {
-    id: "legacy-plan-mode",
-    title: "Plan mode (legacy)",
-    to: "/settings/general",
-  },
-  {
-    id: "legacy-token-streaming",
-    title: "Stream token by token (legacy)",
-    to: "/settings/general",
-  },
-  {
-    id: "legacy-sidebar",
-    title: "Sidebar (legacy)",
     to: "/settings/general",
   },
   {

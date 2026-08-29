@@ -1,90 +1,124 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useEffect, useMemo } from "react";
+import { createFileRoute } from "@tanstack/react-router";
+import { useCallback, useEffect, useState } from "react";
 
-import { Button } from "../components/ui/button";
-import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "../components/ui/empty";
-import { SidebarInset } from "../components/ui/sidebar";
-import { WorkspacePageHeader } from "../components/WorkspacePageHeader";
-import { useEnvironments } from "../state/environments";
 import { APP_DISPLAY_NAME } from "~/branding";
-import { WORKSPACE_ROUTE } from "../threadRoutes";
-import { readLastWorkspaceId, writeLastWorkspaceId } from "../workspaceIdentity";
+import { SidebarInset } from "../components/ui/sidebar";
+import { Button } from "../components/ui/button";
+import { Input } from "../components/ui/input";
+import { Spinner } from "../components/ui/spinner";
+import {
+  createNeroWorkspace,
+  isNeroHostAuthError,
+  listNeroWorkspaces,
+  NERO_LOGIN_PATH,
+  neroHostErrorMessage,
+  type NeroWorkspace,
+} from "../lib/neroHost";
+import { readLastWorkspaceId } from "../workspaceIdentity";
 
-function ChatIndexRouteView() {
-  const navigate = useNavigate();
-  const { environments } = useEnvironments();
-  const lastWorkspaceId = readLastWorkspaceId();
-  const lastWorkspace = useMemo(
-    () => environments.find((environment) => environment.environmentId === lastWorkspaceId) ?? null,
-    [environments, lastWorkspaceId],
-  );
-  const onlyWorkspace = environments.length === 1 ? environments[0] : null;
-  const target = lastWorkspace ?? onlyWorkspace ?? null;
+/**
+ * `/` is no longer a management surface — workspace management lives in the
+ * sidebar switcher. Landing here sends you straight back into your last
+ * workspace; first-run users get a minimal create screen.
+ */
+function ChatIndexRedirect() {
+  const [phase, setPhase] = useState<"loading" | "first-run" | "auth">("loading");
+  const [name, setName] = useState("");
+  const [creating, setCreating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (!target) {
+  const redirect = useCallback((workspaces: NeroWorkspace[]) => {
+    if (workspaces.length === 0) {
+      setPhase("first-run");
       return;
     }
-    writeLastWorkspaceId(target.environmentId);
-    void navigate({
-      to: WORKSPACE_ROUTE,
-      params: { workspaceId: target.environmentId },
-      replace: true,
-    });
-  }, [navigate, target]);
+    const last = readLastWorkspaceId();
+    const target = workspaces.find((workspace) => workspace.id === last) ?? workspaces[0];
+    if (!target) {
+      setPhase("first-run");
+      return;
+    }
+    window.location.assign(`/w/${target.id}/`);
+  }, []);
 
-  if (target) {
-    return null;
-  }
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const workspaces = await listNeroWorkspaces();
+        if (!cancelled) redirect(workspaces);
+      } catch (error) {
+        if (cancelled) return;
+        if (isNeroHostAuthError(error)) {
+          setPhase("auth");
+        } else {
+          setError(neroHostErrorMessage(error));
+          setPhase("first-run");
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [redirect]);
+
+  const create = useCallback(async () => {
+    setCreating(true);
+    setError(null);
+    try {
+      const workspace = await createNeroWorkspace(name.trim().length > 0 ? name.trim() : null);
+      window.location.assign(`/w/${workspace.id}/`);
+    } catch (error) {
+      if (isNeroHostAuthError(error)) {
+        setPhase("auth");
+      } else {
+        setError(neroHostErrorMessage(error));
+      }
+      setCreating(false);
+    }
+  }, [name]);
 
   return (
-    <SidebarInset className="h-dvh min-h-0 overflow-hidden overscroll-y-none bg-background text-foreground">
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-x-hidden bg-background">
-        <WorkspacePageHeader className="border-b border-border">
-          <div className="flex items-center gap-2">
-            <span className="text-sm font-medium text-foreground md:text-muted-foreground/60">
-              {APP_DISPLAY_NAME}
-            </span>
-          </div>
-        </WorkspacePageHeader>
-        <Empty className="flex-1">
-          <div className="w-full max-w-lg px-8 py-12">
-            <EmptyHeader className="max-w-none">
-              <EmptyTitle className="text-foreground text-2xl sm:text-3xl">
-                Choose a workspace
-              </EmptyTitle>
-              <EmptyDescription className="mt-2 text-sm text-muted-foreground/78">
-                {environments.length === 0
-                  ? "No workspaces are connected yet. Create one from the host control plane, then refresh."
-                  : "Pick a workspace to open threads, files, and the agent seat."}
-              </EmptyDescription>
-              {environments.length > 0 ? (
-                <div className="mt-6 flex flex-col items-center gap-2">
-                  {environments.map((environment) => (
-                    <Button
-                      key={environment.environmentId}
-                      size="sm"
-                      onClick={() => {
-                        writeLastWorkspaceId(environment.environmentId);
-                        void navigate({
-                          to: WORKSPACE_ROUTE,
-                          params: { workspaceId: environment.environmentId },
-                        });
-                      }}
-                    >
-                      {environment.label || environment.environmentId}
-                    </Button>
-                  ))}
-                </div>
-              ) : null}
-            </EmptyHeader>
-          </div>
-        </Empty>
-      </div>
+    <SidebarInset className="flex h-dvh flex-col items-center justify-center gap-4 bg-background p-6 text-foreground">
+      <p className="text-sm font-medium text-muted-foreground">{APP_DISPLAY_NAME}</p>
+      {phase === "loading" ? <Spinner className="size-6" /> : null}
+      {phase === "auth" ? (
+        <>
+          <p className="text-sm text-muted-foreground">Sign in to continue.</p>
+          <a href={NERO_LOGIN_PATH}>
+            <Button size="sm">Sign in</Button>
+          </a>
+        </>
+      ) : null}
+      {phase === "first-run" ? (
+        <>
+          <p className="text-sm text-muted-foreground">Create your first workspace to start.</p>
+          <form
+            className="flex w-full max-w-sm items-center gap-2"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void create();
+            }}
+          >
+            <Input
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+              placeholder="Workspace name (optional)"
+              aria-label="Workspace name"
+              autoFocus
+            />
+            <Button type="submit" disabled={creating}>
+              {creating ? <Spinner className="size-4" /> : null}
+              Create workspace
+            </Button>
+          </form>
+        </>
+      ) : null}
+      {error ? <p className="text-xs text-destructive">{error}</p> : null}
     </SidebarInset>
   );
 }
 
 export const Route = createFileRoute("/_chat/")({
-  component: ChatIndexRouteView,
+  component: ChatIndexRedirect,
 });
