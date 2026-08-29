@@ -11,6 +11,7 @@ import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 
 import { daemonLayer } from "./app.ts";
+import type { ChatMessage } from "./router/openaiCompat.ts";
 import { sanitizeConversation } from "./harness.ts";
 import type { DaemonOptions } from "./runtime.ts";
 import { NERO_MODEL, nowIso } from "./runtime.ts";
@@ -624,14 +625,14 @@ describe("conversation sanitizer", () => {
       },
       { role: "tool", tool_call_id: "call_1", content: "ok" },
       { role: "assistant", content: "done" },
-    ]);
+    ] satisfies ChatMessage[]);
     expect(clean).toHaveLength(4);
   });
 
   it("drops an assistant tool_calls block whose results never arrived", () => {
     // An interrupted turn leaves assistant.tool_calls with no tool rows;
     // OpenAI-strict backends 400 on every later turn in that thread.
-    const poisoned = [
+    const poisoned: ChatMessage[] = [
       { role: "user", content: "run it" },
       {
         role: "assistant",
@@ -665,7 +666,7 @@ describe("conversation sanitizer", () => {
       { role: "tool", tool_call_id: "call_1", content: "partial" },
       { role: "tool", tool_call_id: "call_9", content: "stray" },
       { role: "user", content: "next" },
-    ]);
+    ] satisfies ChatMessage[]);
     expect(clean).toEqual([
       { role: "user", content: "go" },
       { role: "user", content: "next" },
